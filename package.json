@@ -10,7 +10,7 @@
   },
   "packageManager": "pnpm@11.20.0",
   "scripts": {
-    "dev": "pnpm -r --parallel run dev",
+    "dev": "pnpm -r --parallel --no-bail run dev",
     "build": "pnpm -r run build",
     "check": "pnpm -r run check",
     "test": "pnpm -r run test",
