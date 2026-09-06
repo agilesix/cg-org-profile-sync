@@ -1,0 +1,33 @@
+{
+  "name": "cg-link",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A demo of CommonGrants organization profile syncing across systems",
+  "type": "module",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=11"
+  },
+  "packageManager": "pnpm@11.20.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "build": "pnpm -r run build",
+    "check": "pnpm -r run check",
+    "test": "pnpm -r run test",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-svelte": "^3.23.0",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.6",
+    "prettier-plugin-svelte": "^4.1.1",
+    "svelte": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "^8.69.0"
+  }
+}
