@@ -28,6 +28,7 @@ export default ts.config(
       "**/build/**",
       "**/.svelte-kit/**",
       "**/.wrangler/**",
+      "**/worker-configuration.d.ts",
     ],
   },
 );
