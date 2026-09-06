@@ -2,6 +2,10 @@ packages:
   - packages/*
   - apps/*
 
+allowBuilds:
+  esbuild: true
+  workerd: true
+
 catalog:
   "@cloudflare/workers-types": ^5.20260906.1
   "@common-grants/sdk": ^0.7.2
@@ -19,3 +23,7 @@ catalog:
 
 minimumReleaseAgeExclude:
   - jose@6.2.12
+
+onlyBuiltDependencies:
+  - esbuild
+  - workerd
