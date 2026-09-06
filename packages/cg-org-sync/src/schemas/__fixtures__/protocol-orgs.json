@@ -1,0 +1,482 @@
+[
+  {
+    "id": "30a12e5e-5940-4c08-921c-17a8960fcf4b",
+    "name": "Example Organization",
+    "orgType": {
+      "term": "Hospital",
+      "class": "Organization types",
+      "code": "EO000000",
+      "description": "Institutions with the primary purpose of providing in-patient physical and mental health services"
+    },
+    "identifiers": {
+      "org:us:ein": {
+        "registry": {
+          "code": "org:us:ein",
+          "url": "https://commongrants.org/registries/org-us-ein"
+        },
+        "id": "123456789"
+      },
+      "org:us:uei": {
+        "registry": {
+          "code": "org:us:uei",
+          "url": "https://commongrants.org/registries/org-us-uei"
+        },
+        "id": "AB0123456789"
+      }
+    },
+    "ein": "123456789",
+    "uei": "AB0123456789",
+    "addresses": {
+      "primary": {
+        "street1": "456 Main St",
+        "street2": "Suite 100",
+        "city": "Anytown",
+        "stateOrProvince": "CA",
+        "country": "US",
+        "postalCode": "12345"
+      },
+      "otherAddresses": {
+        "satellite": {
+          "street1": "456 Main St",
+          "street2": "Suite 100",
+          "city": "Anytown",
+          "stateOrProvince": "CA",
+          "country": "US",
+          "postalCode": "12345"
+        },
+        "international": {
+          "street1": "123 Rue Principale",
+          "city": "Montreal",
+          "stateOrProvince": "QC",
+          "country": "CA",
+          "postalCode": "H2Y 1C6"
+        }
+      }
+    },
+    "phones": {
+      "primary": {
+        "countryCode": "+1",
+        "number": "444-456-1230",
+        "isMobile": true
+      },
+      "fax": {
+        "countryCode": "+1",
+        "number": "555-123-4567",
+        "extension": "123",
+        "isMobile": false
+      },
+      "otherPhones": {
+        "support": {
+          "countryCode": "+1",
+          "number": "333-456-1230",
+          "isMobile": false
+        },
+        "marketing": {
+          "countryCode": "+1",
+          "number": "444-456-1230",
+          "isMobile": true
+        }
+      }
+    },
+    "emails": {
+      "primary": "info@example.com",
+      "otherEmails": {
+        "support": "support@example.com",
+        "marketing": "marketing@example.com"
+      }
+    },
+    "mission": "To provide support and resources to the community.",
+    "yearFounded": "2024",
+    "socials": {
+      "website": "https://www.example.com",
+      "facebook": "https://www.facebook.com/example",
+      "twitterOrX": "https://x.com/example",
+      "instagram": "https://www.instagram.com/example",
+      "linkedin": "https://www.linkedin.com/company/example",
+      "otherSocials": {
+        "youtube": "https://www.youtube.com/example"
+      }
+    }
+  },
+  {
+    "id": "083b4567-e89d-42c8-a439-6c1234567890",
+    "name": "Riverside Community Health Center",
+    "orgType": {
+      "term": "Hospital",
+      "class": "Organization types",
+      "code": "EO000000"
+    },
+    "identifiers": {
+      "org:us:ein": {
+        "registry": {
+          "code": "org:us:ein",
+          "url": "https://commongrants.org/registries/org-us-ein"
+        },
+        "id": "234567890",
+        "allIds": [
+          {
+            "id": "234567890",
+            "status": "active"
+          },
+          {
+            "id": "231456789",
+            "status": "archived"
+          }
+        ]
+      },
+      "org:us:uei": {
+        "registry": {
+          "code": "org:us:uei",
+          "url": "https://commongrants.org/registries/org-us-uei"
+        },
+        "id": "BC1234567890"
+      }
+    },
+    "ein": "234567890",
+    "uei": "BC1234567890",
+    "addresses": {
+      "primary": {
+        "street1": "1200 Riverside Dr",
+        "city": "Riverside",
+        "stateOrProvince": "CA",
+        "country": "US",
+        "postalCode": "92501"
+      }
+    },
+    "phones": {
+      "primary": {
+        "countryCode": "+1",
+        "number": "951-555-0142",
+        "isMobile": false
+      }
+    },
+    "emails": {
+      "primary": "grants@riversidechc.example.org"
+    },
+    "mission": "To deliver comprehensive primary care to underserved residents of Riverside County.",
+    "yearFounded": "1978",
+    "socials": {
+      "website": "https://riversidechc.example.org"
+    }
+  },
+  {
+    "id": "018f2e77-4b5c-7d2e-9f3a-bcdef1234567",
+    "name": "Health Resources and Services Administration",
+    "orgType": {
+      "term": "Government agencies",
+      "class": "Organization types",
+      "code": "EP000000"
+    },
+    "identifiers": {
+      "otherIds": {
+        "org:grants.gov:agency": {
+          "registry": {
+            "code": "org:grants.gov:agency"
+          },
+          "id": "HRSA"
+        }
+      }
+    },
+    "addresses": {
+      "primary": {
+        "street1": "5600 Fishers Ln",
+        "city": "Rockville",
+        "stateOrProvince": "MD",
+        "country": "US",
+        "postalCode": "20857"
+      }
+    },
+    "phones": {
+      "primary": {
+        "countryCode": "+1",
+        "number": "301-555-0100",
+        "isMobile": false
+      }
+    },
+    "emails": {
+      "primary": "grants@hrsa.example.gov"
+    },
+    "mission": "To improve health outcomes and address health disparities through access to quality services.",
+    "yearFounded": "1982",
+    "socials": {
+      "website": "https://www.hrsa.example.gov"
+    }
+  },
+  {
+    "id": "018f2e77-5c6d-7e3f-8a4b-cdef12345678",
+    "name": "National Science Foundation",
+    "orgType": {
+      "term": "Government agencies",
+      "class": "Organization types",
+      "code": "EP000000"
+    },
+    "identifiers": {
+      "otherIds": {
+        "org:grants.gov:agency": {
+          "registry": {
+            "code": "org:grants.gov:agency"
+          },
+          "id": "NSF"
+        }
+      }
+    },
+    "addresses": {
+      "primary": {
+        "street1": "2415 Eisenhower Ave",
+        "city": "Alexandria",
+        "stateOrProvince": "VA",
+        "country": "US",
+        "postalCode": "22314"
+      }
+    },
+    "phones": {
+      "primary": {
+        "countryCode": "+1",
+        "number": "703-555-0111",
+        "isMobile": false
+      }
+    },
+    "emails": {
+      "primary": "info@nsf.example.gov"
+    },
+    "mission": "To promote the progress of science and advance the national health, prosperity, and welfare.",
+    "yearFounded": "1950",
+    "socials": {
+      "website": "https://www.nsf.example.gov"
+    }
+  },
+  {
+    "id": "018f2e77-6d7e-7f4a-9b5c-def123456789",
+    "name": "Cascade Workforce Alliance",
+    "orgType": {
+      "term": "Employment services",
+      "class": "Organization types",
+      "code": "EJ000000"
+    },
+    "identifiers": {
+      "systemId": {
+        "registry": {
+          "code": "org:grants.gov:system",
+          "url": "https://commongrants.org/registries/org-grants-gov-system"
+        },
+        "id": "018f2e77-6d7e-7f4a-9b5c-def123456789"
+      },
+      "org:us:ein": {
+        "registry": {
+          "code": "org:us:ein",
+          "url": "https://commongrants.org/registries/org-us-ein"
+        },
+        "id": "345678901"
+      },
+      "org:us:uei": {
+        "registry": {
+          "code": "org:us:uei",
+          "url": "https://commongrants.org/registries/org-us-uei"
+        },
+        "id": "CD2345678901"
+      },
+      "org:xi:duns": {
+        "registry": {
+          "code": "org:xi:duns",
+          "url": "https://commongrants.org/registries/org-xi-duns"
+        },
+        "id": "456789012"
+      }
+    },
+    "ein": "345678901",
+    "uei": "CD2345678901",
+    "duns": "456789012",
+    "addresses": {
+      "primary": {
+        "street1": "88 Pike St",
+        "city": "Seattle",
+        "stateOrProvince": "WA",
+        "country": "US",
+        "postalCode": "98101"
+      },
+      "otherAddresses": {
+        "training": {
+          "street1": "41 Industrial Way",
+          "city": "Tacoma",
+          "stateOrProvince": "WA",
+          "country": "US",
+          "postalCode": "98402"
+        }
+      }
+    },
+    "phones": {
+      "primary": {
+        "countryCode": "+1",
+        "number": "206-555-0173",
+        "isMobile": true
+      }
+    },
+    "emails": {
+      "primary": "grants@cascadeworkforce.example.org",
+      "otherEmails": {
+        "programs": "programs@cascadeworkforce.example.org"
+      }
+    },
+    "mission": "To connect workers in the Puget Sound region with apprenticeships in the building trades.",
+    "yearFounded": "2003",
+    "socials": {
+      "website": "https://cascadeworkforce.example.org",
+      "linkedin": "https://www.linkedin.com/company/cascade-workforce"
+    },
+    "customFields": {
+      "serviceArea": {
+        "name": "serviceArea",
+        "fieldType": "string",
+        "value": "King, Pierce, and Snohomish counties",
+        "description": "Counties the organization is funded to serve"
+      }
+    }
+  },
+  {
+    "id": "018f2e77-7e8f-7a5b-8c6d-ef1234567890",
+    "name": "Lakeside Arts Collective",
+    "orgType": {
+      "term": "Arts and culture",
+      "class": "Organization types",
+      "code": "EA000000"
+    },
+    "identifiers": {
+      "org:us:ein": {
+        "registry": {
+          "code": "org:us:ein",
+          "url": "https://commongrants.org/registries/org-us-ein"
+        },
+        "id": "456789012"
+      }
+    },
+    "ein": "456789012",
+    "addresses": {
+      "primary": {
+        "street1": "310 Lakeshore Blvd",
+        "city": "Madison",
+        "stateOrProvince": "WI",
+        "country": "US",
+        "postalCode": "53703"
+      }
+    },
+    "phones": {
+      "primary": {
+        "countryCode": "+1",
+        "number": "608-555-0128",
+        "isMobile": false
+      }
+    },
+    "emails": {
+      "primary": "hello@lakesidearts.example.org"
+    },
+    "mission": "To preserve and present the folk arts traditions of the Upper Midwest.",
+    "yearFounded": "1991",
+    "socials": {
+      "website": "https://lakesidearts.example.org",
+      "instagram": "https://www.instagram.com/lakesidearts"
+    }
+  },
+  {
+    "id": "018f2e77-8f90-7b6c-8d7e-f12345678901",
+    "name": "Prairie Broadband Cooperative",
+    "orgType": {
+      "term": "Business and industry",
+      "class": "Organization types",
+      "code": "EB000000"
+    },
+    "identifiers": {
+      "org:us:ein": {
+        "registry": {
+          "code": "org:us:ein",
+          "url": "https://commongrants.org/registries/org-us-ein"
+        },
+        "id": "567890123"
+      },
+      "org:us:uei": {
+        "registry": {
+          "code": "org:us:uei",
+          "url": "https://commongrants.org/registries/org-us-uei"
+        },
+        "id": "EF3456789012"
+      }
+    },
+    "ein": "567890123",
+    "uei": "EF3456789012",
+    "addresses": {
+      "primary": {
+        "street1": "7 County Road 12",
+        "city": "Fargo",
+        "stateOrProvince": "ND",
+        "country": "US",
+        "postalCode": "58102"
+      }
+    },
+    "phones": {
+      "primary": {
+        "countryCode": "+1",
+        "number": "701-555-0190",
+        "isMobile": false
+      }
+    },
+    "emails": {
+      "primary": "grants@prairiebroadband.example.coop"
+    },
+    "mission": "To bring affordable high-speed internet to rural households across the northern plains.",
+    "yearFounded": "2016",
+    "socials": {
+      "website": "https://prairiebroadband.example.coop"
+    }
+  },
+  {
+    "id": "018f2e77-9012-7c7d-8e8f-123456789012",
+    "name": "Coastal Research Institute",
+    "orgType": {
+      "term": "Research institutes",
+      "class": "Organization types",
+      "code": "EH000000"
+    },
+    "identifiers": {
+      "org:us:ein": {
+        "registry": {
+          "code": "org:us:ein",
+          "url": "https://commongrants.org/registries/org-us-ein"
+        },
+        "id": "678901234"
+      },
+      "org:us:uei": {
+        "registry": {
+          "code": "org:us:uei",
+          "url": "https://commongrants.org/registries/org-us-uei"
+        },
+        "id": "GH4567890123"
+      }
+    },
+    "ein": "678901234",
+    "uei": "GH4567890123",
+    "addresses": {
+      "primary": {
+        "street1": "2 Harbor Way",
+        "city": "Portland",
+        "stateOrProvince": "ME",
+        "country": "US",
+        "postalCode": "04101"
+      }
+    },
+    "phones": {
+      "primary": {
+        "countryCode": "+1",
+        "number": "207-555-0155",
+        "isMobile": false
+      }
+    },
+    "emails": {
+      "primary": "sponsored.programs@coastalresearch.example.edu"
+    },
+    "mission": "To advance the science of coastal resilience and ocean health in the Gulf of Maine.",
+    "yearFounded": "1968",
+    "socials": {
+      "website": "https://coastalresearch.example.edu",
+      "bluesky": "https://bsky.app/profile/coastalresearch.example.edu"
+    }
+  }
+]
