@@ -1,0 +1,28 @@
+{
+  "name": "@cg-link/org-sync",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Org profile schemas, client, and token helpers shared by the CommonGrants Link demo",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schemas": "./src/schemas/index.ts",
+    "./client": "./src/client/index.ts",
+    "./server": "./src/server/index.ts",
+    "./utils": "./src/utils/index.ts",
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@common-grants/sdk": "catalog:",
+    "jose": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

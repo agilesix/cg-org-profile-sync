@@ -16,3 +16,6 @@ catalog:
   vitest: ^5.0.0
   wrangler: ^4.129.0
   zod: ^4.5.4
+
+minimumReleaseAgeExclude:
+  - jose@6.2.12
