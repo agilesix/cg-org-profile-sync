@@ -81,3 +81,7 @@ pnpm dev
 | `pnpm test`   | Run the test suites         |
 | `pnpm lint`   | Lint the repo               |
 | `pnpm format` | Format the repo             |
+
+## License
+
+[MIT](LICENSE) © Agile Six Applications, Inc.
