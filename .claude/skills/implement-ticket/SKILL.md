@@ -1,6 +1,6 @@
 ---
 name: implement-ticket
-description: "Pick up a specific ticket from PLAN.md and drive it to completion via TDD. Tickets are identified by GH-issue-prefixed IDs in the form #<issue>-T<n> (e.g. #1153-T3). Reads the ticket, delegates failing-test authorship to the test-writer subagent, implements the feature to make tests pass, delegates review to the reviewer subagent, prompts the user for approval, and on approval commits locally with a descriptive message (including ticket ID and files changed) and marks the ticket done in PLAN.md. Invoke when the user runs /implement-ticket <ticket-id>, says 'implement #1153-T3 from PLAN.md', or asks to work on a specific ticket from the plan."
+description: "Pick up a specific ticket from PLAN.md and drive it to completion via TDD. Tickets are identified by GH-issue-prefixed IDs in the form #<issue>-T<n> (e.g. #1153-T3). Reads the ticket and runs preflight, then STOPS and asks the user for explicit approval before writing any code — being invoked is not approval to begin. Once approved, delegates failing-test authorship to the test-writer subagent, implements the feature to make tests pass, delegates review to the reviewer subagent, prompts the user for approval, and on approval commits locally with a descriptive message (including ticket ID and files changed) and marks the ticket done in PLAN.md. Invoke when the user runs /implement-ticket <ticket-id>, says 'implement #1153-T3 from PLAN.md', or asks to work on a specific ticket from the plan."
 ---
 
 # implement-ticket
@@ -88,6 +88,40 @@ issues, ask which issue they mean.
    Regenerating a Worker's Cloudflare types after a `wrangler.jsonc` edit:
    `pnpm --filter @cg-link/<app> gen` (writes the gitignored-from-lint `worker-configuration.d.ts` —
    never hand-edit it).
+
+## Approval to begin — BLOCKING
+
+**Invoking this skill is not approval to write code.** It selects a ticket and runs preflight. Nothing
+else happens until the user says go.
+
+The user drives ticket sequencing. They kick off each ticket in `PLAN.md` individually, on their own
+schedule, and may want to read the plan, reorder work, or change a ticket's scope in between. Starting
+early takes that decision away from them, and burns tokens on work they may not want yet.
+
+- **Summarize what you are about to do**, before touching anything:
+
+```
+Ticket: #1153-T3 — <title verbatim from PLAN.md>
+Workspace: <target package>
+Acceptance criteria: <count> — <one short line each>
+Expect to touch: <files from the ticket's implementation plan>
+Preflight notes: <unmet dependency / dirty tree / existing stashes / stale ticket detail / nothing>
+```
+
+- **Ask exactly this, then stop**: "Begin implementing `<ticket-id>`? (yes / no / changes: `<what>`)"
+- **Wait for a direct yes in a NEW user message.** Until then: do not spawn the test-writer, do not edit
+  or create any file, do not run `pnpm install` or add a dependency, and do not create a branch.
+
+None of the following is approval to begin — holding only these, you are still at the gate:
+
+- the skill being invoked, with or without a ticket ID in the arguments
+- the user answering a question you asked about setup, tooling, file paths, or where the skill lives
+- a branch already named after the ticket, or a stash holding earlier work on it
+- the user approving a _different_ ticket earlier in the session, or saying the plan looks good
+- the ticket being obviously next in the dependency graph
+
+If the user says no or asks for changes, adjust and re-ask. Approval covers **one ticket**; the next one
+needs its own yes.
 
 ## TDD implementation loop
 
@@ -243,6 +277,9 @@ Next: <next unblocked ticket ID from the dependency graph, or "PLAN.md is fully 
 
 ## What NOT to do
 
+- Do NOT start implementing before the user's explicit yes at the "Approval to begin" gate. Being
+  invoked is not a yes. This is the single easiest rule to break, because preflight leaves you holding a
+  fully-formed plan and the next step feels obvious — stop anyway, and ask.
 - Do NOT skip the test-writer subagent when the ticket has meaningful unit tests. TDD is the point — the
   failing test comes first. (The exception is a ticket whose "Unit tests" field says there are none.)
 - Do NOT skip the reviewer subagent. Even if the gates pass, the reviewer catches contract and
