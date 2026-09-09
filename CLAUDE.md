@@ -9,11 +9,12 @@ A demo of organization-profile syncing across grant systems, built against the
 systems each hold a nonprofit's profile; the copies drift; a widget reads all of them, shows where
 they disagree, and pushes corrections back. The build plan lives outside this repo — ask Billy.
 
-**The project is early.** The workspace, shared schema layer, `applyMergePatch`, and seed data are
-real and tested. The org route handlers are drafted but untested and not wired into any app — all
-four apps currently serve a placeholder page listing the routes they *will* expose. `pnpm dev`
-working is not the same as the demo working. Not started: comparison engine, org client, source
-registry, the widget itself, auth (Google SSO + per-system tokens), and `temelio-adapter`.
+**The project is early.** The workspace, shared schema layer, `applyMergePatch`, the comparison
+engine, and seed data are real and tested. The org route handlers are drafted but untested and not
+wired into any app — all four apps currently serve a placeholder page listing the routes they *will*
+expose, and nothing calls the comparison engine yet. `pnpm dev` working is not the same as the demo
+working. Not started: org client, source registry, the widget itself, auth (Google SSO + per-system
+tokens), and `temelio-adapter`.
 
 ## Commands
 
@@ -84,9 +85,18 @@ which *applies* a patch to a value. `updateOrg` uses both: validate the incoming
 patch schema, apply it, then re-validate the result against `OrganizationBaseSchema` before storing.
 `id` is always forced back to the existing value — a patch can never move a record.
 
-**Shared plain types** (`src/types.ts`) — `JsonValue`/`JsonObject`, plus the not-yet-used
-`SourceConfig`, `FieldComparison`, `TokenProvider` interfaces that the comparison engine and widget
-will build on. Deliberately Zod-free so app config and UI can import them without the schema layer.
+**Comparison is a flat list of field specs.** `src/utils/compare.ts` holds `DEMO_FIELDS` — the four
+paths the demo compares — and `compareProfiles`, which returns one `FieldComparison` per field with
+the value each source holds. A source that lacks a field, holds `null`, or holds an empty string is
+absent from the row rather than counted as a disagreement, so a missing field never reads as a
+conflict. Values compare by canonical JSON with keys sorted, so two systems that serialize the same
+address in a different key order still agree. Adding a field to the demo is one entry in
+`DEMO_FIELDS`. `buildMergePatch` is the inverse of the path walk: it wraps a chosen value back into
+the nested RFC 7396 body that sets that one field.
+
+**Shared plain types** (`src/types.ts`) — `JsonValue`/`JsonObject` and `FieldComparison`, plus the
+not-yet-used `SourceConfig` and `TokenProvider` interfaces the widget will build on. Deliberately
+Zod-free so app config and UI can import them without the schema layer.
 
 ## Conventions
 
