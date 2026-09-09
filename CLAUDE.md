@@ -10,10 +10,11 @@ systems each hold a nonprofit's profile; the copies drift; a widget reads all of
 they disagree, and pushes corrections back. The build plan lives outside this repo — ask Billy.
 
 **The project is early.** The workspace, shared schema layer, `applyMergePatch`, and seed data are
-real and tested. The org route handlers are drafted but untested and not wired into any app — all
-four apps currently serve a placeholder page listing the routes they *will* expose. `pnpm dev`
-working is not the same as the demo working. Not started: comparison engine, org client, source
-registry, the widget itself, auth (Google SSO + per-system tokens), and `temelio-adapter`.
+real and tested. The org route handlers are now tested (`src/server/org-routes.test.ts`) and carry a
+static bearer guard and a store reset, but they are still not wired into any app — all four apps
+currently serve a placeholder page listing the routes they *will* expose. `pnpm dev` working is not
+the same as the demo working. Not started: comparison engine, org client, source registry, the
+widget itself, real auth (Google SSO + per-system JWTs), and `temelio-adapter`.
 
 ## Commands
 

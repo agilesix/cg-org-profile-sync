@@ -23,6 +23,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@cg-link/seed": "workspace:*",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
