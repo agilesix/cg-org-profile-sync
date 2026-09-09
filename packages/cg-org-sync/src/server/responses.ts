@@ -51,6 +51,9 @@ export function failure(status: number, message: string, errors: unknown[] = [])
 export const badRequest = (message: string, errors: unknown[] = []) =>
   failure(400, message, errors);
 
+export const unauthorized = (message = "This request needs a valid access token.") =>
+  failure(401, message);
+
 export const notFound = (message = "The server cannot find the requested resource.") =>
   failure(404, message);
 
