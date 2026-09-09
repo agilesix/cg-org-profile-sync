@@ -2,60 +2,78 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "website-dev",
+      "name": "portal-dev",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": [
-        "--filter",
-        "website",
-        "run",
-        "dev"
-      ],
-      "port": 4321
-    },
-    {
-      "name": "mock-api-dev",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": [
-        "--filter",
-        "@common-grants/mock-api",
-        "run",
-        "dev"
-      ],
-      "port": 8787
-    },
-    {
-      "name": "website-dev-alt",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": [
-        "--filter",
-        "website",
-        "exec",
-        "astro",
-        "dev",
-        "--port",
-        "4325"
-      ],
-      "port": 4325,
+      "runtimeArgs": ["--filter", "@cg-link/portal", "run", "dev"],
+      "port": 5173,
       "autoPort": false
     },
     {
-      "name": "website-built-preview",
-      "runtimeExecutable": "sh",
-      "runtimeArgs": [
-        "-c",
-        "cd website && pnpm exec wrangler dev --config dist/server/wrangler.json --port 4322"
-      ],
-      "port": 4322,
+      "name": "funderhub-dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@cg-link/funderhub", "run", "dev"],
+      "port": 5174,
       "autoPort": false
     },
     {
-      "name": "website-dev-mock",
+      "name": "temelio-adapter-dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@cg-link/temelio-adapter", "run", "dev"],
+      "port": 5175,
+      "autoPort": false
+    },
+    {
+      "name": "link-dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@cg-link/link", "run", "dev"],
+      "port": 5176,
+      "autoPort": false
+    },
+    {
+      "name": "all-apps-dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5173,
+      "autoPort": false
+    },
+    {
+      "name": "portal-worker-preview",
       "runtimeExecutable": "sh",
       "runtimeArgs": [
         "-c",
-        "cd website && pnpm exec astro dev --port 4327"
+        "pnpm --filter @cg-link/portal run build && pnpm --filter @cg-link/portal run preview"
       ],
-      "port": 4327,
+      "port": 5273,
+      "autoPort": false
+    },
+    {
+      "name": "funderhub-worker-preview",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "pnpm --filter @cg-link/funderhub run build && pnpm --filter @cg-link/funderhub run preview"
+      ],
+      "port": 5274,
+      "autoPort": false
+    },
+    {
+      "name": "temelio-adapter-worker-preview",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "pnpm --filter @cg-link/temelio-adapter run build && pnpm --filter @cg-link/temelio-adapter run preview"
+      ],
+      "port": 5275,
+      "autoPort": false
+    },
+    {
+      "name": "link-worker-preview",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "pnpm --filter @cg-link/link run build && pnpm --filter @cg-link/link run preview"
+      ],
+      "port": 5276,
       "autoPort": false
     }
   ]
