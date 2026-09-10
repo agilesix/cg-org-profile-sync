@@ -10,25 +10,33 @@ systems each hold a nonprofit's profile; the copies drift; a widget reads all of
 they disagree, and pushes corrections back. The build plan lives outside this repo — ask Billy.
 
 **The project is early.** The workspace, shared schema layer, `applyMergePatch`, and seed data are
-real and tested. The org route handlers are now tested (`src/server/org-routes.test.ts`) and carry a
-static bearer guard and a store reset, but they are still not wired into any app — all four apps
-currently serve a placeholder page listing the routes they *will* expose. `pnpm dev` working is not
+real and tested. The org route handlers are tested (`src/server/org-routes.test.ts`) and now wired
+into `apps/portal` and `apps/funderhub`: both serve the three org routes for real, behind a static
+bearer token, over their own drifted seed. `apps/link` and `apps/temelio-adapter` are still
+placeholder pages. Nothing yet reads the two systems together, so `pnpm dev` working is still not
 the same as the demo working. Not started: comparison engine, org client, source registry, the
 widget itself, real auth (Google SSO + per-system JWTs), and `temelio-adapter`.
+
+**Running portal or funderhub needs a `.env`.** Copy each app's `.env.example` to `.env`
+(gitignored). `CG_ACCESS_TOKEN` is the bearer that app accepts on `/common-grants/*` — the guard
+fails closed, so without it every request 401s. `ENABLE_TEST_ROUTES=true` mounts `POST /__test/reset`,
+which re-seeds that system's store; unset, the route 404s. Both are read through
+`$env/dynamic/private`, so `svelte-check` does not need them present. Keep `ENABLE_TEST_ROUTES` out
+of `wrangler.jsonc` `vars` so a deploy can never turn it on.
 
 ## Commands
 
 Run from the repo root. Everything is a pnpm workspace (`pnpm@11`, Node >= 22, `engine-strict`).
 
-| Command | What it does |
-| --- | --- |
-| `pnpm install` | Install all workspaces |
-| `pnpm dev` | Run every app in parallel (`--no-bail`, so one crash doesn't stop the rest) |
-| `pnpm build` | Build every app and package |
-| `pnpm check` | Type-check every workspace (`tsc --noEmit`, or `svelte-check` for apps) |
-| `pnpm test` | Run every package's Vitest suite |
-| `pnpm lint` | ESLint the repo |
-| `pnpm format` / `pnpm format:check` | Prettier write / check |
+| Command                             | What it does                                                                |
+| ----------------------------------- | --------------------------------------------------------------------------- |
+| `pnpm install`                      | Install all workspaces                                                      |
+| `pnpm dev`                          | Run every app in parallel (`--no-bail`, so one crash doesn't stop the rest) |
+| `pnpm build`                        | Build every app and package                                                 |
+| `pnpm check`                        | Type-check every workspace (`tsc --noEmit`, or `svelte-check` for apps)     |
+| `pnpm test`                         | Run every package's Vitest suite                                            |
+| `pnpm lint`                         | ESLint the repo                                                             |
+| `pnpm format` / `pnpm format:check` | Prettier write / check                                                      |
 
 Per-package work:
 
@@ -41,7 +49,8 @@ Per-package work:
 
 - `packages/cg-org-sync` (`@cg-link/org-sync`) — the shared library. Schemas, server route handlers, store, and (planned) client/token helpers. Consumed by everything else. Subpath exports: `./schemas`, `./server`, `./utils`, `./types`, `./client` (client not yet written).
 - `packages/seed` (`@cg-link/seed`) — seed org profiles for the demo, deliberately inconsistent across systems.
-- `apps/portal`, `apps/funderhub`, `apps/temelio-adapter`, `apps/link` — SvelteKit apps on the Cloudflare adapter, deployed as Workers. `portal`/`funderhub` are CommonGrants-native systems, `temelio-adapter` is a conformant proxy over a non-protocol vendor, `link` is the widget. All four are currently scaffolds.
+- `apps/portal`, `apps/funderhub`, `apps/temelio-adapter`, `apps/link` — SvelteKit apps on the Cloudflare adapter, deployed as Workers. `portal`/`funderhub` are CommonGrants-native systems, `temelio-adapter` is a conformant proxy over a non-protocol vendor, `link` is the widget. `portal` and `funderhub` serve the org routes; `link` and `temelio-adapter` are still scaffolds.
+- Wiring in `portal`/`funderhub` is the same seven files in each, differing only in seed, `source` name, and `unwritableFields`: `src/lib/server/store.ts` (module-level `MemoryOrgStore` + `OrgRoutesConfig`), `src/routes/common-grants/orgs/{+server.ts,[orgId]/+server.ts}`, `src/routes/__test/reset/+server.ts`, `src/hooks.server.ts` (bearer guard on `/common-grants/`), `.env.example`, and the route list on `src/routes/+page.svelte` — plus `@cg-link/seed` in `package.json`. Two app trees instead of one parameterised app is deliberate — the demo's story is two independent vendors that happen to speak the same contract.
 
 ## Architecture
 
@@ -60,18 +69,28 @@ The shared handlers live in `packages/cg-org-sync/src/server/org-routes.ts` and 
 config, not any one app. A system supplies an `OrgRoutesConfig`: its `store`, its `source` name
 (recorded on every change), and optional `unwritableFields`. A patch that sets an unwritable field
 is **not** an error — the field is dropped and named in the response message, so the sender learns
-the value went no further. Each app is expected to import these handlers and wire them to its own
-routes (not done yet).
+the value went no further (top-level keys only — `socials`, not `socials.website`). `updateOrg`
+validates the patched result but stores the _unvalidated_ object, because the schemas strip unknown
+keys and a patch must never be what deletes what an older sender left behind. Each app is expected
+to import these handlers and wire them to its own routes; `portal` and `funderhub` do.
+
+**Auth is a static per-system bearer token.** `requireBearer(request, expectedToken)`
+(`server/auth.ts`) returns a 401 envelope or `undefined`, so a SvelteKit hook reads as
+`requireBearer(...) ?? resolve(event)`. It fails closed when the system has no token configured.
+Placeholder for the per-system JWT with an `aud` claim that `POST /token` will mint.
 
 **Storage is behind an interface.** `OrgStore` (`server/store.ts`) has `list`/`read`/`write`.
 `MemoryOrgStore` is the only implementation — seeded once per Worker isolate, so writes live only as
 long as the isolate. It `structuredClone`s on every boundary to avoid shared references. The routes
 depend on the interface so a D1-backed store can replace it without the handlers changing.
+`ResettableOrgStore` adds `reset()` (re-clones the seed), which backs `resetStore(store)` in
+`server/test-routes.ts` — the shared body of each app's dev-only `POST /__test/reset`. Gating that
+route behind an env flag is the app's job.
 
 **Schemas are hand-written Zod, checked against the protocol's own fixtures.** The org models live
 in `src/schemas/zod/` (`types.ts` → `fields.ts` → `models.ts` → `patch.ts`, re-exported through
 `schemas/index.ts`). Rather than diffing shapes against the spec's emitted JSON Schema, conformance
-is verified by *behaviour*: `schemas/conformance.test.ts` loads
+is verified by _behaviour_: `schemas/conformance.test.ts` loads
 `schemas/__fixtures__/protocol-orgs.json` (copied verbatim from the CommonGrants repo) and asserts
 every published record parses, plus a corpus of records that each break a documented rule must fail.
 Refresh the fixture from the protocol repo when the spec moves. The fixtures still carry pre-v0.4.0
@@ -81,7 +100,7 @@ old-sender/new-receiver behaviour.
 **The patch schema is derived, not hand-written.** `patch.ts`'s `toMergePatch()` rewrites a Zod
 object into its RFC 7396 form (every property optional + nullable, recursively) so the patch models
 can't drift from the base models. Distinct from `src/utils/merge-patch.ts`'s `applyMergePatch`,
-which *applies* a patch to a value. `updateOrg` uses both: validate the incoming body against the
+which _applies_ a patch to a value. `updateOrg` uses both: validate the incoming body against the
 patch schema, apply it, then re-validate the result against `OrganizationBaseSchema` before storing.
 `id` is always forced back to the existing value — a patch can never move a record.
 

@@ -13,7 +13,15 @@ export interface OrgStore {
   /** One organization by its id within this system, or undefined. */
   read(orgId: string): Promise<Organization | undefined>;
 
-  /** Replace a stored profile with the result of applying a patch. */
+  /**
+   * Replace a stored profile with the result of applying a patch.
+   *
+   * `org` may carry keys `Organization` does not model — `updateOrg` stores
+   * what it applied rather than what Zod parsed, so an older sender's fields
+   * survive a patch instead of being stripped by it. An implementation must
+   * round-trip the whole object: a store that projects onto known columns
+   * would quietly re-introduce the data loss that decision exists to prevent.
+   */
   write(org: Organization): Promise<Organization>;
 }
 

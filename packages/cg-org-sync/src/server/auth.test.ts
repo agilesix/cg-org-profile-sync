@@ -10,12 +10,15 @@ const request = (header?: string) =>
   });
 
 describe("requireBearer", () => {
-  it("rejects a request missing the Authorization header and passes a matching one", async () => {
+  it("rejects a request missing the Authorization header with a 401 envelope", async () => {
     const rejected = requireBearer(request(), EXPECTED_TOKEN);
     const body = await rejected?.json();
 
     expect(rejected?.status).toBe(401);
     expect(body).toMatchObject({ status: 401 });
+  });
+
+  it("returns nothing for a matching token, so the caller proceeds", () => {
     expect(requireBearer(request(`Bearer ${EXPECTED_TOKEN}`), EXPECTED_TOKEN)).toBeUndefined();
   });
 
