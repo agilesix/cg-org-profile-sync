@@ -54,7 +54,7 @@ against Link's fan-out routes and browser end-to-end specs against the widget.
 
 ## Tickets
 
-### #1153-T1: Test the shared org route handlers, add a bearer guard and store reset
+### #1153-T1: [✓] Test the shared org route handlers, add a bearer guard and store reset
 - **Acceptance criteria**:
   - When `listOrgs` is called with `?registry=org:us:ein&id=<ein>`, then only orgs carrying that
     active identifier are returned, paginated in the standard envelope.
