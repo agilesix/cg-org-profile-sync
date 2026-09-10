@@ -1,11 +1,10 @@
 import { OrgPatchDataSchema, OrganizationBaseSchema, type Organization } from "../schemas/index.js";
 import type { JsonObject, JsonValue } from "../types.js";
-import { applyMergePatch } from "../utils/merge-patch.js";
+import { MERGE_PATCH_CONTENT_TYPE, applyMergePatch } from "../utils/merge-patch.js";
 import { badRequest, notFound, ok, paginated, unsupportedMediaType } from "./responses.js";
 import type { OrgStore } from "./store.js";
 
-/** RFC 7396 requires this content type on a merge patch body. */
-export const MERGE_PATCH_CONTENT_TYPE = "application/merge-patch+json";
+export { MERGE_PATCH_CONTENT_TYPE };
 
 const DEFAULT_PAGE_SIZE = 100;
 

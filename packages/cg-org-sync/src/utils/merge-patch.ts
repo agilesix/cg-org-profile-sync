@@ -1,5 +1,8 @@
 import type { JsonObject, JsonValue } from "../types.js";
 
+/** RFC 7396 requires this content type on a merge patch body. */
+export const MERGE_PATCH_CONTENT_TYPE = "application/merge-patch+json";
+
 /**
  * Apply a JSON Merge Patch (RFC 7396) to a value.
  *

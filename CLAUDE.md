@@ -10,12 +10,13 @@ systems each hold a nonprofit's profile; the copies drift; a widget reads all of
 they disagree, and pushes corrections back. The build plan lives outside this repo — ask Billy.
 
 **The project is early.** The workspace, shared schema layer, `applyMergePatch`, and seed data are
-real and tested. The org route handlers are tested (`src/server/org-routes.test.ts`) and now wired
-into `apps/portal` and `apps/funderhub`: both serve the three org routes for real, behind a static
-bearer token, over their own drifted seed. `apps/link` and `apps/temelio-adapter` are still
-placeholder pages. Nothing yet reads the two systems together, so `pnpm dev` working is still not
-the same as the demo working. Not started: comparison engine, org client, source registry, the
-widget itself, real auth (Google SSO + per-system JWTs), and `temelio-adapter`.
+real and tested. The org route handlers are tested (`src/server/org-routes.test.ts`) and wired into
+`apps/portal` and `apps/funderhub`: both serve the three org routes for real, behind a static bearer
+token, over their own drifted seed. The comparison engine and the org client are written and tested
+but not yet called by anything. `apps/link` and `apps/temelio-adapter` are still placeholder pages,
+so nothing reads the two systems together yet — `pnpm dev` working is still not the same as the demo
+working. Not started: the source registry, the widget itself, real auth (Google SSO + per-system
+JWTs), and `temelio-adapter`.
 
 **Running portal or funderhub needs a `.env`.** Copy each app's `.env.example` to `.env`
 (gitignored). `CG_ACCESS_TOKEN` is the bearer that app accepts on `/common-grants/*` — the guard
@@ -47,7 +48,7 @@ Per-package work:
 
 ## Layout
 
-- `packages/cg-org-sync` (`@cg-link/org-sync`) — the shared library. Schemas, server route handlers, store, and (planned) client/token helpers. Consumed by everything else. Subpath exports: `./schemas`, `./server`, `./utils`, `./types`, `./client` (client not yet written).
+- `packages/cg-org-sync` (`@cg-link/org-sync`) — the shared library. Schemas, server route handlers, store, client, and (planned) token helpers. Consumed by everything else. Subpath exports: `./schemas`, `./server`, `./utils`, `./types`, `./client`.
 - `packages/seed` (`@cg-link/seed`) — seed org profiles for the demo, deliberately inconsistent across systems.
 - `apps/portal`, `apps/funderhub`, `apps/temelio-adapter`, `apps/link` — SvelteKit apps on the Cloudflare adapter, deployed as Workers. `portal`/`funderhub` are CommonGrants-native systems, `temelio-adapter` is a conformant proxy over a non-protocol vendor, `link` is the widget. `portal` and `funderhub` serve the org routes; `link` and `temelio-adapter` are still scaffolds.
 - Wiring in `portal`/`funderhub` is the same seven files in each, differing only in seed, `source` name, and `unwritableFields`: `src/lib/server/store.ts` (module-level `MemoryOrgStore` + `OrgRoutesConfig`), `src/routes/common-grants/orgs/{+server.ts,[orgId]/+server.ts}`, `src/routes/__test/reset/+server.ts`, `src/hooks.server.ts` (bearer guard on `/common-grants/`), `.env.example`, and the route list on `src/routes/+page.svelte` — plus `@cg-link/seed` in `package.json`. Two app trees instead of one parameterised app is deliberate — the demo's story is two independent vendors that happen to speak the same contract.
@@ -104,9 +105,36 @@ which _applies_ a patch to a value. `updateOrg` uses both: validate the incoming
 patch schema, apply it, then re-validate the result against `OrganizationBaseSchema` before storing.
 `id` is always forced back to the existing value — a patch can never move a record.
 
-**Shared plain types** (`src/types.ts`) — `JsonValue`/`JsonObject`, plus the not-yet-used
-`SourceConfig`, `FieldComparison`, `TokenProvider` interfaces that the comparison engine and widget
-will build on. Deliberately Zod-free so app config and UI can import them without the schema layer.
+**Comparison is a flat list of field specs.** `src/utils/compare.ts` holds `DEMO_FIELDS` — the four
+paths the demo compares — and `compareProfiles`, which returns one `FieldComparison` per field with
+the value each source holds. A source that lacks a field, holds `null`, or holds an empty string is
+absent from the row rather than counted as a disagreement, so a missing field never reads as a
+conflict. Values compare by canonical JSON with keys sorted, so two systems that serialize the same
+address in a different key order still agree. Adding a field to the demo is one entry in
+`DEMO_FIELDS`. `buildMergePatch` is the inverse of the path walk: it wraps a chosen value back into
+the nested RFC 7396 body that sets that one field.
+
+**One client per source, built from config.** `src/client/org-client.ts` holds `OrgClient` —
+`findByIdentifier` (the EIN lookup the widget starts from, since ids are assigned per system),
+`read`, and `patch`. It is constructed from a `SourceConfig` and a `TokenProvider`, with `fetch`
+injectable so tests stub the transport rather than the global. Reads are behind the same bearer
+guard as writes, so every call carries the token. Responses are parsed with
+`OrganizationBaseSchema`, so a non-conformant source fails at the boundary instead of leaking a
+half-built profile into the comparison grid; `patch` parses its response through `OrgRevisionSchema`
+the same way, since `PATCH /common-grants/orgs/{orgId}` returns `Responses.OkT<OrgRevision>` and the
+revision carries the post-change `snapshot`. Note that parsing coerces `createdAt`/`lastModifiedAt`
+to `Date` — the SDK's `UTCDateTimeSchema` is a `ZodTransform<Date, string>` — so a parsed revision
+is not identical to its wire form. Every failure — error envelope, unreachable host, missing
+envelope, schema mismatch — surfaces as an `OrgClientError` carrying `sourceId`, `status`, and
+`errors`; the widget fans out across systems at once, so an error that cannot say which source it
+came from is one it cannot render. `patch` returns the envelope's `message` verbatim, because that
+sentence is where a system names the fields it declined to store. `StaticTokenProvider` is the
+demo's token source: a map of source id to bearer token.
+
+**Shared plain types** (`src/types.ts`) — `JsonValue`/`JsonObject` and `FieldComparison`, plus
+`SourceConfig` and `TokenProvider`. Deliberately Zod-free so app config and UI can import them
+without the schema layer. `SourceConfig.tokenUrl` is optional and currently ignored — the demo uses
+a static bearer token per source and `POST /token` is a later ticket.
 
 ## Conventions
 
