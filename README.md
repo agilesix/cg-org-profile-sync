@@ -12,7 +12,7 @@ organization moves offices, updates one system, and the other three quietly go s
 CommonGrants is an open protocol for grant data. Its org routes give every system one shared way
 to look up, read, and update an organization profile. If systems speak that contract, a small tool
 can read the profile from all of them at once, show where they disagree, and push the correct value
-back out. Nobody has to re-key anything.
+back out.
 
 This repo proves that in running code, not on a slide. Two independent systems each serve the org
 routes over their own drifted copy of a profile, and a widget reads both, compares them, and writes
