@@ -92,6 +92,19 @@ describe("compareProfiles", () => {
     expect(nameRow?.status).toBe("agree");
   });
 
+  it("agrees on every field when a single source is compared against nothing", () => {
+    const portal = {
+      name: "Riverside Community Health Center",
+      socials: { website: "https://riversidechc.test" },
+      addresses: { primary: { street1: "123 Main St", city: "Riverside" } },
+    } as Organization;
+
+    const rows = compareProfiles({ portal });
+
+    expect(rows.map((row) => row.status)).toEqual(["agree", "agree", "agree", "agree"]);
+    expect(rows.map((row) => row.distinctCount)).toEqual([1, 0, 1, 1]);
+  });
+
   it("marks a field agree when structurally equal objects hold their keys in a different order", () => {
     const portal = {
       addresses: {
@@ -113,6 +126,26 @@ describe("compareProfiles", () => {
         },
       },
     } as Organization;
+
+    const [addressRow] = compareProfiles({ portal, funderhub }, [
+      { path: "addresses.primary", label: "Primary address" },
+    ]);
+
+    expect(addressRow?.distinctCount).toBe(1);
+    expect(addressRow?.status).toBe("agree");
+  });
+
+  it("sorts keys at every depth, not just the top level of the object", () => {
+    const portal = {
+      addresses: {
+        primary: { city: "Riverside", extra: { a: "1", b: "2" } },
+      },
+    } as unknown as Organization;
+    const funderhub = {
+      addresses: {
+        primary: { extra: { b: "2", a: "1" }, city: "Riverside" },
+      },
+    } as unknown as Organization;
 
     const [addressRow] = compareProfiles({ portal, funderhub }, [
       { path: "addresses.primary", label: "Primary address" },
@@ -179,6 +212,20 @@ describe("buildMergePatch", () => {
 
     expect(applyMergePatch(profile, patch)).toEqual({
       addresses: { primary: { street1: "600 B Street", street2: "Suite 300" } },
+    });
+  });
+
+  it("deletes the field for real when the null body is applied", () => {
+    const profile = {
+      name: "Agile Six Applications, Inc.",
+      socials: { website: "https://agile6.com", linkedin: "https://linkedin.test/agilesix" },
+    } as JsonObject;
+
+    const patch = buildMergePatch("socials.website", null);
+
+    expect(applyMergePatch(profile, patch)).toEqual({
+      name: "Agile Six Applications, Inc.",
+      socials: { linkedin: "https://linkedin.test/agilesix" },
     });
   });
 });
