@@ -15,10 +15,12 @@ real and tested. The org route handlers are tested (`src/server/org-routes.test.
 token, over their own drifted seed. The comparison engine, the org client and the fan-out over both
 of them are written and tested, and `apps/link` now serves `GET /api/compare` and `POST /api/sync`
 for real against both systems over its source registry — so two systems _are_ read together, and a
-chosen value does reach them. What is still a scaffold is Link's **page**: `apps/link/+page.svelte`
-is untouched, so there is no UI on top of those routes yet, and `pnpm dev` working is still not the
-same as the demo working. Not started: the widget page itself, real auth (Google SSO + per-system
-JWTs), and `temelio-adapter`.
+chosen value does reach them — and `pnpm e2e` now proves it end to end: the `e2e/` Playwright
+workspace boots all three apps and drives Link's two routes against the real portal and funderhub,
+so the data exchange is pinned by a test rather than by a curl someone ran once. What is still a
+scaffold is Link's **page**: `apps/link/+page.svelte` is untouched, so there is no UI on top of
+those routes yet. Not started: the widget page itself, real auth (Google SSO + per-system JWTs),
+and `temelio-adapter`.
 
 **Running portal or funderhub needs a `.env`.** Copy each app's `.env.example` to `.env`
 (gitignored). `CG_ACCESS_TOKEN` is the bearer that app accepts on `/common-grants/*` — the guard
@@ -34,6 +36,12 @@ whose variable is unset is reported in the comparison as "no access token is con
 silently 401ing. Read per request via `$env/dynamic/private`, not at module load: on the Workers
 runtime the env is only populated inside a request, so a module-level read comes back empty.
 
+**`pnpm e2e` needs all three `.env` files**, since it drives the real servers. A missing one shows
+up as the reset fixture failing with a sentence naming the app, rather than as a spec that mystery-
+fails on an assertion. The suite itself holds no credentials: `/__test/reset` is gated by the env
+flag rather than the bearer, and Link's own routes are unauthenticated, so the tokens only ever
+matter server-side.
+
 ## Commands
 
 Run from the repo root. Everything is a pnpm workspace (`pnpm@11`, Node >= 22, `engine-strict`).
@@ -45,6 +53,7 @@ Run from the repo root. Everything is a pnpm workspace (`pnpm@11`, Node >= 22, `
 | `pnpm build`                        | Build every app and package                                                 |
 | `pnpm check`                        | Type-check every workspace (`tsc --noEmit`, or `svelte-check` for apps)     |
 | `pnpm test`                         | Run every package's Vitest suite                                            |
+| `pnpm e2e`                          | Playwright: boot all three apps and run the integration specs in `e2e/`     |
 | `pnpm lint`                         | ESLint the repo                                                             |
 | `pnpm format` / `pnpm format:check` | Prettier write / check                                                      |
 
@@ -54,6 +63,9 @@ Per-package work:
 - Run one test file / name: `pnpm --filter @cg-link/org-sync exec vitest run src/utils/merge-patch.test.ts` or add `-t "pattern"`. Watch mode: drop `run`.
 - Type-check one package: `pnpm --filter @cg-link/org-sync check`.
 - Regenerate a Worker's Cloudflare types after editing its `wrangler.jsonc`: `pnpm --filter @cg-link/portal gen` (writes `worker-configuration.d.ts`, which is gitignored from lint).
+- First `pnpm e2e` on a machine needs a browser: `pnpm --filter @cg-link/e2e install-browsers`.
+- Run one spec / name: `pnpm --filter @cg-link/e2e exec playwright test specs/api-sync.spec.ts -g "pattern"`. Add `--ui` for the inspector.
+- The e2e script is `e2e`, not `test`, deliberately — `pnpm test` is `pnpm -r run test`, and a `test` script here would boot three dev servers every time you ran the unit suite.
 
 ## Layout
 
@@ -62,6 +74,7 @@ Per-package work:
 - `apps/portal`, `apps/funderhub`, `apps/temelio-adapter`, `apps/link` — SvelteKit apps on the Cloudflare adapter, deployed as Workers. `portal`/`funderhub` are CommonGrants-native systems, `temelio-adapter` is a conformant proxy over a non-protocol vendor, `link` is the widget. `portal` and `funderhub` serve the org routes; `link` serves its own `/api/compare` and `/api/sync` fan-out routes but has no page yet; `temelio-adapter` is still a scaffold.
 - Wiring in `portal`/`funderhub` is the same seven files in each, differing only in seed, `source` name, and `unwritableFields`: `src/lib/server/store.ts` (module-level `MemoryOrgStore` + `OrgRoutesConfig`), `src/routes/common-grants/orgs/{+server.ts,[orgId]/+server.ts}`, `src/routes/__test/reset/+server.ts`, `src/hooks.server.ts` (bearer guard on `/common-grants/`), `.env.example`, and the route list on `src/routes/+page.svelte` — plus `@cg-link/seed` in `package.json`. Two app trees instead of one parameterised app is deliberate — the demo's story is two independent vendors that happen to speak the same contract.
 - Wiring in `link` is four files: `src/lib/server/sources.ts` (the `SourceConfig[]` registry and the per-request `tokenProvider()`), `src/routes/api/{compare,sync}/+server.ts` (thin — validate with a small Zod schema, call the fan-out, `json()` the result), and `src/lib/api-types.ts` (type-only re-exports so the page and the e2e specs name one type). Adding a third system is an entry in `sources.ts` and a token in `.env`; no route changes.
+- `e2e` (`@cg-link/e2e`) — the Playwright workspace, and the only test in the repo that runs the real apps. `playwright.config.ts` holds one `webServer` per app; `env.ts` holds the three origins; `fixtures.ts` holds the single automatic `api` fixture; `specs/` holds the specs. It is a root-level workspace, not under `packages/`, because it is not a package anything imports — `pnpm-workspace.yaml` lists `e2e` alongside the two globs.
 
 ## Architecture
 

@@ -8,3 +8,7 @@ build/
 !.env.example
 *.log
 .DS_Store
+
+# Playwright
+playwright-report/
+test-results/
