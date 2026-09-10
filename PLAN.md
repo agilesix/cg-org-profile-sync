@@ -227,7 +227,7 @@ Depends on: #1153-T2, #1153-T3, #1153-T4
   holding source tokens, which mirrors where a Plaid-style host keeps credentials. It also means
   Link's server is on the request path for every read, which is fine for a demo.
 
-### #1153-T6: Add the Playwright harness and Link API integration specs
+### #1153-T6: [✓] Add the Playwright harness and Link API integration specs
 
 Depends on: #1153-T5
 
