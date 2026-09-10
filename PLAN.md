@@ -195,7 +195,7 @@ No dependencies (pure functions over `Organization` and `FieldComparison`)
 - **Trade-offs**: A flat list of field specs instead of walking the whole schema. Adding a field is
   one line, which is the "then it's just engineering" story Billy wants to tell.
 
-### #1153-T5: Add Link's source registry and `/api/compare`, `/api/sync` routes
+### #1153-T5: [✓] Add Link's source registry and `/api/compare`, `/api/sync` routes
 
 Depends on: #1153-T2, #1153-T3, #1153-T4
 
