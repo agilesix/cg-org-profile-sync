@@ -12,12 +12,33 @@
  * the seed even though none of them ask for `api`.
  */
 
-import { AGILE_SIX_EIN, PORTAL_SEED } from "@cg-link/seed";
+import { AGILE_SIX_EIN, FUNDERHUB_SEED, PORTAL_SEED } from "@cg-link/seed";
 import type { Page } from "@playwright/test";
 import { expect, test } from "../fixtures.js";
 
-const PORTAL_STREET2 = "Suite 300";
-const FUNDERHUB_STREET2 = "Suite 210";
+/**
+ * A seed value the assertions below are meaningless without.
+ *
+ * `toContainText("")` passes against anything, so a seed that quietly lost its
+ * website would turn the website spec into a test of nothing. Throwing at
+ * import time fails the whole file with the reason instead — the same trap
+ * `fixtures.ts:valueHeldBy` exists to close, one level up.
+ */
+function required(value: string | undefined, what: string): string {
+  if (!value) {
+    throw new Error(`the seed no longer carries ${what}, so this spec cannot assert on it`);
+  }
+
+  return value;
+}
+
+const PORTAL_ADDRESS = PORTAL_SEED.addresses?.primary;
+const PORTAL_STREET2 = required(PORTAL_ADDRESS?.street2, "portal's suite number");
+const PORTAL_WEBSITE = required(PORTAL_SEED.socials?.website, "portal's website");
+const FUNDERHUB_STREET2 = required(
+  FUNDERHUB_SEED.addresses?.primary?.street2,
+  "funderhub's suite number",
+);
 
 /**
  * Open the widget and wait for the browser to have taken it over.
@@ -53,7 +74,12 @@ test("the grid opens on the seeded org, with the address row marked as the disag
 
   // Rendered as a line someone can read, not as a JSON blob.
   await expect(page.getByTestId("cell-addresses.primary-portal")).toContainText(
-    `600 B Street, ${PORTAL_STREET2}, San Diego, CA, 92101`,
+    [
+      PORTAL_ADDRESS?.street1,
+      PORTAL_STREET2,
+      `${PORTAL_ADDRESS?.city}, ${PORTAL_ADDRESS?.stateOrProvince}`,
+      PORTAL_ADDRESS?.postalCode,
+    ].join(", "),
   );
   await expect(page.getByTestId("cell-addresses.primary-funderhub")).toContainText(
     FUNDERHUB_STREET2,
@@ -101,7 +127,10 @@ test("choosing portal's address and syncing turns the row from differs to agree"
   await expect(result).toHaveAttribute("data-ok", "true");
 
   // A result line is only published once the grid behind it has been re-read,
-  // so these assertions are about the post-sync state, not a stale paint.
+  // and a re-read that failed would say so here. Without this the next two
+  // assertions could be describing a pre-sync paint.
+  await expect(page.getByTestId("problem")).toHaveCount(0);
+
   await expect(row).toHaveAttribute("data-status", "agree");
   await expect(page.getByTestId("cell-addresses.primary-funderhub")).toContainText(PORTAL_STREET2);
 });
@@ -122,11 +151,13 @@ test("pushing portal's website reports what funderhub declined, and the row is u
   await expect(result).toContainText("does not store");
   await expect(result).toContainText("socials");
 
+  // "The row is unchanged" is exactly what a failed re-read would also show,
+  // so rule that out before claiming it.
+  await expect(page.getByTestId("problem")).toHaveCount(0);
+
   // And the grid says the same thing: portal still holds the website, and
   // funderhub still holds nothing.
-  await expect(page.getByTestId("cell-socials.website-portal")).toContainText(
-    PORTAL_SEED.socials?.website ?? "",
-  );
+  await expect(page.getByTestId("cell-socials.website-portal")).toContainText(PORTAL_WEBSITE);
   await expect(page.getByTestId("cell-socials.website-funderhub")).toHaveAttribute(
     "data-held",
     "false",

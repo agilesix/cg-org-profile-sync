@@ -21,7 +21,7 @@
   let { results, labels }: Props = $props();
 </script>
 
-<ul data-testid="sync-results">
+<ul data-testid="sync-results" aria-live="polite">
   {#each results as result (result.id)}
     <li data-testid="sync-result-{result.id}" data-ok={result.ok}>
       <span class="who">{labels[result.id] ?? result.id}</span>

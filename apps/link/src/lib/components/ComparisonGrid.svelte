@@ -13,7 +13,7 @@
 
 <script lang="ts">
   import type { CompareResult, JsonValue, SourceResolution } from "$lib/api-types.js";
-  import { formatValue, type Selection } from "$lib/demo.js";
+  import { formatFieldValue, type Selection } from "$lib/demo.js";
 
   interface Props {
     /** The latest fan-out read, in registry order. */
@@ -79,7 +79,8 @@
             data-selected={isPicked(field.path, source.id)}
           >
             {#if value === undefined}
-              <span class="absent" aria-label="not held">—</span>
+              <span class="absent" aria-hidden="true">—</span>
+              <span class="visually-hidden">Not held</span>
             {:else}
               <button
                 type="button"
@@ -87,7 +88,10 @@
                 aria-pressed={isPicked(field.path, source.id)}
                 onclick={() => onpick(field.path, field.label, source.id, value)}
               >
-                {formatValue(value)}
+                <!-- A held value can still render as nothing: an address whose
+                     every printable part is blank. Naming it keeps the button
+                     from being an unlabelled target. -->
+                {formatFieldValue(value) || "(empty)"}
               </button>
             {/if}
           </td>
@@ -158,6 +162,14 @@
   }
   .absent {
     color: #9aa8a5;
+  }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   button {
     font: inherit;

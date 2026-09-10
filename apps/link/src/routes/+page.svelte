@@ -20,7 +20,7 @@
   } from "$lib/api-types.js";
   import ComparisonGrid from "$lib/components/ComparisonGrid.svelte";
   import SyncResults from "$lib/components/SyncResults.svelte";
-  import { formatValue, type Selection } from "$lib/demo.js";
+  import { formatFieldValue, type Selection } from "$lib/demo.js";
   import type { PageData } from "./$types.js";
 
   let { data }: { data: PageData } = $props();
@@ -39,10 +39,10 @@
   /** What the lookup field holds, which is not the same as what is loaded. */
   let einInput = $state(untrack(() => data.id));
 
-  let comparison = $state<CompareResult>(untrack(() => data.comparison));
+  let comparison = $state.raw<CompareResult>(untrack(() => data.comparison));
   let selection = $state<Selection | null>(null);
   let targets = $state<string[]>([]);
-  let results = $state<SyncTargetResult[] | null>(null);
+  let results = $state.raw<SyncTargetResult[] | null>(null);
 
   /** One flag for both requests: neither should overlap itself or the other. */
   let busy = $state(false);
@@ -75,7 +75,20 @@
     ),
   );
 
-  const canSync = $derived(selection !== null && targets.length > 0 && !busy);
+  /**
+   * The targets a sync would actually go to.
+   *
+   * `targets` is what the person checked; `candidates` is what is reachable
+   * *now*. A refresh in between can drop a system out — it stops answering,
+   * or turns out to hold no record — and a check box for a system that is no
+   * longer offered must not still be able to send it a patch. Intersecting
+   * the two is what keeps the Sync button honest about what it will do.
+   */
+  const chosen = $derived(
+    targets.filter((target) => candidates.some((source) => source.id === target)),
+  );
+
+  const canSync = $derived(selection !== null && chosen.length > 0 && !busy);
 
   /**
    * Take a source's value as the correct one.
@@ -108,31 +121,47 @@
   }
 
   /**
-   * Re-read every system through Link's own route.
+   * Read one org through Link's own route, and adopt it only if that worked.
+   *
+   * `registry`/`id` name the org the grid is showing, so they move together
+   * with `comparison` and only on success. Setting them first would leave a
+   * failed lookup claiming to be showing an org it is not — and a value picked
+   * off that stale grid would then be pushed under the new id, writing one
+   * organization's address onto another.
    *
    * Reports its own failures rather than throwing, because both callers would
-   * otherwise have to repeat the same handling — and a `fetch` that rejects
-   * (Link itself down, connection dropped) would leave the page showing stale
-   * data with no explanation while `busy` quietly cleared.
+   * otherwise repeat the same handling, and a `fetch` that rejects (Link
+   * itself down, connection dropped) would leave the page on stale data with
+   * no explanation while `busy` quietly cleared.
    *
    * A source that is down is not this: that comes back inside a 200 and is
    * rendered as a column in an error state.
    */
-  async function refresh(): Promise<void> {
-    const query = new URLSearchParams({ registry, id });
+  async function load(nextRegistry: string, nextId: string): Promise<boolean> {
+    const query = new URLSearchParams({ registry: nextRegistry, id: nextId });
 
     try {
       const response = await fetch(`/api/compare?${query}`);
 
       if (!response.ok) {
         problem = `Reading the systems failed (${response.status}).`;
-        return;
+        return false;
       }
 
       comparison = (await response.json()) as CompareResult;
+      registry = nextRegistry;
+      id = nextId;
+
+      return true;
     } catch (cause) {
       problem = `The systems could not be read: ${describe(cause)}`;
+      return false;
     }
+  }
+
+  /** Re-read the org already on screen. */
+  function refresh(): Promise<boolean> {
+    return load(registry, id);
   }
 
   /**
@@ -147,7 +176,6 @@
     event.preventDefault();
     if (busy) return;
 
-    id = einInput.trim();
     selection = null;
     targets = [];
     results = null;
@@ -155,7 +183,7 @@
     busy = true;
 
     try {
-      await refresh();
+      await load(registry, einInput.trim());
     } finally {
       busy = false;
     }
@@ -164,13 +192,14 @@
   /**
    * Send the picked value to every checked target, then re-read.
    *
-   * The result lines are published *after* the refresh, so a result line on
-   * screen means the grid beside it is already the post-change state. The
-   * specs wait on those lines rather than on a timeout, and this is what makes
-   * that wait sufficient.
+   * The result lines are published *after* the refresh, so a result line with
+   * no error beside it means the grid is already the post-change state. The
+   * specs wait on those lines rather than on a timeout, and that is what makes
+   * the wait sufficient — a refresh that failed says so, loudly, because
+   * otherwise the results would be describing a grid from before the change.
    */
   async function sync(): Promise<void> {
-    if (selection === null || targets.length === 0 || busy) return;
+    if (selection === null || chosen.length === 0 || busy) return;
 
     busy = true;
     results = null;
@@ -185,7 +214,7 @@
           id,
           path: selection.path,
           value: selection.value,
-          targets,
+          targets: chosen,
         }),
       });
 
@@ -196,8 +225,16 @@
         return;
       }
 
-      await refresh();
+      const refreshed = await refresh();
+
       results = (body as SyncResult).results;
+
+      if (!refreshed) {
+        // `load` has already said why it could not re-read. Say what that
+        // means for what is on screen: the write happened and the lines below
+        // are the systems' own answers, but the grid above them predates it.
+        problem = `${problem} The results below are what the systems said; the grid above them is from before the change.`;
+      }
     } catch (cause) {
       problem = `The sync could not be sent: ${describe(cause)}`;
     } finally {
@@ -230,7 +267,7 @@
     {:else}
       <p class="chosen" data-testid="selection">
         <span class="chosen-field">{selection.label}</span>
-        <span class="chosen-value">{formatValue(selection.value) || "(empty)"}</span>
+        <span class="chosen-value">{formatFieldValue(selection.value) || "(empty)"}</span>
         <span class="chosen-from">from {labels[selection.sourceId] ?? selection.sourceId}</span>
       </p>
 
@@ -261,7 +298,7 @@
     {/if}
 
     {#if problem}
-      <p class="problem" data-testid="problem">{problem}</p>
+      <p class="problem" role="status" data-testid="problem">{problem}</p>
     {/if}
 
     {#if results}
