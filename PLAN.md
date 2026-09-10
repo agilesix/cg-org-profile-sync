@@ -158,7 +158,7 @@ Depends on: #1153-T1 (for the 401 envelope and response shapes to test against)
 - **Trade-offs**: A hand-rolled client rather than generating one from the spec. Fine for four
   calls, and it keeps `@common-grants/sdk` usage limited to what it already models.
 
-### #1153-T4: Add the comparison engine and patch builder
+### #1153-T4: [✓] Add the comparison engine and patch builder
 No dependencies (pure functions over `Organization` and `FieldComparison`)
 - **Acceptance criteria**:
   - When given profiles from N sources and the demo's field list, then `compareProfiles` returns one
