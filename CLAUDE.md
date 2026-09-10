@@ -21,7 +21,9 @@ so the data exchange is pinned by a test rather than by a curl someone ran once.
 now the widget: `apps/link/+page.svelte` renders the comparison grid, picks a value, syncs it, and
 shows what each target said, and `e2e/specs/widget.spec.ts` drives that in a browser. Not started:
 real auth (Google SSO + per-system JWTs), the embed loader (the widget is a standalone page, not an
-iframe in a host app), and `temelio-adapter`.
+iframe in a host app), and `temelio-adapter`. `README.md` is the runbook for someone new: ports,
+the `.env` step, `curl` against each system, what the two test suites prove, and the demo click
+path. Keep it in step with the code — it is the document the demo is run from.
 
 **Running portal or funderhub needs a `.env`.** Copy each app's `.env.example` to `.env`
 (gitignored). `CG_ACCESS_TOKEN` is the bearer that app accepts on `/common-grants/*` — the guard
