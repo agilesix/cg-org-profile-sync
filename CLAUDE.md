@@ -13,7 +13,7 @@ they disagree, and pushes corrections back. The build plan lives outside this re
 real and tested. The org route handlers are now tested (`src/server/org-routes.test.ts`) and carry a
 static bearer guard and a store reset, and the comparison engine and org client are written and
 tested — but none of it is wired into any app yet; all four apps currently serve a placeholder page
-listing the routes they *will* expose. `pnpm dev` working is not the same as the demo working. Not
+listing the routes they _will_ expose. `pnpm dev` working is not the same as the demo working. Not
 started: the source registry, the widget itself, real auth (Google SSO + per-system JWTs), and
 `temelio-adapter`.
 
@@ -21,15 +21,15 @@ started: the source registry, the widget itself, real auth (Google SSO + per-sys
 
 Run from the repo root. Everything is a pnpm workspace (`pnpm@11`, Node >= 22, `engine-strict`).
 
-| Command | What it does |
-| --- | --- |
-| `pnpm install` | Install all workspaces |
-| `pnpm dev` | Run every app in parallel (`--no-bail`, so one crash doesn't stop the rest) |
-| `pnpm build` | Build every app and package |
-| `pnpm check` | Type-check every workspace (`tsc --noEmit`, or `svelte-check` for apps) |
-| `pnpm test` | Run every package's Vitest suite |
-| `pnpm lint` | ESLint the repo |
-| `pnpm format` / `pnpm format:check` | Prettier write / check |
+| Command                             | What it does                                                                |
+| ----------------------------------- | --------------------------------------------------------------------------- |
+| `pnpm install`                      | Install all workspaces                                                      |
+| `pnpm dev`                          | Run every app in parallel (`--no-bail`, so one crash doesn't stop the rest) |
+| `pnpm build`                        | Build every app and package                                                 |
+| `pnpm check`                        | Type-check every workspace (`tsc --noEmit`, or `svelte-check` for apps)     |
+| `pnpm test`                         | Run every package's Vitest suite                                            |
+| `pnpm lint`                         | ESLint the repo                                                             |
+| `pnpm format` / `pnpm format:check` | Prettier write / check                                                      |
 
 Per-package work:
 
@@ -72,7 +72,7 @@ depend on the interface so a D1-backed store can replace it without the handlers
 **Schemas are hand-written Zod, checked against the protocol's own fixtures.** The org models live
 in `src/schemas/zod/` (`types.ts` → `fields.ts` → `models.ts` → `patch.ts`, re-exported through
 `schemas/index.ts`). Rather than diffing shapes against the spec's emitted JSON Schema, conformance
-is verified by *behaviour*: `schemas/conformance.test.ts` loads
+is verified by _behaviour_: `schemas/conformance.test.ts` loads
 `schemas/__fixtures__/protocol-orgs.json` (copied verbatim from the CommonGrants repo) and asserts
 every published record parses, plus a corpus of records that each break a documented rule must fail.
 Refresh the fixture from the protocol repo when the spec moves. The fixtures still carry pre-v0.4.0
@@ -82,7 +82,7 @@ old-sender/new-receiver behaviour.
 **The patch schema is derived, not hand-written.** `patch.ts`'s `toMergePatch()` rewrites a Zod
 object into its RFC 7396 form (every property optional + nullable, recursively) so the patch models
 can't drift from the base models. Distinct from `src/utils/merge-patch.ts`'s `applyMergePatch`,
-which *applies* a patch to a value. `updateOrg` uses both: validate the incoming body against the
+which _applies_ a patch to a value. `updateOrg` uses both: validate the incoming body against the
 patch schema, apply it, then re-validate the result against `OrganizationBaseSchema` before storing.
 `id` is always forced back to the existing value — a patch can never move a record.
 
