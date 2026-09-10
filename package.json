@@ -15,6 +15,7 @@
     "build": "pnpm -r run build",
     "check": "pnpm -r run check",
     "test": "pnpm -r run test",
+    "e2e": "pnpm --filter @cg-link/e2e run e2e",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

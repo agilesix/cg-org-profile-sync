@@ -1,0 +1,20 @@
+{
+  "name": "@cg-link/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Playwright integration and end-to-end specs run against the three demo apps",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "e2e": "playwright test",
+    "install-browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@cg-link/org-sync": "workspace:*",
+    "@cg-link/seed": "workspace:*",
+    "@playwright/test": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

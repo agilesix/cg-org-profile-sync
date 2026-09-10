@@ -29,6 +29,8 @@ export default ts.config(
       "**/.svelte-kit/**",
       "**/.wrangler/**",
       "**/worker-configuration.d.ts",
+      "e2e/playwright-report/**",
+      "e2e/test-results/**",
     ],
   },
 );

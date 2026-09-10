@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - apps/*
+  - e2e
 
 allowBuilds:
   esbuild: true
@@ -9,9 +10,11 @@ allowBuilds:
 catalog:
   "@cloudflare/workers-types": ^5.20260906.1
   "@common-grants/sdk": ^0.7.2
+  "@playwright/test": ^1.63.0
   "@sveltejs/adapter-cloudflare": ^7.2.9
   "@sveltejs/kit": ^2.70.3
   "@sveltejs/vite-plugin-svelte": ^7.3.0
+  "@types/node": ^22.20.2
   jose: ^6.2.12
   svelte: ^5.57.0
   svelte-check: ^4.7.6
@@ -23,6 +26,7 @@ catalog:
 
 minimumReleaseAgeExclude:
   - jose@6.2.12
+  - "@types/node@22.20.2"
 
 onlyBuiltDependencies:
   - esbuild
