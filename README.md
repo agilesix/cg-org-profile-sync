@@ -32,8 +32,7 @@ receive it, and sync. Each system gets a JSON Merge Patch that changes only that
 ![After syncing GrantPortal's address to FunderHub, the row agrees and FunderHub reports the change was applied](docs/screenshots/3-synced.png)
 
 **Find out what a system could not store.** A system that does not model a field accepts the
-change, drops the field, and says so. The widget shows that sentence word for word, so you know the
-value went to the systems that can hold it and no further.
+change, drops the field, and says so. 
 
 ![Pushing the website to FunderHub: accepted, with the message that this system does not store socials](docs/screenshots/4-declined.png)
 
