@@ -96,7 +96,7 @@ against Link's fan-out routes and browser end-to-end specs against the widget.
   honest as a future ticket. The reset route is test-only code in the library; it is small, clearly
   named, and inert unless an app mounts it.
 
-### #1153-T2: Wire the org routes into GrantPortal and FunderHub
+### #1153-T2: [✓] Wire the org routes into GrantPortal and FunderHub
 
 Depends on: #1153-T1
 

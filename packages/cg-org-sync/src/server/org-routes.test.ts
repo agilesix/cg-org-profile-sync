@@ -89,6 +89,48 @@ describe("listOrgs", () => {
     expect(body.status).toBe(400);
   });
 
+  it("rejects an id filter that is missing its registry", async () => {
+    const store = new MemoryOrgStore([PORTAL_SEED]);
+
+    const response = await listOrgs(
+      new URL(`https://example.com/common-grants/orgs?id=${AGILE_SIX_EIN}`),
+      { store, source: "portal" },
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("returns the requested slice when a page and pageSize narrow the results", async () => {
+    const store = new MemoryOrgStore([PORTAL_SEED, FUNDERHUB_SEED]);
+
+    const response = await listOrgs(
+      new URL("https://example.com/common-grants/orgs?page=2&pageSize=1"),
+      { store, source: "portal" },
+    );
+    const body = await response.json();
+
+    expect(body.items).toEqual([FUNDERHUB_SEED]);
+    expect(body.paginationInfo).toEqual({
+      page: 2,
+      pageSize: 1,
+      totalItems: 2,
+      totalPages: 2,
+    });
+  });
+
+  it("returns no items for a page past the end, still reporting the true total", async () => {
+    const store = new MemoryOrgStore([PORTAL_SEED, FUNDERHUB_SEED]);
+
+    const response = await listOrgs(
+      new URL("https://example.com/common-grants/orgs?page=9&pageSize=1"),
+      { store, source: "portal" },
+    );
+    const body = await response.json();
+
+    expect(body.items).toEqual([]);
+    expect(body.paginationInfo.totalItems).toBe(2);
+  });
+
   it("falls back to the first page when page and pageSize are not positive integers", async () => {
     const store = new MemoryOrgStore([PORTAL_SEED, FUNDERHUB_SEED]);
 
@@ -149,6 +191,24 @@ describe("updateOrg", () => {
 
     expect(stored?.id).toBe(PORTAL_ORG_ID);
     expect(stored?.mission).toBe(patch.mission);
+  });
+
+  it("leaves keys the schema does not know sitting on the stored record", async () => {
+    // Pre-v0.4.0 senders put the EIN at the top level. Reads tolerate that, and
+    // an unrelated patch must not be what finally deletes it.
+    const legacy = { ...structuredClone(PORTAL_SEED), ein: AGILE_SIX_EIN };
+    const store = new MemoryOrgStore([legacy as typeof PORTAL_SEED]);
+    const config: OrgRoutesConfig = { store, source: "portal" };
+
+    const request = patchRequest(PORTAL_ORG_ID, { mission: "A new mission statement." });
+    const response = await updateOrg(PORTAL_ORG_ID, request, config);
+    const body = await response.json();
+
+    expect(body.data.snapshot.ein).toBe(AGILE_SIX_EIN);
+    expect(await store.read(PORTAL_ORG_ID)).toEqual({
+      ...legacy,
+      mission: "A new mission statement.",
+    });
   });
 
   it("drops an unwritable field, applies the rest, and names the drop in the message", async () => {

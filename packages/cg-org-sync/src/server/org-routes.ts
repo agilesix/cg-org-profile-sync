@@ -21,6 +21,11 @@ export interface OrgRoutesConfig {
    * A patch that sets one is not an error. The field is dropped and named in
    * the response message, so the sender learns the value went no further rather
    * than assuming it landed.
+   *
+   * Top-level keys only — `socials`, not `socials.website`. A dotted path here
+   * matches nothing and drops nothing, silently. Declining a whole field is all
+   * the demo needs; declining one leaf of it wants a path walk that does not
+   * exist yet.
    */
   unwritableFields?: readonly string[];
 }
@@ -63,8 +68,12 @@ export async function readOrg(orgId: string, config: OrgRoutesConfig): Promise<R
 /**
  * `PATCH /common-grants/orgs/{orgId}`
  *
- * Applies a JSON Merge Patch and returns the change as an accepted revision,
- * carrying both the patch that was sent and a snapshot of the result.
+ * Applies a JSON Merge Patch and returns the change as an accepted revision.
+ *
+ * The revision echoes the patch this system actually applied, not the one that
+ * arrived: anything named in `unwritableFields` has already been removed. That
+ * is deliberate — diffing the echo against what it sent is how a client detects
+ * a dropped field programmatically, rather than parsing it out of `message`.
  */
 export async function updateOrg(
   orgId: string,
@@ -115,7 +124,12 @@ export async function updateOrg(
     ]);
   }
 
-  const stored = await config.store.write(validated.data as Organization);
+  // Store `updated`, not `validated.data`. The schemas strip unknown keys, so
+  // storing the parse output would let any patch quietly delete whatever an
+  // older sender left on the record — the opposite of the tolerance the read
+  // path shows it. The parse is a gate here, not a filter; nothing in the org
+  // schemas coerces or defaults, so the two differ only by what was stripped.
+  const stored = await config.store.write(updated as Organization);
   const now = new Date().toISOString();
 
   return ok(
