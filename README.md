@@ -6,7 +6,7 @@ using the [CommonGrants](https://commongrants.org) v0.4.0 organization routes.
 ## Why this exists
 
 A nonprofit applies to many funders, and every funder's system holds its own copy of the same
-organization profile: legal name, EIN, address, website. Nobody keeps those copies in step. The
+organization profile-- e.g. legal name, EIN, address, website. Nobody keeps those copies in step. The
 organization moves offices, updates one system, and the other three quietly go stale.
 
 CommonGrants is an open protocol for grant data. Its org routes give every system one shared way
