@@ -14,10 +14,9 @@ to look up, read, and update an organization profile. If systems speak that cont
 can read the profile from all of them at once, show where they disagree, and push the correct value
 back out.
 
-This repo proves that in running code, not on a slide. Two independent systems each serve the org
+This repo proves that! Two independent systems each serve the org
 routes over their own drifted copy of a profile, and a widget reads both, compares them, and writes
-back. The whole exchange is covered by browser tests, so it is a claim the test suite makes rather
-than one a person did once.
+back. The whole exchange is covered by browser tests.
 
 ## What you can do with it
 
