@@ -10,11 +10,19 @@ systems each hold a nonprofit's profile; the copies drift; a widget reads all of
 they disagree, and pushes corrections back. The build plan lives outside this repo — ask Billy.
 
 **The project is early.** The workspace, shared schema layer, `applyMergePatch`, and seed data are
-real and tested. The org route handlers are now tested (`src/server/org-routes.test.ts`) and carry a
-static bearer guard and a store reset, but they are still not wired into any app — all four apps
-currently serve a placeholder page listing the routes they _will_ expose. `pnpm dev` working is not
+real and tested. The org route handlers are tested (`src/server/org-routes.test.ts`) and now wired
+into `apps/portal` and `apps/funderhub`: both serve the three org routes for real, behind a static
+bearer token, over their own drifted seed. `apps/link` and `apps/temelio-adapter` are still
+placeholder pages. Nothing yet reads the two systems together, so `pnpm dev` working is still not
 the same as the demo working. Not started: comparison engine, org client, source registry, the
 widget itself, real auth (Google SSO + per-system JWTs), and `temelio-adapter`.
+
+**Running portal or funderhub needs a `.env`.** Copy each app's `.env.example` to `.env`
+(gitignored). `CG_ACCESS_TOKEN` is the bearer that app accepts on `/common-grants/*` — the guard
+fails closed, so without it every request 401s. `ENABLE_TEST_ROUTES=true` mounts `POST /__test/reset`,
+which re-seeds that system's store; unset, the route 404s. Both are read through
+`$env/dynamic/private`, so `svelte-check` does not need them present. Keep `ENABLE_TEST_ROUTES` out
+of `wrangler.jsonc` `vars` so a deploy can never turn it on.
 
 ## Commands
 
@@ -41,7 +49,8 @@ Per-package work:
 
 - `packages/cg-org-sync` (`@cg-link/org-sync`) — the shared library. Schemas, server route handlers, store, and (planned) client/token helpers. Consumed by everything else. Subpath exports: `./schemas`, `./server`, `./utils`, `./types`, `./client` (client not yet written).
 - `packages/seed` (`@cg-link/seed`) — seed org profiles for the demo, deliberately inconsistent across systems.
-- `apps/portal`, `apps/funderhub`, `apps/temelio-adapter`, `apps/link` — SvelteKit apps on the Cloudflare adapter, deployed as Workers. `portal`/`funderhub` are CommonGrants-native systems, `temelio-adapter` is a conformant proxy over a non-protocol vendor, `link` is the widget. All four are currently scaffolds.
+- `apps/portal`, `apps/funderhub`, `apps/temelio-adapter`, `apps/link` — SvelteKit apps on the Cloudflare adapter, deployed as Workers. `portal`/`funderhub` are CommonGrants-native systems, `temelio-adapter` is a conformant proxy over a non-protocol vendor, `link` is the widget. `portal` and `funderhub` serve the org routes; `link` and `temelio-adapter` are still scaffolds.
+- Wiring in `portal`/`funderhub` is the same seven files in each, differing only in seed, `source` name, and `unwritableFields`: `src/lib/server/store.ts` (module-level `MemoryOrgStore` + `OrgRoutesConfig`), `src/routes/common-grants/orgs/{+server.ts,[orgId]/+server.ts}`, `src/routes/__test/reset/+server.ts`, `src/hooks.server.ts` (bearer guard on `/common-grants/`), `.env.example`, and the route list on `src/routes/+page.svelte` — plus `@cg-link/seed` in `package.json`. Two app trees instead of one parameterised app is deliberate — the demo's story is two independent vendors that happen to speak the same contract.
 
 ## Architecture
 
@@ -63,7 +72,7 @@ is **not** an error — the field is dropped and named in the response message, 
 the value went no further (top-level keys only — `socials`, not `socials.website`). `updateOrg`
 validates the patched result but stores the _unvalidated_ object, because the schemas strip unknown
 keys and a patch must never be what deletes what an older sender left behind. Each app is expected
-to import these handlers and wire them to its own routes (not done yet).
+to import these handlers and wire them to its own routes; `portal` and `funderhub` do.
 
 **Auth is a static per-system bearer token.** `requireBearer(request, expectedToken)`
 (`server/auth.ts`) returns a 401 envelope or `undefined`, so a SvelteKit hook reads as

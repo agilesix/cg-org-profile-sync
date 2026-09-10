@@ -83,6 +83,9 @@ importers:
       '@cg-link/org-sync':
         specifier: workspace:*
         version: link:../../packages/cg-org-sync
+      '@cg-link/seed':
+        specifier: workspace:*
+        version: link:../../packages/seed
     devDependencies:
       '@sveltejs/adapter-cloudflare':
         specifier: 'catalog:'
@@ -145,6 +148,9 @@ importers:
       '@cg-link/org-sync':
         specifier: workspace:*
         version: link:../../packages/cg-org-sync
+      '@cg-link/seed':
+        specifier: workspace:*
+        version: link:../../packages/seed
     devDependencies:
       '@sveltejs/adapter-cloudflare':
         specifier: 'catalog:'
