@@ -12,7 +12,8 @@
     "gen": "wrangler types"
   },
   "dependencies": {
-    "@cg-link/org-sync": "workspace:*"
+    "@cg-link/org-sync": "workspace:*",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@sveltejs/adapter-cloudflare": "catalog:",

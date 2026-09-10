@@ -210,7 +210,11 @@ describe("patch", () => {
 
     const result = await client.patch(PORTAL_ORG_ID, mergePatch);
 
-    expect(result).toEqual({ revision: asParsed(accepted), message: "Change applied" });
+    expect(result).toEqual({
+      revision: asParsed(accepted),
+      message: "Change applied",
+      status: 200,
+    });
   });
 
   it("surfaces a skipped-field message verbatim", async () => {
@@ -334,7 +338,11 @@ describe("patch", () => {
 
     const result = await client.patch(PORTAL_ORG_ID, mergePatch);
 
-    expect(result).toEqual({ revision: asParsed(minimal), message: "Change applied" });
+    expect(result).toEqual({
+      revision: asParsed(minimal),
+      message: "Change applied",
+      status: 200,
+    });
   });
 });
 

@@ -12,10 +12,12 @@ they disagree, and pushes corrections back. The build plan lives outside this re
 **The project is early.** The workspace, shared schema layer, `applyMergePatch`, and seed data are
 real and tested. The org route handlers are tested (`src/server/org-routes.test.ts`) and wired into
 `apps/portal` and `apps/funderhub`: both serve the three org routes for real, behind a static bearer
-token, over their own drifted seed. The comparison engine and the org client are written and tested
-but not yet called by anything. `apps/link` and `apps/temelio-adapter` are still placeholder pages,
-so nothing reads the two systems together yet — `pnpm dev` working is still not the same as the demo
-working. Not started: the source registry, the widget itself, real auth (Google SSO + per-system
+token, over their own drifted seed. The comparison engine, the org client and the fan-out over both
+of them are written and tested, and `apps/link` now serves `GET /api/compare` and `POST /api/sync`
+for real against both systems over its source registry — so two systems _are_ read together, and a
+chosen value does reach them. What is still a scaffold is Link's **page**: `apps/link/+page.svelte`
+is untouched, so there is no UI on top of those routes yet, and `pnpm dev` working is still not the
+same as the demo working. Not started: the widget page itself, real auth (Google SSO + per-system
 JWTs), and `temelio-adapter`.
 
 **Running portal or funderhub needs a `.env`.** Copy each app's `.env.example` to `.env`
@@ -24,6 +26,13 @@ fails closed, so without it every request 401s. `ENABLE_TEST_ROUTES=true` mounts
 which re-seeds that system's store; unset, the route 404s. Both are read through
 `$env/dynamic/private`, so `svelte-check` does not need them present. Keep `ENABLE_TEST_ROUTES` out
 of `wrangler.jsonc` `vars` so a deploy can never turn it on.
+
+**Link needs a `.env` too.** `apps/link/.env.example` holds `PORTAL_ACCESS_TOKEN` and
+`FUNDERHUB_ACCESS_TOKEN` — one per source, and each must match that system's own
+`CG_ACCESS_TOKEN`, since a token minted for one system is meant to be useless at another. A source
+whose variable is unset is reported in the comparison as "no access token is configured" rather than
+silently 401ing. Read per request via `$env/dynamic/private`, not at module load: on the Workers
+runtime the env is only populated inside a request, so a module-level read comes back empty.
 
 ## Commands
 
@@ -50,8 +59,9 @@ Per-package work:
 
 - `packages/cg-org-sync` (`@cg-link/org-sync`) — the shared library. Schemas, server route handlers, store, client, and (planned) token helpers. Consumed by everything else. Subpath exports: `./schemas`, `./server`, `./utils`, `./types`, `./client`.
 - `packages/seed` (`@cg-link/seed`) — seed org profiles for the demo, deliberately inconsistent across systems.
-- `apps/portal`, `apps/funderhub`, `apps/temelio-adapter`, `apps/link` — SvelteKit apps on the Cloudflare adapter, deployed as Workers. `portal`/`funderhub` are CommonGrants-native systems, `temelio-adapter` is a conformant proxy over a non-protocol vendor, `link` is the widget. `portal` and `funderhub` serve the org routes; `link` and `temelio-adapter` are still scaffolds.
+- `apps/portal`, `apps/funderhub`, `apps/temelio-adapter`, `apps/link` — SvelteKit apps on the Cloudflare adapter, deployed as Workers. `portal`/`funderhub` are CommonGrants-native systems, `temelio-adapter` is a conformant proxy over a non-protocol vendor, `link` is the widget. `portal` and `funderhub` serve the org routes; `link` serves its own `/api/compare` and `/api/sync` fan-out routes but has no page yet; `temelio-adapter` is still a scaffold.
 - Wiring in `portal`/`funderhub` is the same seven files in each, differing only in seed, `source` name, and `unwritableFields`: `src/lib/server/store.ts` (module-level `MemoryOrgStore` + `OrgRoutesConfig`), `src/routes/common-grants/orgs/{+server.ts,[orgId]/+server.ts}`, `src/routes/__test/reset/+server.ts`, `src/hooks.server.ts` (bearer guard on `/common-grants/`), `.env.example`, and the route list on `src/routes/+page.svelte` — plus `@cg-link/seed` in `package.json`. Two app trees instead of one parameterised app is deliberate — the demo's story is two independent vendors that happen to speak the same contract.
+- Wiring in `link` is four files: `src/lib/server/sources.ts` (the `SourceConfig[]` registry and the per-request `tokenProvider()`), `src/routes/api/{compare,sync}/+server.ts` (thin — validate with a small Zod schema, call the fan-out, `json()` the result), and `src/lib/api-types.ts` (type-only re-exports so the page and the e2e specs name one type). Adding a third system is an entry in `sources.ts` and a token in `.env`; no route changes.
 
 ## Architecture
 
@@ -130,6 +140,21 @@ envelope, schema mismatch — surfaces as an `OrgClientError` carrying `sourceId
 came from is one it cannot render. `patch` returns the envelope's `message` verbatim, because that
 sentence is where a system names the fields it declined to store. `StaticTokenProvider` is the
 demo's token source: a map of source id to bearer token.
+
+**The fan-out is the library's job, not the route's.** `src/client/fanout.ts` holds
+`compareAcrossSources` and `syncToTargets`, the two things Link actually does, kept here because
+`apps/*` has no test harness and "one source is down but the rest still answer" is precisely the
+behaviour worth pinning. Both take a `FanoutOptions` — the registry, a `TokenProvider`, and an
+injectable `fetch` — so a source is configuration on the way in. Each source is handled in its own
+`try`/`catch` inside `Promise.all`, so no task can reject and one system failing costs only that
+system: it comes back with `orgId: null` and a reason, and the comparison is built from whoever
+answered. A source that is reachable but simply holds no matching record is **not** an error — it
+gets `orgId: null` with no `error`, because "no record of you" must not render as a conflict.
+`syncToTargets` builds the merge patch once, resolves each target's own org id (no two systems agree
+on ids), dedupes repeated targets so one change is not recorded twice, and reports each target
+separately as `{ ok, status, message }` — passing the target's own sentence through untouched, since
+that is where a system says which fields it declined. `null` is a legal value throughout: it is how
+RFC 7396 spells clearing a field.
 
 **Shared plain types** (`src/types.ts`) — `JsonValue`/`JsonObject` and `FieldComparison`, plus
 `SourceConfig` and `TokenProvider`. Deliberately Zod-free so app config and UI can import them
