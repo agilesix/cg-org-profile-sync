@@ -68,19 +68,44 @@ GET   /.well-known/jwks.json          this system's public keys
 
 ```bash
 pnpm install
+
+# Every app reads its secrets from a gitignored .env. Copy all three examples:
+cp apps/portal/.env.example apps/portal/.env
+cp apps/funderhub/.env.example apps/funderhub/.env
+cp apps/link/.env.example apps/link/.env
+
 pnpm dev
 ```
 
+**Do not skip the `.env` step.** Without them the apps boot and do nothing useful: portal and
+funderhub fail closed on their bearer guard, so every org route answers 401, and Link reports each
+source as "no access token is configured" instead of comparing anything.
+
+Each system's `CG_ACCESS_TOKEN` is the bearer it accepts, and Link holds one token per source —
+`PORTAL_ACCESS_TOKEN` and `FUNDERHUB_ACCESS_TOKEN` must each match that system's own value, since a
+token minted for one system is meant to be useless at another. Copying the three examples unchanged
+already lines them up. They are local placeholders; generate real secrets for anything that is not
+localhost.
+
+`ENABLE_TEST_ROUTES=true` in the two systems' `.env` mounts `POST /__test/reset`, which re-seeds
+that system's store between specs. Unset, the route 404s, which is what keeps it out of a deploy.
+
 ## Scripts
 
-| Command       | What it does                |
-| ------------- | --------------------------- |
-| `pnpm dev`    | Run every app in parallel   |
-| `pnpm build`  | Build every app and package |
-| `pnpm check`  | Type-check every workspace  |
-| `pnpm test`   | Run the test suites         |
-| `pnpm lint`   | Lint the repo               |
-| `pnpm format` | Format the repo             |
+| Command       | What it does                                                |
+| ------------- | ----------------------------------------------------------- |
+| `pnpm dev`    | Run every app in parallel                                   |
+| `pnpm build`  | Build every app and package                                 |
+| `pnpm check`  | Type-check every workspace                                  |
+| `pnpm test`   | Run the Vitest suites                                       |
+| `pnpm e2e`    | Playwright: boot all three apps and run the specs in `e2e/` |
+| `pnpm lint`   | Lint the repo                                               |
+| `pnpm format` | Format the repo                                             |
+
+`pnpm e2e` drives the real servers, so it needs all three `.env` files too — a missing one surfaces
+as the reset fixture failing with a sentence naming the app, rather than as a spec that fails on
+some unrelated assertion. The first run on a machine also needs a browser:
+`pnpm --filter @cg-link/e2e install-browsers`.
 
 ## License
 
