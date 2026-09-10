@@ -117,6 +117,9 @@ importers:
       '@cg-link/org-sync':
         specifier: workspace:*
         version: link:../../packages/cg-org-sync
+      zod:
+        specifier: 'catalog:'
+        version: 4.5.4
     devDependencies:
       '@sveltejs/adapter-cloudflare':
         specifier: 'catalog:'

@@ -1,5 +1,6 @@
 import type { Organization } from "../schemas/index.js";
 import type { FieldComparison, JsonObject, JsonValue } from "../types.js";
+import { isJsonObject } from "./json.js";
 
 /** One field the widget compares across sources. */
 export interface FieldSpec {
@@ -34,7 +35,7 @@ export function getAtPath(value: unknown, path: string): JsonValue | undefined {
   let current: unknown = value;
 
   for (const segment of path.split(".")) {
-    if (!isIndexable(current)) return undefined;
+    if (!isJsonObject(current)) return undefined;
     current = current[segment];
   }
 
@@ -105,7 +106,7 @@ function identityOf(value: JsonValue): string {
 /** Rewrite a JSON value with every object's keys in sorted order. */
 function withSortedKeys(value: JsonValue): JsonValue {
   if (Array.isArray(value)) return value.map(withSortedKeys);
-  if (!isIndexable(value)) return value;
+  if (!isJsonObject(value)) return value;
 
   const sorted: JsonObject = {};
   for (const key of Object.keys(value).sort()) {
@@ -114,14 +115,6 @@ function withSortedKeys(value: JsonValue): JsonValue {
     sorted[key] = withSortedKeys(inner);
   }
   return sorted;
-}
-
-/**
- * True for plain objects: the values a path walk descends into, and the ones
- * whose key order has to be normalized before comparing.
- */
-function isIndexable(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**

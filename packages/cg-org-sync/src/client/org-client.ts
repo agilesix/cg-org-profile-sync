@@ -18,6 +18,7 @@ import {
   type OrgRevision,
 } from "../schemas/index.js";
 import type { JsonObject, SourceConfig, TokenProvider } from "../types.js";
+import { isJsonObject } from "../utils/json.js";
 import { MERGE_PATCH_CONTENT_TYPE } from "../utils/merge-patch.js";
 
 /** Anything that went wrong talking to one source, tagged with which source. */
@@ -125,11 +126,13 @@ export class OrgClient {
    * The envelope's `message` comes back untouched because a system that cannot
    * store a field drops it and says so there rather than failing — the caller
    * needs that sentence to tell the person which parts of their change landed.
+   * The status comes back with it so a caller fanning out across systems can
+   * report what each one answered without assuming every success was a 200.
    */
   async patch(
     orgId: string,
     mergePatch: JsonObject,
-  ): Promise<{ revision: OrgRevision; message: string }> {
+  ): Promise<{ revision: OrgRevision; message: string; status: number }> {
     const { body, status } = await this.#request(this.#orgUrl(orgId), {
       method: "PATCH",
       headers: { "content-type": MERGE_PATCH_CONTENT_TYPE },
@@ -145,7 +148,7 @@ export class OrgClient {
       throw this.#notConformant("a message describing the change", status);
     }
 
-    return { revision, message };
+    return { revision, message, status };
   }
 
   /**
@@ -291,8 +294,4 @@ export class OrgClient {
       { status },
     );
   }
-}
-
-function isJsonObject(value: unknown): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

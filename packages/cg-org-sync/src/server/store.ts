@@ -51,8 +51,12 @@ export class MemoryOrgStore implements ResettableOrgStore {
   #orgs: Map<string, Organization>;
 
   constructor(seed: readonly Organization[]) {
-    this.#seed = seed;
-    this.#orgs = loadSeed(seed);
+    // Cloned on the way in, not just on the way out. `#seed` is what `reset()`
+    // restores from, and seeds are module-level constants shared between
+    // stores and tests — so a caller that mutates the array it handed over
+    // must not be able to change what a later reset puts back.
+    this.#seed = seed.map((org) => structuredClone(org));
+    this.#orgs = loadSeed(this.#seed);
   }
 
   async list(): Promise<Organization[]> {
@@ -77,7 +81,7 @@ export class MemoryOrgStore implements ResettableOrgStore {
 /**
  * Clone the seed into a fresh map.
  *
- * Cloning on every load rather than once in the constructor is what lets a
+ * Cloning on every load, and not only once in the constructor, is what lets a
  * store be reset repeatedly: the records it hands out never share a reference
  * with the seed, so a write cannot reach back and change what a later reset
  * restores.

@@ -77,3 +77,60 @@ export interface FieldComparison {
 export interface TokenProvider {
   tokenFor(sourceId: string): Promise<string>;
 }
+
+/**
+ * One source's standing in a comparison.
+ *
+ * Every configured source gets a row whether or not it contributed, because a
+ * widget that silently dropped an unreachable system would read as that system
+ * agreeing with the others.
+ */
+export interface SourceResolution {
+  /** The `SourceConfig.id` this row is about. */
+  id: string;
+
+  /** The `SourceConfig.label` to show for it. */
+  label: string;
+
+  /** The id this source assigned the org, or `null` if it holds no match. */
+  orgId: string | null;
+
+  /** Why this source contributed nothing. Absent when it did. */
+  error?: string;
+}
+
+/** What a fan-out read across every source produces. */
+export interface CompareResult {
+  /** Every enabled source, in registry order, whether or not it answered. */
+  sources: SourceResolution[];
+
+  /** One row per compared field, holding the value each source has. */
+  fields: FieldComparison[];
+}
+
+/** What happened when one target was asked to store a change. */
+export interface SyncTargetResult {
+  /** The `SourceConfig.id` this result is about. */
+  id: string;
+
+  /** Whether the target accepted the change. */
+  ok: boolean;
+
+  /** The status the target responded with; `null` if it never responded. */
+  status: number | null;
+
+  /**
+   * The target's own sentence about the change.
+   *
+   * Passed through verbatim on success, because a system that declines to store
+   * a field says so here rather than failing — that sentence is the only place
+   * the sender learns the value went no further.
+   */
+  message: string;
+}
+
+/** What a fan-out write across the chosen targets produces. */
+export interface SyncResult {
+  /** One result per requested target, in the order the request listed them. */
+  results: SyncTargetResult[];
+}

@@ -1,10 +1,4 @@
-import {
-  AGILE_SIX_EIN,
-  FUNDERHUB_ORG_ID,
-  FUNDERHUB_UNWRITABLE_FIELDS,
-  PORTAL_ORG_ID,
-  PORTAL_SEED,
-} from "@cg-link/seed";
+import { AGILE_SIX_EIN, PORTAL_ORG_ID, PORTAL_SEED } from "@cg-link/seed";
 import { describe, expect, it } from "vitest";
 import type { Organization } from "../schemas/index.js";
 import type { JsonObject, SourceConfig, TokenProvider } from "../types.js";
@@ -216,12 +210,19 @@ describe("patch", () => {
 
     const result = await client.patch(PORTAL_ORG_ID, mergePatch);
 
-    expect(result).toEqual({ revision: asParsed(accepted), message: "Change applied" });
+    expect(result).toEqual({
+      revision: asParsed(accepted),
+      message: "Change applied",
+      status: 200,
+    });
   });
 
   it("surfaces a skipped-field message verbatim", async () => {
+    // The client does not decide what a source will store, so the source here
+    // is the same one every other case uses; only the sentence coming back is
+    // the subject. It is worded the way a declining system words it.
     const mergePatch = buildMergePatch("yearFounded", 2015);
-    const message = `Change applied. This system does not store ${FUNDERHUB_UNWRITABLE_FIELDS.join(", ")}.`;
+    const message = "Change applied. This system does not store yearFounded.";
     const { fetch } = stubFetch(revisionEnvelope(message, revision({})));
     const client = new OrgClient({
       source: SOURCE,
@@ -229,7 +230,7 @@ describe("patch", () => {
       fetch,
     });
 
-    const result = await client.patch(FUNDERHUB_ORG_ID, mergePatch);
+    const result = await client.patch(PORTAL_ORG_ID, mergePatch);
 
     expect(result.message).toBe(message);
   });
@@ -337,7 +338,11 @@ describe("patch", () => {
 
     const result = await client.patch(PORTAL_ORG_ID, mergePatch);
 
-    expect(result).toEqual({ revision: asParsed(minimal), message: "Change applied" });
+    expect(result).toEqual({
+      revision: asParsed(minimal),
+      message: "Change applied",
+      status: 200,
+    });
   });
 });
 

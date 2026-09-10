@@ -20,6 +20,19 @@ describe("MemoryOrgStore", () => {
     expect(await store.list()).toEqual([PORTAL_SEED, FUNDERHUB_SEED]);
   });
 
+  it("keeps its own copy of the seed, so mutating the caller's array cannot poison a reset", async () => {
+    const seed = [structuredClone(PORTAL_SEED)];
+    const store = new MemoryOrgStore(seed);
+
+    // Reaching past the store's own boundaries, the way a caller holding the
+    // module-level seed constant could. `reset()` has to restore what was
+    // handed over, not whatever that object has since become.
+    seed[0]!.mission = "Mutated behind the store's back";
+    await store.reset();
+
+    expect(await store.list()).toEqual([PORTAL_SEED]);
+  });
+
   it("restores the seed on a second reset, so a write cannot poison it", async () => {
     const store = new MemoryOrgStore([PORTAL_SEED]);
 
