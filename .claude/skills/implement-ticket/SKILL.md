@@ -1,6 +1,6 @@
 ---
 name: implement-ticket
-description: "Pick up a specific ticket from PLAN.md and drive it to completion via TDD. Tickets are identified by GH-issue-prefixed IDs in the form #<issue>-T<n> (e.g. #1153-T3). Reads the ticket and runs preflight, then STOPS and asks the user for explicit approval before writing any code — being invoked is not approval to begin. Once approved, delegates failing-test authorship to the test-writer subagent, implements the feature to make tests pass, delegates review to the reviewer subagent, prompts the user for approval, and on approval commits locally with a descriptive message (including ticket ID and files changed) and marks the ticket done in PLAN.md. Invoke when the user runs /implement-ticket <ticket-id>, says 'implement #1153-T3 from PLAN.md', or asks to work on a specific ticket from the plan."
+description: "Pick up a specific ticket from PLAN.md and drive it to completion via TDD. Tickets are identified by GH-issue-prefixed IDs in the form #<issue>-T<n> (e.g. #1153-T3). Reads the ticket, runs preflight, and starts work immediately — invoking it with a ticket ID is approval to begin. Delegates failing-test authorship to the test-writer subagent, implements the feature to make tests pass, delegates review to the reviewer subagent, prompts the user for approval, and on approval commits locally with a descriptive message (including ticket ID and files changed) and marks the ticket done in PLAN.md. Invoke when the user runs /implement-ticket <ticket-id>, says 'implement #1153-T3 from PLAN.md', or asks to work on a specific ticket from the plan."
 ---
 
 # implement-ticket
@@ -89,16 +89,11 @@ issues, ask which issue they mean.
    `pnpm --filter @cg-link/<app> gen` (writes the gitignored-from-lint `worker-configuration.d.ts` —
    never hand-edit it).
 
-## Approval to begin — BLOCKING
+## Starting work
 
-**Invoking this skill is not approval to write code.** It selects a ticket and runs preflight. Nothing
-else happens until the user says go.
-
-The user drives ticket sequencing. They kick off each ticket in `PLAN.md` individually, on their own
-schedule, and may want to read the plan, reorder work, or change a ticket's scope in between. Starting
-early takes that decision away from them, and burns tokens on work they may not want yet.
-
-- **Summarize what you are about to do**, before touching anything:
+**Invoking this skill with a ticket ID is approval to begin.** Run preflight, post the summary below
+so the user can see what you resolved the ticket to, and then start the TDD loop in the same turn.
+Do not stop to ask permission.
 
 ```
 Ticket: #1153-T3 — <title verbatim from PLAN.md>
@@ -108,20 +103,24 @@ Expect to touch: <files from the ticket's implementation plan>
 Preflight notes: <unmet dependency / dirty tree / existing stashes / stale ticket detail / nothing>
 ```
 
-- **Ask exactly this, then stop**: "Begin implementing `<ticket-id>`? (yes / no / changes: `<what>`)"
-- **Wait for a direct yes in a NEW user message.** Until then: do not spawn the test-writer, do not edit
-  or create any file, do not run `pnpm install` or add a dependency, and do not create a branch.
+The commit gate still stands — see "User approval gate" below. Work is written, tested, and reviewed
+without asking; nothing is **committed** until the user says yes. That is where their control over
+sequencing lives now, and it is enough: the working tree is inspectable and revertible, so starting
+early costs tokens at worst, never their choices.
 
-None of the following is approval to begin — holding only these, you are still at the gate:
+**Stop and ask before writing anything** only when preflight turns up something that would make the
+work wrong rather than merely unwanted:
 
-- the skill being invoked, with or without a ticket ID in the arguments
-- the user answering a question you asked about setup, tooling, file paths, or where the skill lives
-- a branch already named after the ticket, or a stash holding earlier work on it
-- the user approving a _different_ ticket earlier in the session, or saying the plan looks good
-- the ticket being obviously next in the dependency graph
+- the ticket ID does not exist in `PLAN.md`, or is ambiguous across issues — list the IDs and ask
+- a `Depends on:` ticket is not marked `[✓]` — the ticket may be built on something that does not
+  exist yet
+- the working tree holds uncommitted changes unrelated to this ticket — a mixed tree makes the
+  commit gate meaningless
+- the current branch is `main` — confirm the branch name before committing anything to it
+- the ticket is under-specified in a way that makes the acceptance criteria unimplementable as written
 
-If the user says no or asks for changes, adjust and re-ask. Approval covers **one ticket**; the next one
-needs its own yes.
+Absent one of those, begin. If the user interrupts with `changes: <what>`, adjust and keep going.
+Each invocation covers **one ticket**.
 
 ## TDD implementation loop
 
@@ -277,9 +276,8 @@ Next: <next unblocked ticket ID from the dependency graph, or "PLAN.md is fully 
 
 ## What NOT to do
 
-- Do NOT start implementing before the user's explicit yes at the "Approval to begin" gate. Being
-  invoked is not a yes. This is the single easiest rule to break, because preflight leaves you holding a
-  fully-formed plan and the next step feels obvious — stop anyway, and ask.
+- Do NOT stall at the start asking whether to begin. Being invoked with a ticket ID is the yes. Post
+  the preflight summary and start, unless preflight hit one of the stop conditions in "Starting work".
 - Do NOT skip the test-writer subagent when the ticket has meaningful unit tests. TDD is the point — the
   failing test comes first. (The exception is a ticket whose "Unit tests" field says there are none.)
 - Do NOT skip the reviewer subagent. Even if the gates pass, the reviewer catches contract and
