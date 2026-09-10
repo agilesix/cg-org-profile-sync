@@ -12,6 +12,16 @@ export interface FieldSpec {
 }
 
 /**
+ * The identifier registry the demo matches one org across systems by.
+ *
+ * Every system assigns its own `id`, so the EIN is the only handle that means
+ * the same thing at all of them. Named once here because the widget, its
+ * server load, and the Playwright suite all have to agree on it — three copies
+ * of the string is three chances to drift.
+ */
+export const EIN_REGISTRY = "org:us:ein";
+
+/**
  * The fields the demo compares, in display order.
  *
  * A flat list rather than a walk of the whole schema: adding a field to the

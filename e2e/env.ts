@@ -27,5 +27,11 @@ export const SYSTEM_ORIGINS: Readonly<Record<string, string>> = {
   funderhub: FUNDERHUB_ORIGIN,
 };
 
-/** The registry the widget matches one org across systems by. */
-export const EIN_REGISTRY = "org:us:ein";
+/**
+ * The registry the widget matches one org across systems by.
+ *
+ * Re-exported from the library rather than spelled again here: the suite and
+ * the thing it is testing have to agree on this string, and two copies is one
+ * chance to drift.
+ */
+export { EIN_REGISTRY } from "@cg-link/org-sync/utils";

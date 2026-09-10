@@ -17,10 +17,11 @@ of them are written and tested, and `apps/link` now serves `GET /api/compare` an
 for real against both systems over its source registry — so two systems _are_ read together, and a
 chosen value does reach them — and `pnpm e2e` now proves it end to end: the `e2e/` Playwright
 workspace boots all three apps and drives Link's two routes against the real portal and funderhub,
-so the data exchange is pinned by a test rather than by a curl someone ran once. What is still a
-scaffold is Link's **page**: `apps/link/+page.svelte` is untouched, so there is no UI on top of
-those routes yet. Not started: the widget page itself, real auth (Google SSO + per-system JWTs),
-and `temelio-adapter`.
+so the data exchange is pinned by a test rather than by a curl someone ran once. Link's **page** is
+now the widget: `apps/link/+page.svelte` renders the comparison grid, picks a value, syncs it, and
+shows what each target said, and `e2e/specs/widget.spec.ts` drives that in a browser. Not started:
+real auth (Google SSO + per-system JWTs), the embed loader (the widget is a standalone page, not an
+iframe in a host app), and `temelio-adapter`.
 
 **Running portal or funderhub needs a `.env`.** Copy each app's `.env.example` to `.env`
 (gitignored). `CG_ACCESS_TOKEN` is the bearer that app accepts on `/common-grants/*` — the guard
@@ -71,10 +72,11 @@ Per-package work:
 
 - `packages/cg-org-sync` (`@cg-link/org-sync`) — the shared library. Schemas, server route handlers, store, client, and (planned) token helpers. Consumed by everything else. Subpath exports: `./schemas`, `./server`, `./utils`, `./types`, `./client`.
 - `packages/seed` (`@cg-link/seed`) — seed org profiles for the demo, deliberately inconsistent across systems.
-- `apps/portal`, `apps/funderhub`, `apps/temelio-adapter`, `apps/link` — SvelteKit apps on the Cloudflare adapter, deployed as Workers. `portal`/`funderhub` are CommonGrants-native systems, `temelio-adapter` is a conformant proxy over a non-protocol vendor, `link` is the widget. `portal` and `funderhub` serve the org routes; `link` serves its own `/api/compare` and `/api/sync` fan-out routes but has no page yet; `temelio-adapter` is still a scaffold.
+- `apps/portal`, `apps/funderhub`, `apps/temelio-adapter`, `apps/link` — SvelteKit apps on the Cloudflare adapter, deployed as Workers. `portal`/`funderhub` are CommonGrants-native systems, `temelio-adapter` is a conformant proxy over a non-protocol vendor, `link` is the widget. `portal` and `funderhub` serve the org routes; `link` serves its own `/api/compare` and `/api/sync` fan-out routes and the widget page over them; `temelio-adapter` is still a scaffold.
 - Wiring in `portal`/`funderhub` is the same seven files in each, differing only in seed, `source` name, and `unwritableFields`: `src/lib/server/store.ts` (module-level `MemoryOrgStore` + `OrgRoutesConfig`), `src/routes/common-grants/orgs/{+server.ts,[orgId]/+server.ts}`, `src/routes/__test/reset/+server.ts`, `src/hooks.server.ts` (bearer guard on `/common-grants/`), `.env.example`, and the route list on `src/routes/+page.svelte` — plus `@cg-link/seed` in `package.json`. Two app trees instead of one parameterised app is deliberate — the demo's story is two independent vendors that happen to speak the same contract.
 - Wiring in `link` is four files: `src/lib/server/sources.ts` (the `SourceConfig[]` registry and the per-request `tokenProvider()`), `src/routes/api/{compare,sync}/+server.ts` (thin — validate with a small Zod schema, call the fan-out, `json()` the result), and `src/lib/api-types.ts` (type-only re-exports so the page and the e2e specs name one type). Adding a third system is an entry in `sources.ts` and a token in `.env`; no route changes.
-- `e2e` (`@cg-link/e2e`) — the Playwright workspace, and the only test in the repo that runs the real apps. `playwright.config.ts` holds one `webServer` per app; `env.ts` holds the three origins; `fixtures.ts` holds the single automatic `api` fixture; `specs/` holds the specs. It is a root-level workspace, not under `packages/`, because it is not a package anything imports — `pnpm-workspace.yaml` lists `e2e` alongside the two globs.
+- The widget is `src/routes/+page.server.ts` (calls `compareAcrossSources` directly, so first paint has data), `src/routes/+page.svelte` (all the state and both `fetch`es), `src/lib/components/{ComparisonGrid,SyncResults}.svelte`, and `src/lib/demo.ts` (the default EIN, the `Selection` type, and a re-export of `EIN_REGISTRY`/`formatFieldValue` — client-safe, unlike `$lib/server/sources.ts`). Controls carry `data-testid`s the browser specs select by, and `<main>` publishes `data-ready` on mount because everything is server-rendered and clickable a moment before it is live.
+- `e2e` (`@cg-link/e2e`) — the Playwright workspace, and the only test in the repo that runs the real apps. `playwright.config.ts` holds one `webServer` per app; `env.ts` holds the three origins; `fixtures.ts` holds the single automatic `api` fixture (it resets both systems, so a browser spec gets isolation without asking for `api`); `specs/` holds the specs — the `api-*` pair drives Link's routes over HTTP, `widget.spec.ts` drives the page in Chromium. It is a root-level workspace, not under `packages/`, because it is not a package anything imports — `pnpm-workspace.yaml` lists `e2e` alongside the two globs.
 
 ## Architecture
 
@@ -134,7 +136,11 @@ the value each source holds. A source that lacks a field, holds `null`, or holds
 absent from the row rather than counted as a disagreement, so a missing field never reads as a
 conflict. Values compare by canonical JSON with keys sorted, so two systems that serialize the same
 address in a different key order still agree. Adding a field to the demo is one entry in
-`DEMO_FIELDS`. `buildMergePatch` is the inverse of the path walk: it wraps a chosen value back into
+`DEMO_FIELDS`. `EIN_REGISTRY` names the registry the demo matches an org by, and
+`utils/format.ts`'s `formatFieldValue` turns one held value into the line the grid shows — an
+address collapses to one line, anything unrecognised falls back to JSON, and a value with nothing
+to say renders as `""` for the caller to label. Both live in the library rather than in the widget
+because `apps/*` has no test harness. `buildMergePatch` is the inverse of the path walk: it wraps a chosen value back into
 the nested RFC 7396 body that sets that one field.
 
 **One client per source, built from config.** `src/client/org-client.ts` holds `OrgClient` —

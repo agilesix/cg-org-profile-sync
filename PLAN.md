@@ -276,7 +276,7 @@ Depends on: #1153-T5
   Booting real dev servers makes the suite slower than mocked route tests, but it is the only test
   that proves the three apps actually exchange data, which is the point of the issue.
 
-### #1153-T7: Build the widget page in `apps/link` with browser end-to-end specs
+### #1153-T7: [✓] Build the widget page in `apps/link` with browser end-to-end specs
 
 Depends on: #1153-T6
 
