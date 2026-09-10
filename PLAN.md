@@ -12,6 +12,7 @@ config entry rather than new code. The whole flow is covered by Playwright: HTTP
 against Link's fan-out routes and browser end-to-end specs against the widget.
 
 **Scope**:
+
 - In: testing and wiring the drafted org route handlers into `apps/portal` and `apps/funderhub`;
   a static per-system bearer token; a dev-only store reset route per system; an org client and
   comparison engine in `@cg-link/org-sync`; Link's server-side `/api/compare` and `/api/sync`
@@ -24,6 +25,7 @@ against Link's fan-out routes and browser end-to-end specs against the widget.
   transitively, and T1's Vitest covers the handlers).
 
 **Assumptions**:
+
 - Node >= 22, pnpm 11, SvelteKit on the Cloudflare adapter, as already scaffolded. Local dev runs
   via `pnpm dev` (`vite dev`), not `wrangler dev`; the in-memory store resetting on restart is fine.
 - Each system's dev port is whatever its `vite.config.ts` sets (portal is 5173). Link's source
@@ -44,6 +46,7 @@ against Link's fan-out routes and browser end-to-end specs against the widget.
 - Per Billy: proof of concept over polish. PRs are fine but self-merge is fine too.
 
 **Open questions**:
+
 - Naming: Billy suggested renaming "FunderHub" to avoid collision with a real product. Deferred;
   rename is a find/replace whenever you decide.
 - Whether the widget should also let the person type a brand-new value (not just pick one system's
@@ -55,6 +58,7 @@ against Link's fan-out routes and browser end-to-end specs against the widget.
 ## Tickets
 
 ### #1153-T1: [✓] Test the shared org route handlers, add a bearer guard and store reset
+
 - **Acceptance criteria**:
   - When `listOrgs` is called with `?registry=org:us:ein&id=<ein>`, then only orgs carrying that
     active identifier are returned, paginated in the standard envelope.
@@ -93,7 +97,9 @@ against Link's fan-out routes and browser end-to-end specs against the widget.
   named, and inert unless an app mounts it.
 
 ### #1153-T2: Wire the org routes into GrantPortal and FunderHub
+
 Depends on: #1153-T1
+
 - **Acceptance criteria**:
   - When both apps are running, then `GET /common-grants/orgs?registry=org:us:ein&id=123456789`
     with the right bearer token returns the seeded Agile Six record on each.
@@ -132,7 +138,9 @@ Depends on: #1153-T1
   is about seven small files.
 
 ### #1153-T3: Add the org client to `@cg-link/org-sync`
+
 Depends on: #1153-T1 (for the 401 envelope and response shapes to test against)
+
 - **Acceptance criteria**:
   - When `findByIdentifier(registry, id)` is called, then it returns the first matching
     `Organization` or `undefined`, having unwrapped the paginated envelope.
@@ -159,7 +167,9 @@ Depends on: #1153-T1 (for the 401 envelope and response shapes to test against)
   calls, and it keeps `@common-grants/sdk` usage limited to what it already models.
 
 ### #1153-T4: Add the comparison engine and patch builder
+
 No dependencies (pure functions over `Organization` and `FieldComparison`)
+
 - **Acceptance criteria**:
   - When given profiles from N sources and the demo's field list, then `compareProfiles` returns one
     `FieldComparison` per field with `values` keyed by source id, `distinctCount`, and `status`.
@@ -186,7 +196,9 @@ No dependencies (pure functions over `Organization` and `FieldComparison`)
   one line, which is the "then it's just engineering" story Billy wants to tell.
 
 ### #1153-T5: Add Link's source registry and `/api/compare`, `/api/sync` routes
+
 Depends on: #1153-T2, #1153-T3, #1153-T4
+
 - **Acceptance criteria**:
   - When `GET /api/compare?registry=org:us:ein&id=123456789` is called with both systems running,
     then the response lists each enabled source with its resolved `orgId` (or an error), plus the
@@ -216,7 +228,9 @@ Depends on: #1153-T2, #1153-T3, #1153-T4
   Link's server is on the request path for every read, which is fine for a demo.
 
 ### #1153-T6: Add the Playwright harness and Link API integration specs
+
 Depends on: #1153-T5
+
 - **Acceptance criteria**:
   - When `pnpm e2e` runs from a clean checkout with `.env` files in place, then Playwright boots
     portal, funderhub, and link, waits for each to answer, runs the suite, and shuts them down.
@@ -263,7 +277,9 @@ Depends on: #1153-T5
   that proves the three apps actually exchange data, which is the point of the issue.
 
 ### #1153-T7: Build the widget page in `apps/link` with browser end-to-end specs
+
 Depends on: #1153-T6
+
 - **Acceptance criteria**:
   - When the page loads with the default EIN, then it shows a grid: one row per demo field, one
     column per source, rows visually marked `agree` or `differs`.
@@ -298,7 +314,9 @@ Depends on: #1153-T6
   keeps the specs from breaking on copy or styling changes.
 
 ### #1153-T8: Document setup, tests, and the demo walkthrough
+
 Depends on: #1153-T7 (prose can be drafted in parallel, finalised last)
+
 - **Acceptance criteria**:
   - When someone new clones the repo and follows README "Running the demo", then `pnpm install`,
     copying `.env.example` files, and `pnpm dev` gets all three apps up on documented ports.
@@ -315,7 +333,7 @@ Depends on: #1153-T7 (prose can be drafted in parallel, finalised last)
      click path from T7). Add "What's next" pointing at temelio-adapter, embed loader, JWT/JWKS.
   2. CLAUDE.md: update "The project is early", the not-started list, and the Commands table with
      `pnpm e2e` and how to run one spec (`pnpm --filter @cg-link/e2e exec playwright test
-     specs/widget.spec.ts`).
+specs/widget.spec.ts`).
   3. Keep `.env.example` files where T2/T5 put them; document once.
 - **Edge cases**: port collisions on the developer's machine (say which `vite.config.ts` and
   `playwright.config.ts` to edit together); `svelte-check` failing when `.env` is missing (T2
