@@ -131,7 +131,7 @@ Depends on: #1153-T1
   demo's story is "two independent vendors happen to speak the same contract", and the duplication
   is about seven small files.
 
-### #1153-T3: Add the org client to `@cg-link/org-sync`
+### #1153-T3: [✓] Add the org client to `@cg-link/org-sync`
 Depends on: #1153-T1 (for the 401 envelope and response shapes to test against)
 - **Acceptance criteria**:
   - When `findByIdentifier(registry, id)` is called, then it returns the first matching
