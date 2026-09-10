@@ -65,6 +65,21 @@ function revision(patch: JsonObject): JsonObject {
   };
 }
 
+/**
+ * The same revision as it looks once parsed.
+ *
+ * `RecordTimestampsSchema` uses the SDK's `UTCDateTimeSchema`, which is a
+ * `ZodTransform<Date, string>` — it parses an ISO string into a `Date`. So a
+ * parsed revision is deliberately not `toEqual` its own wire form.
+ */
+function asParsed(wire: JsonObject): Record<string, unknown> {
+  return {
+    ...wire,
+    createdAt: new Date(String(wire["createdAt"])),
+    lastModifiedAt: new Date(String(wire["lastModifiedAt"])),
+  };
+}
+
 /** The single-resource envelope `PATCH /common-grants/orgs/{orgId}` responds with. */
 function revisionEnvelope(message: string, data: JsonObject): Response {
   return new Response(JSON.stringify({ status: 200, message, data }), {
@@ -201,7 +216,7 @@ describe("patch", () => {
 
     const result = await client.patch(PORTAL_ORG_ID, mergePatch);
 
-    expect(result).toEqual({ revision: accepted, message: "Change applied" });
+    expect(result).toEqual({ revision: asParsed(accepted), message: "Change applied" });
   });
 
   it("surfaces a skipped-field message verbatim", async () => {
@@ -241,6 +256,88 @@ describe("patch", () => {
     expect(request?.headers.get("content-type")).toBe("application/merge-patch+json");
     expect(request?.headers.get("authorization")).toBe("Bearer test-token");
     expect(await request?.json()).toEqual(mergePatch);
+  });
+
+  it("rejects a revision missing a spec-required field", async () => {
+    const mergePatch = buildMergePatch("name", "Agile Six Applications, Inc.");
+    const broken = revision(mergePatch) as Record<string, unknown>;
+    delete broken.id;
+    const { fetch } = stubFetch(revisionEnvelope("Change applied", broken as JsonObject));
+    const client = new OrgClient({
+      source: SOURCE,
+      tokens: new StaticTokenProvider({ portal: "test-token" }),
+      fetch,
+    });
+
+    try {
+      await client.patch(PORTAL_ORG_ID, mergePatch);
+      expect.unreachable("client.patch should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(OrgClientError);
+      const orgClientError = error as OrgClientError;
+      expect(orgClientError.errors.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("rejects a revision whose status is not one of the recognized values", async () => {
+    const mergePatch = buildMergePatch("name", "Agile Six Applications, Inc.");
+    const invalid = {
+      ...revision(mergePatch),
+      status: { value: "maybe", description: "Not a real status." },
+    };
+    const { fetch } = stubFetch(revisionEnvelope("Change applied", invalid));
+    const client = new OrgClient({
+      source: SOURCE,
+      tokens: new StaticTokenProvider({ portal: "test-token" }),
+      fetch,
+    });
+
+    await expect(client.patch(PORTAL_ORG_ID, mergePatch)).rejects.toThrow(OrgClientError);
+  });
+
+  it("reports the revision's schema issues when the message is missing too", async () => {
+    const mergePatch = buildMergePatch("name", "Agile Six Applications, Inc.");
+    const withoutId = revision(mergePatch);
+    delete withoutId["id"];
+    const response = new Response(JSON.stringify({ status: 200, data: withoutId }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+    const { fetch } = stubFetch(response);
+    const client = new OrgClient({
+      source: SOURCE,
+      tokens: new StaticTokenProvider({ portal: "test-token" }),
+      fetch,
+    });
+
+    try {
+      await client.patch(PORTAL_ORG_ID, mergePatch);
+      expect.unreachable("client.patch should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(OrgClientError);
+      expect((error as OrgClientError).errors.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("accepts a revision that omits the optional source, patch, and snapshot fields", async () => {
+    const mergePatch = buildMergePatch("name", "Agile Six Applications, Inc.");
+    const now = new Date().toISOString();
+    const minimal: JsonObject = {
+      id: "018f2e77-1a2b-7c3d-8e4f-000000000099",
+      status: { value: "accepted" },
+      createdAt: now,
+      lastModifiedAt: now,
+    };
+    const { fetch } = stubFetch(revisionEnvelope("Change applied", minimal));
+    const client = new OrgClient({
+      source: SOURCE,
+      tokens: new StaticTokenProvider({ portal: "test-token" }),
+      fetch,
+    });
+
+    const result = await client.patch(PORTAL_ORG_ID, mergePatch);
+
+    expect(result).toEqual({ revision: asParsed(minimal), message: "Change applied" });
   });
 });
 

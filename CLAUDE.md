@@ -101,11 +101,15 @@ the nested RFC 7396 body that sets that one field.
 injectable so tests stub the transport rather than the global. Reads are behind the same bearer
 guard as writes, so every call carries the token. Responses are parsed with
 `OrganizationBaseSchema`, so a non-conformant source fails at the boundary instead of leaking a
-half-built profile into the comparison grid. Every failure — error envelope, unreachable host,
-missing envelope, schema mismatch — surfaces as an `OrgClientError` carrying `sourceId`, `status`,
-and `errors`; the widget fans out across systems at once, so an error that cannot say which source
-it came from is one it cannot render. `patch` returns the envelope's `message` verbatim, because
-that sentence is where a system names the fields it declined to store. `StaticTokenProvider` is the
+half-built profile into the comparison grid; `patch` parses its response through `OrgRevisionSchema`
+the same way, since `PATCH /common-grants/orgs/{orgId}` returns `Responses.OkT<OrgRevision>` and the
+revision carries the post-change `snapshot`. Note that parsing coerces `createdAt`/`lastModifiedAt`
+to `Date` — the SDK's `UTCDateTimeSchema` is a `ZodTransform<Date, string>` — so a parsed revision
+is not identical to its wire form. Every failure — error envelope, unreachable host, missing
+envelope, schema mismatch — surfaces as an `OrgClientError` carrying `sourceId`, `status`, and
+`errors`; the widget fans out across systems at once, so an error that cannot say which source it
+came from is one it cannot render. `patch` returns the envelope's `message` verbatim, because that
+sentence is where a system names the fields it declined to store. `StaticTokenProvider` is the
 demo's token source: a map of source id to bearer token.
 
 **Shared plain types** (`src/types.ts`) — `JsonValue`/`JsonObject` and `FieldComparison`, plus

@@ -11,7 +11,12 @@
  * is an error it cannot render.
  */
 
-import { OrganizationBaseSchema, type Organization } from "../schemas/index.js";
+import {
+  OrgRevisionSchema,
+  OrganizationBaseSchema,
+  type Organization,
+  type OrgRevision,
+} from "../schemas/index.js";
 import type { JsonObject, SourceConfig, TokenProvider } from "../types.js";
 import { MERGE_PATCH_CONTENT_TYPE } from "../utils/merge-patch.js";
 
@@ -124,18 +129,20 @@ export class OrgClient {
   async patch(
     orgId: string,
     mergePatch: JsonObject,
-  ): Promise<{ revision: JsonObject; message: string }> {
+  ): Promise<{ revision: OrgRevision; message: string }> {
     const { body, status } = await this.#request(this.#orgUrl(orgId), {
       method: "PATCH",
       headers: { "content-type": MERGE_PATCH_CONTENT_TYPE },
       body: JSON.stringify(mergePatch),
     });
 
-    const revision = body["data"];
+    // The revision is parsed first: when a source gets both halves wrong, the
+    // schema issues say more about what it is doing than a missing message does.
+    const revision = this.#parseRevision(body["data"], status);
     const message = body["message"];
 
-    if (!isJsonObject(revision) || typeof message !== "string") {
-      throw this.#notConformant("the applied change as a revision", status);
+    if (typeof message !== "string") {
+      throw this.#notConformant("a message describing the change", status);
     }
 
     return { revision, message };
@@ -201,6 +208,28 @@ export class OrgClient {
     }
 
     return { body, status };
+  }
+
+  /**
+   * Parse the revision a `PATCH` reports the change as.
+   *
+   * `PATCH /common-grants/orgs/{orgId}` returns `Responses.OkT<OrgRevision>`,
+   * so the revision gets the same treatment as an org: validated here rather
+   * than trusted, since it carries the post-change `snapshot` the widget can
+   * refresh from without a second read.
+   */
+  #parseRevision(value: unknown, status: number): OrgRevision {
+    const parsed = OrgRevisionSchema.safeParse(value);
+
+    if (!parsed.success) {
+      throw new OrgClientError(
+        this.#source.id,
+        `${this.#source.label} did not return the applied change as a revision.`,
+        { status, errors: parsed.error.issues },
+      );
+    }
+
+    return parsed.data;
   }
 
   /**
