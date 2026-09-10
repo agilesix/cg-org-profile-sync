@@ -28,8 +28,14 @@ export interface SourceConfig {
   /** Origin serving `/common-grants/orgs`, with no trailing slash. */
   baseUrl: string;
 
-  /** Endpoint that mints this system's own access token. */
-  tokenUrl: string;
+  /**
+   * Endpoint that mints this system's own access token.
+   *
+   * Ignored for now — the demo holds a static bearer token per source and
+   * `POST /token` is a later ticket. Recorded here so the registry already
+   * names it when token minting lands.
+   */
+  tokenUrl?: string;
 
   /**
    * Field paths this source can store. Fields outside the list are dropped from

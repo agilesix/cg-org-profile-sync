@@ -11,24 +11,25 @@ they disagree, and pushes corrections back. The build plan lives outside this re
 
 **The project is early.** The workspace, shared schema layer, `applyMergePatch`, and seed data are
 real and tested. The org route handlers are now tested (`src/server/org-routes.test.ts`) and carry a
-static bearer guard and a store reset, but they are still not wired into any app — all four apps
-currently serve a placeholder page listing the routes they *will* expose. `pnpm dev` working is not
-the same as the demo working. Not started: comparison engine, org client, source registry, the
-widget itself, real auth (Google SSO + per-system JWTs), and `temelio-adapter`.
+static bearer guard and a store reset, and the comparison engine and org client are written and
+tested — but none of it is wired into any app yet; all four apps currently serve a placeholder page
+listing the routes they _will_ expose. `pnpm dev` working is not the same as the demo working. Not
+started: the source registry, the widget itself, real auth (Google SSO + per-system JWTs), and
+`temelio-adapter`.
 
 ## Commands
 
 Run from the repo root. Everything is a pnpm workspace (`pnpm@11`, Node >= 22, `engine-strict`).
 
-| Command | What it does |
-| --- | --- |
-| `pnpm install` | Install all workspaces |
-| `pnpm dev` | Run every app in parallel (`--no-bail`, so one crash doesn't stop the rest) |
-| `pnpm build` | Build every app and package |
-| `pnpm check` | Type-check every workspace (`tsc --noEmit`, or `svelte-check` for apps) |
-| `pnpm test` | Run every package's Vitest suite |
-| `pnpm lint` | ESLint the repo |
-| `pnpm format` / `pnpm format:check` | Prettier write / check |
+| Command                             | What it does                                                                |
+| ----------------------------------- | --------------------------------------------------------------------------- |
+| `pnpm install`                      | Install all workspaces                                                      |
+| `pnpm dev`                          | Run every app in parallel (`--no-bail`, so one crash doesn't stop the rest) |
+| `pnpm build`                        | Build every app and package                                                 |
+| `pnpm check`                        | Type-check every workspace (`tsc --noEmit`, or `svelte-check` for apps)     |
+| `pnpm test`                         | Run every package's Vitest suite                                            |
+| `pnpm lint`                         | ESLint the repo                                                             |
+| `pnpm format` / `pnpm format:check` | Prettier write / check                                                      |
 
 Per-package work:
 
@@ -39,7 +40,7 @@ Per-package work:
 
 ## Layout
 
-- `packages/cg-org-sync` (`@cg-link/org-sync`) — the shared library. Schemas, server route handlers, store, and (planned) client/token helpers. Consumed by everything else. Subpath exports: `./schemas`, `./server`, `./utils`, `./types`, `./client` (client not yet written).
+- `packages/cg-org-sync` (`@cg-link/org-sync`) — the shared library. Schemas, server route handlers, store, client, and (planned) token helpers. Consumed by everything else. Subpath exports: `./schemas`, `./server`, `./utils`, `./types`, `./client`.
 - `packages/seed` (`@cg-link/seed`) — seed org profiles for the demo, deliberately inconsistent across systems.
 - `apps/portal`, `apps/funderhub`, `apps/temelio-adapter`, `apps/link` — SvelteKit apps on the Cloudflare adapter, deployed as Workers. `portal`/`funderhub` are CommonGrants-native systems, `temelio-adapter` is a conformant proxy over a non-protocol vendor, `link` is the widget. All four are currently scaffolds.
 
@@ -71,7 +72,7 @@ depend on the interface so a D1-backed store can replace it without the handlers
 **Schemas are hand-written Zod, checked against the protocol's own fixtures.** The org models live
 in `src/schemas/zod/` (`types.ts` → `fields.ts` → `models.ts` → `patch.ts`, re-exported through
 `schemas/index.ts`). Rather than diffing shapes against the spec's emitted JSON Schema, conformance
-is verified by *behaviour*: `schemas/conformance.test.ts` loads
+is verified by _behaviour_: `schemas/conformance.test.ts` loads
 `schemas/__fixtures__/protocol-orgs.json` (copied verbatim from the CommonGrants repo) and asserts
 every published record parses, plus a corpus of records that each break a documented rule must fail.
 Refresh the fixture from the protocol repo when the spec moves. The fixtures still carry pre-v0.4.0
@@ -81,7 +82,7 @@ old-sender/new-receiver behaviour.
 **The patch schema is derived, not hand-written.** `patch.ts`'s `toMergePatch()` rewrites a Zod
 object into its RFC 7396 form (every property optional + nullable, recursively) so the patch models
 can't drift from the base models. Distinct from `src/utils/merge-patch.ts`'s `applyMergePatch`,
-which *applies* a patch to a value. `updateOrg` uses both: validate the incoming body against the
+which _applies_ a patch to a value. `updateOrg` uses both: validate the incoming body against the
 patch schema, apply it, then re-validate the result against `OrganizationBaseSchema` before storing.
 `id` is always forced back to the existing value — a patch can never move a record.
 
@@ -94,9 +95,27 @@ address in a different key order still agree. Adding a field to the demo is one 
 `DEMO_FIELDS`. `buildMergePatch` is the inverse of the path walk: it wraps a chosen value back into
 the nested RFC 7396 body that sets that one field.
 
-**Shared plain types** (`src/types.ts`) — `JsonValue`/`JsonObject` and `FieldComparison`, plus the
-not-yet-used `SourceConfig` and `TokenProvider` interfaces the widget will build on. Deliberately
-Zod-free so app config and UI can import them without the schema layer.
+**One client per source, built from config.** `src/client/org-client.ts` holds `OrgClient` —
+`findByIdentifier` (the EIN lookup the widget starts from, since ids are assigned per system),
+`read`, and `patch`. It is constructed from a `SourceConfig` and a `TokenProvider`, with `fetch`
+injectable so tests stub the transport rather than the global. Reads are behind the same bearer
+guard as writes, so every call carries the token. Responses are parsed with
+`OrganizationBaseSchema`, so a non-conformant source fails at the boundary instead of leaking a
+half-built profile into the comparison grid; `patch` parses its response through `OrgRevisionSchema`
+the same way, since `PATCH /common-grants/orgs/{orgId}` returns `Responses.OkT<OrgRevision>` and the
+revision carries the post-change `snapshot`. Note that parsing coerces `createdAt`/`lastModifiedAt`
+to `Date` — the SDK's `UTCDateTimeSchema` is a `ZodTransform<Date, string>` — so a parsed revision
+is not identical to its wire form. Every failure — error envelope, unreachable host, missing
+envelope, schema mismatch — surfaces as an `OrgClientError` carrying `sourceId`, `status`, and
+`errors`; the widget fans out across systems at once, so an error that cannot say which source it
+came from is one it cannot render. `patch` returns the envelope's `message` verbatim, because that
+sentence is where a system names the fields it declined to store. `StaticTokenProvider` is the
+demo's token source: a map of source id to bearer token.
+
+**Shared plain types** (`src/types.ts`) — `JsonValue`/`JsonObject` and `FieldComparison`, plus
+`SourceConfig` and `TokenProvider`. Deliberately Zod-free so app config and UI can import them
+without the schema layer. `SourceConfig.tokenUrl` is optional and currently ignored — the demo uses
+a static bearer token per source and `POST /token` is a later ticket.
 
 ## Conventions
 
