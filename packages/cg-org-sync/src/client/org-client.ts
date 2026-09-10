@@ -18,6 +18,7 @@ import {
   type OrgRevision,
 } from "../schemas/index.js";
 import type { JsonObject, SourceConfig, TokenProvider } from "../types.js";
+import { isJsonObject } from "../utils/json.js";
 import { MERGE_PATCH_CONTENT_TYPE } from "../utils/merge-patch.js";
 
 /** Anything that went wrong talking to one source, tagged with which source. */
@@ -291,8 +292,4 @@ export class OrgClient {
       { status },
     );
   }
-}
-
-function isJsonObject(value: unknown): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

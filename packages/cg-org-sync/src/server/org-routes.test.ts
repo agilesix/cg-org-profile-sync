@@ -292,6 +292,25 @@ describe("updateOrg", () => {
     expect(await store.read(PORTAL_ORG_ID)).toEqual(PORTAL_SEED);
   });
 
+  it("rejects a patch carrying an id, so no request can move a record", async () => {
+    const store = new MemoryOrgStore([PORTAL_SEED]);
+    const elsewhere = "018f2e77-1a2b-7c3d-8e4f-000000000099";
+    const request = patchRequest(PORTAL_ORG_ID, { name: "Renamed", id: elsewhere });
+
+    const response = await updateOrg(PORTAL_ORG_ID, request, { store, source: "portal" });
+
+    // Which layer refuses this matters, so be precise about what is pinned
+    // here: `OrgProfileWritableSchema` has no `id` and `toMergePatch` wraps
+    // every level in `z.strictObject`, so the 400 comes from schema validation.
+    // `updateOrg`'s own `id: existing.id` is defence in depth that no request
+    // can currently reach — it is what would catch this if that schema were
+    // ever loosened, which is why the record's resting place is asserted
+    // through the store and not inferred from the status alone.
+    expect(response.status).toBe(400);
+    expect(await store.read(elsewhere)).toBeUndefined();
+    expect(await store.read(PORTAL_ORG_ID)).toEqual(PORTAL_SEED);
+  });
+
   it("returns 404 for an org this system does not hold", async () => {
     const store = new MemoryOrgStore([PORTAL_SEED]);
     const request = patchRequest(FUNDERHUB_ORG_ID, { mission: "Nobody to patch" });

@@ -1,4 +1,5 @@
 import type { JsonObject, JsonValue } from "../types.js";
+import { isJsonObject } from "./json.js";
 
 /** RFC 7396 requires this content type on a merge patch body. */
 export const MERGE_PATCH_CONTENT_TYPE = "application/merge-patch+json";
@@ -13,11 +14,11 @@ export const MERGE_PATCH_CONTENT_TYPE = "application/merge-patch+json";
  * @see https://datatracker.ietf.org/doc/html/rfc7396
  */
 export function applyMergePatch(target: JsonValue | undefined, patch: JsonValue): JsonValue {
-  if (!isMergeable(patch)) {
+  if (!isJsonObject(patch)) {
     return patch;
   }
 
-  const result: JsonObject = isMergeable(target) ? { ...target } : {};
+  const result: JsonObject = isJsonObject(target) ? { ...target } : {};
 
   for (const key of Object.keys(patch)) {
     const value = patch[key];
@@ -34,9 +35,4 @@ export function applyMergePatch(target: JsonValue | undefined, patch: JsonValue)
   }
 
   return result;
-}
-
-/** True for plain objects, the only values a merge patch recurses into. */
-function isMergeable(value: JsonValue | undefined): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -22,12 +22,12 @@ describe("requireBearer", () => {
     expect(requireBearer(request(`Bearer ${EXPECTED_TOKEN}`), EXPECTED_TOKEN)).toBeUndefined();
   });
 
-  const refused: ReadonlyArray<readonly [string, string]> = [
+  const refused = [
     ["an empty header", ""],
     ["a scheme that is not Bearer", `Basic ${EXPECTED_TOKEN}`],
     ["a token that does not match", "Bearer some-other-token"],
     ["a token with the scheme but no value", "Bearer"],
-  ];
+  ] as const;
 
   it.each(refused)("rejects %s", (_label, header) => {
     expect(requireBearer(request(header), EXPECTED_TOKEN)?.status).toBe(401);
