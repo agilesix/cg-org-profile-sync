@@ -11,10 +11,11 @@ they disagree, and pushes corrections back. The build plan lives outside this re
 
 **The project is early.** The workspace, shared schema layer, `applyMergePatch`, and seed data are
 real and tested. The org route handlers are now tested (`src/server/org-routes.test.ts`) and carry a
-static bearer guard and a store reset, but they are still not wired into any app — all four apps
-currently serve a placeholder page listing the routes they *will* expose. `pnpm dev` working is not
-the same as the demo working. Not started: comparison engine, org client, source registry, the
-widget itself, real auth (Google SSO + per-system JWTs), and `temelio-adapter`.
+static bearer guard and a store reset, and the comparison engine and org client are written and
+tested — but none of it is wired into any app yet; all four apps currently serve a placeholder page
+listing the routes they *will* expose. `pnpm dev` working is not the same as the demo working. Not
+started: the source registry, the widget itself, real auth (Google SSO + per-system JWTs), and
+`temelio-adapter`.
 
 ## Commands
 
@@ -39,7 +40,7 @@ Per-package work:
 
 ## Layout
 
-- `packages/cg-org-sync` (`@cg-link/org-sync`) — the shared library. Schemas, server route handlers, store, and (planned) client/token helpers. Consumed by everything else. Subpath exports: `./schemas`, `./server`, `./utils`, `./types`, `./client` (client not yet written).
+- `packages/cg-org-sync` (`@cg-link/org-sync`) — the shared library. Schemas, server route handlers, store, client, and (planned) token helpers. Consumed by everything else. Subpath exports: `./schemas`, `./server`, `./utils`, `./types`, `./client`.
 - `packages/seed` (`@cg-link/seed`) — seed org profiles for the demo, deliberately inconsistent across systems.
 - `apps/portal`, `apps/funderhub`, `apps/temelio-adapter`, `apps/link` — SvelteKit apps on the Cloudflare adapter, deployed as Workers. `portal`/`funderhub` are CommonGrants-native systems, `temelio-adapter` is a conformant proxy over a non-protocol vendor, `link` is the widget. All four are currently scaffolds.
 
@@ -94,9 +95,23 @@ address in a different key order still agree. Adding a field to the demo is one 
 `DEMO_FIELDS`. `buildMergePatch` is the inverse of the path walk: it wraps a chosen value back into
 the nested RFC 7396 body that sets that one field.
 
-**Shared plain types** (`src/types.ts`) — `JsonValue`/`JsonObject` and `FieldComparison`, plus the
-not-yet-used `SourceConfig` and `TokenProvider` interfaces the widget will build on. Deliberately
-Zod-free so app config and UI can import them without the schema layer.
+**One client per source, built from config.** `src/client/org-client.ts` holds `OrgClient` —
+`findByIdentifier` (the EIN lookup the widget starts from, since ids are assigned per system),
+`read`, and `patch`. It is constructed from a `SourceConfig` and a `TokenProvider`, with `fetch`
+injectable so tests stub the transport rather than the global. Reads are behind the same bearer
+guard as writes, so every call carries the token. Responses are parsed with
+`OrganizationBaseSchema`, so a non-conformant source fails at the boundary instead of leaking a
+half-built profile into the comparison grid. Every failure — error envelope, unreachable host,
+missing envelope, schema mismatch — surfaces as an `OrgClientError` carrying `sourceId`, `status`,
+and `errors`; the widget fans out across systems at once, so an error that cannot say which source
+it came from is one it cannot render. `patch` returns the envelope's `message` verbatim, because
+that sentence is where a system names the fields it declined to store. `StaticTokenProvider` is the
+demo's token source: a map of source id to bearer token.
+
+**Shared plain types** (`src/types.ts`) — `JsonValue`/`JsonObject` and `FieldComparison`, plus
+`SourceConfig` and `TokenProvider`. Deliberately Zod-free so app config and UI can import them
+without the schema layer. `SourceConfig.tokenUrl` is optional and currently ignored — the demo uses
+a static bearer token per source and `POST /token` is a later ticket.
 
 ## Conventions
 
