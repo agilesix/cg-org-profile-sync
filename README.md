@@ -1,75 +1,60 @@
 # CommonGrants Link
 
-A demo of organization profile syncing across grant systems, built against the
-[CommonGrants](https://commongrants.org) v0.4.0 org routes and the contract described in ADR-0026.
+A working demo of one nonprofit's profile being kept in sync across independent grant systems,
+using the [CommonGrants](https://commongrants.org) v0.4.0 organization routes.
 
-A nonprofit keeps the same profile in several systems, and those copies drift apart. This repo
-stands up three systems that each speak the CommonGrants org routes, plus a widget that reads the
-profile from all of them, shows where they disagree, and pushes the corrections back out.
+## Why this exists
 
-One of the three systems is a real vendor that has not implemented the protocol: `temelio-adapter`
-is a CommonGrants-conformant proxy over Temelio's own API, which is how we find out whether the
-contract retrofits onto a system nobody designed for it.
+A nonprofit applies to many funders, and every funder's system holds its own copy of the same
+organization profile: legal name, EIN, address, website. Nobody keeps those copies in step. The
+organization moves offices, updates one system, and the other three quietly go stale.
 
-The build plan, including the architecture and the decisions behind it, is kept outside this
-repo. Ask Billy for a copy.
+CommonGrants is an open protocol for grant data. Its org routes give every system one shared way
+to look up, read, and update an organization profile. If systems speak that contract, a small tool
+can read the profile from all of them at once, show where they disagree, and push the correct value
+back out. Nobody has to re-key anything.
 
-## Where this actually is
+This repo proves that in running code, not on a slide. Two independent systems each serve the org
+routes over their own drifted copy of a profile, and a widget reads both, compares them, and writes
+back. The whole exchange is covered by browser tests, so it is a claim the test suite makes rather
+than one a person did once.
 
-Early. The workspace, the shared schema layer, and the seed data are real and tested; the routes
-are not written yet, so all four apps currently serve a placeholder page that lists what they will
-expose. `pnpm dev` working is not the same as the demo working.
+## What you can do with it
 
-| Piece                                   | State                        |
-| --------------------------------------- | ---------------------------- |
-| Workspace, TypeScript, lint, format     | Done                         |
-| `applyMergePatch` (RFC 7396)            | Done, 8 tests                |
-| Zod schemas for the org models          | Done, 31 tests               |
-| Seed profiles for the demo organization | Done, 8 tests                |
-| Shared org route handlers               | Drafted, untested, not wired |
-| Comparison engine                       | Not started                  |
-| Org client and source registry          | Not started                  |
-| The widget itself                       | Not started                  |
-| Auth (Google SSO, per-system tokens)    | Not started                  |
-| `temelio-adapter`                       | Deferred                     |
+**See where systems disagree.** Look an organization up by EIN and get one row per field, one
+column per system. Rows that differ are flagged. A field one system simply does not have shows as a
+gap, not a conflict.
 
-Two decisions worth knowing before you read the code:
+![The comparison grid: two systems, four fields, the address row flagged as differing](docs/screenshots/1-compare.png)
 
-- **Storage is in memory**, behind an `OrgStore` interface so D1 can replace it without the handlers
-  changing. Writes live as long as the Worker isolate, which is fine locally and wrong for anything
-  deployed.
-- **The schemas are checked against the protocol's own fixtures**, not against hand-written examples.
-  `packages/cg-org-sync/src/schemas/__fixtures__/protocol-orgs.json` is copied verbatim from the
-  CommonGrants repo; all eight records must parse, and twelve records that each break a documented
-  rule must not.
+**Fix a field everywhere in one click.** Click the value that is right, pick which systems should
+receive it, and sync. Each system gets a JSON Merge Patch that changes only that field.
 
-## Layout
+![After syncing GrantPortal's address to FunderHub, the row agrees and FunderHub reports the change was applied](docs/screenshots/3-synced.png)
 
-| Path                   | What it is                                                       |
-| ---------------------- | ---------------------------------------------------------------- |
-| `packages/cg-org-sync` | Shared org schemas, client, comparison engine, and token helpers |
-| `apps/portal`          | "GrantPortal" — the app that embeds the widget                   |
-| `apps/funderhub`       | "FunderHub" — a second CommonGrants-native system                |
-| `apps/temelio-adapter` | CommonGrants proxy over the Temelio sandbox                      |
-| `apps/link`            | The widget: iframe app and embed loader                          |
+**Find out what a system could not store.** A system that does not model a field accepts the
+change, drops the field, and says so. The widget shows that sentence word for word, so you know the
+value went to the systems that can hold it and no further.
 
-Every server exposes the same routes, which is what lets the widget treat a new source as
-configuration rather than code:
+![Pushing the website to FunderHub: accepted, with the message that this system does not store socials](docs/screenshots/4-declined.png)
+
+**Connect another system without new code.** Every system exposes the same routes, so a third one
+is a config entry and an access token, not a feature.
 
 ```
-GET   /common-grants/orgs             list, filtered by ?registry= &id=
+GET   /common-grants/orgs             find an org by identifier, e.g. ?registry=org:us:ein&id=
 GET   /common-grants/orgs/{orgId}     read one profile
 PATCH /common-grants/orgs/{orgId}     apply a JSON Merge Patch
-POST  /token                          mint this system's own access token
-GET   /.well-known/jwks.json          this system's public keys
 ```
 
-## Getting started
+## Get set up
+
+You need Node 22 or newer and pnpm 11.
 
 ```bash
 pnpm install
 
-# Every app reads its secrets from a gitignored .env. Copy all three examples:
+# Each app reads its access tokens from a gitignored .env. Copy all three:
 cp apps/portal/.env.example apps/portal/.env
 cp apps/funderhub/.env.example apps/funderhub/.env
 cp apps/link/.env.example apps/link/.env
@@ -77,35 +62,51 @@ cp apps/link/.env.example apps/link/.env
 pnpm dev
 ```
 
-**Do not skip the `.env` step.** Without them the apps boot and do nothing useful: portal and
-funderhub fail closed on their bearer guard, so every org route answers 401, and Link reports each
-source as "no access token is configured" instead of comparing anything.
+Then open **http://localhost:5176**. The grid loads with the demo organization already looked up.
 
-Each system's `CG_ACCESS_TOKEN` is the bearer it accepts, and Link holds one token per source —
-`PORTAL_ACCESS_TOKEN` and `FUNDERHUB_ACCESS_TOKEN` must each match that system's own value, since a
-token minted for one system is meant to be useless at another. Copying the three examples unchanged
-already lines them up. They are local placeholders; generate real secrets for anything that is not
-localhost.
+| App             | URL                     | What it is                                       |
+| --------------- | ----------------------- | ------------------------------------------------ |
+| Link            | `http://localhost:5176` | The widget. This is the one to open.             |
+| GrantPortal     | `http://localhost:5173` | A system holding the current profile             |
+| FunderHub       | `http://localhost:5174` | A system holding a stale copy, without `socials` |
+| Temelio adapter | `http://localhost:5175` | Placeholder, not built yet                       |
 
-`ENABLE_TEST_ROUTES=true` in the two systems' `.env` mounts `POST /__test/reset`, which re-seeds
-that system's store between specs. Unset, the route 404s, which is what keeps it out of a deploy.
+Do not skip the `.env` step. Each system only answers requests carrying its own token, and Link
+holds one token per system. Copying the three example files unchanged lines them up. The values are
+local placeholders only.
 
-## Scripts
+### Tests
 
-| Command       | What it does                                                |
-| ------------- | ----------------------------------------------------------- |
-| `pnpm dev`    | Run every app in parallel                                   |
-| `pnpm build`  | Build every app and package                                 |
-| `pnpm check`  | Type-check every workspace                                  |
-| `pnpm test`   | Run the Vitest suites                                       |
-| `pnpm e2e`    | Playwright: boot all three apps and run the specs in `e2e/` |
-| `pnpm lint`   | Lint the repo                                               |
-| `pnpm format` | Format the repo                                             |
+```bash
+pnpm test                                    # unit tests for the shared library
+pnpm --filter @cg-link/e2e install-browsers  # once per machine
+pnpm e2e                                     # boots all three apps and drives the widget in a browser
+```
 
-`pnpm e2e` drives the real servers, so it needs all three `.env` files too — a missing one surfaces
-as the reset fixture failing with a sentence naming the app, rather than as a spec that fails on
-some unrelated assertion. The first run on a machine also needs a browser:
-`pnpm --filter @cg-link/e2e install-browsers`.
+`pnpm e2e` needs the same three `.env` files, since it runs the real apps. `pnpm check`, `pnpm lint`
+and `pnpm format:check` cover types, lint and formatting for the whole repo.
+
+## What's in the repo
+
+| Path                   | What it is                                                    |
+| ---------------------- | ------------------------------------------------------------- |
+| `packages/cg-org-sync` | Shared library: schemas, route handlers, client, comparison   |
+| `packages/seed`        | The demo organization's profile, one drifted copy per system  |
+| `apps/portal`          | "GrantPortal", a CommonGrants-native system                   |
+| `apps/funderhub`       | "FunderHub", a second one that does not store every field     |
+| `apps/link`            | The widget                                                    |
+| `apps/temelio-adapter` | Planned proxy over a vendor that has not adopted the protocol |
+| `e2e`                  | Playwright specs that run the real apps                       |
+
+Storage is in memory, so restarting `pnpm dev` puts every system back to its seed. Auth is a static
+token per system. Both are stand-ins with an interface behind them, chosen so the demo shows the
+data exchange rather than infrastructure.
+
+## Status and what's next
+
+The two-system exchange works end to end and is pinned by tests. Not built yet: embedding the
+widget inside a host system, real per-system tokens and Google sign-in, the Temelio adapter, and
+durable storage. The build plan lives outside this repo. Ask Billy for a copy.
 
 ## License
 

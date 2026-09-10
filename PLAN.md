@@ -313,7 +313,7 @@ Depends on: #1153-T6
   path; embedding is a clean follow-up once this works. `data-testid` hooks are a small cost that
   keeps the specs from breaking on copy or styling changes.
 
-### #1153-T8: Document setup, tests, and the demo walkthrough
+### #1153-T8: [✓] Document setup, tests, and the demo walkthrough
 
 Depends on: #1153-T7 (prose can be drafted in parallel, finalised last)
 
