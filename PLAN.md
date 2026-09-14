@@ -521,7 +521,7 @@ issuer; identity; redirectUris; grantsFor(email) }` and handlers `authorize(url,
   named in a comment. The Google path cannot run in CI, so only the fake path is pinned by tests;
   Google is verified by hand before the 18th.
 
-### #1188-T3: Link connect screen, PKCE client, and per-source token forwarding
+### #1188-T3: [✓] Link connect screen, PKCE client, and per-source token forwarding
 
 Depends on: #1188-T1 (header parsing and `capabilities`); end-to-end usable once #1188-T2 lands
 
