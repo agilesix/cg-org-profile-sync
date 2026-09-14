@@ -130,6 +130,46 @@ export interface SourceResolution {
   connection: SourceConnection;
 }
 
+/**
+ * One organization as the picker lists it.
+ *
+ * Deliberately not an `Organization`: choosing which organization to link
+ * needs a name and the identifier it will be matched by elsewhere, and putting
+ * whole profiles on the wire for that would ship a person's full record to a
+ * screen that shows two lines of it.
+ */
+export interface OrgSummary {
+  /** The id this source assigned the organization. */
+  id: string;
+
+  /** The organization's legal name. */
+  name: string;
+
+  /** Its EIN, or `null` when this source publishes none for it. */
+  ein: string | null;
+}
+
+/** What one source answered when asked which organizations a person may touch. */
+export interface OrgListResult {
+  /** The `SourceConfig.id` this list is about. */
+  id: string;
+
+  /** Whether this source's token got us in, and so which control to offer. */
+  connection: SourceConnection;
+
+  /** The organizations this person may touch there, in the source's own order. */
+  orgs: OrgSummary[];
+
+  /**
+   * Why the list is empty. Absent when the source answered.
+   *
+   * An empty list with no error is a person with no organizations at this
+   * system, which is a real answer and not a failure — the two have to stay
+   * tellable apart, since one offers Reconnect and the other does not.
+   */
+  error?: string;
+}
+
 /** What a fan-out read across every source produces. */
 export interface CompareResult {
   /** Every enabled source, in registry order, whether or not it answered. */

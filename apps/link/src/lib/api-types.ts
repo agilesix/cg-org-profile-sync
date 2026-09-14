@@ -15,6 +15,8 @@ export type {
   CompareResult,
   FieldComparison,
   JsonValue,
+  OrgListResult,
+  OrgSummary,
   SourceResolution,
   SyncResult,
   SyncTargetResult,

@@ -17,13 +17,20 @@ import type {
   SourceConnection,
   JsonObject,
   JsonValue,
+  OrgListResult,
   SourceConfig,
   SourceResolution,
   SyncResult,
   SyncTargetResult,
   TokenProvider,
 } from "../types.js";
-import { DEMO_FIELDS, buildMergePatch, capabilitiesOf, compareProfiles } from "../utils/index.js";
+import {
+  DEMO_FIELDS,
+  buildMergePatch,
+  capabilitiesOf,
+  compareProfiles,
+  summarizeOrg,
+} from "../utils/index.js";
 import { NotConnectedError, OrgClient, OrgClientError } from "./org-client.js";
 
 /** What both fan-outs need: who to talk to, and how to authenticate to each. */
@@ -108,6 +115,66 @@ export async function compareAcrossSources(
   });
 
   return { sources, fields: compareProfiles(profiles, DEMO_FIELDS) };
+}
+
+/**
+ * Ask one source which organizations this person may touch there.
+ *
+ * Not a fan-out, despite living here: the organization picker asks one system
+ * at a time, because the person has just signed into that one and may never
+ * connect another. Two systems' lists are two separate questions asked at two
+ * separate moments, not rows of one table — and merging them would invent a
+ * shared notion of "their organizations" that no system actually holds.
+ *
+ * Shares this module's failure vocabulary on purpose. `connection` says which
+ * control the widget should offer, and the three answers here are the same
+ * three `compareAcrossSources` produces, decided by the same `connectionFrom`.
+ *
+ * Note the two refusals below report `connected`. Neither contacted the
+ * source, but `connection` is a question about which control to offer, and for
+ * a source that is misconfigured or declares itself unreadable the answer is
+ * "none, read the error" — the same as for a source that answered 500.
+ * Reporting `not-connected` would offer a Connect button that could only ever
+ * lead back here.
+ */
+export async function listOrgsAt(sourceId: string, options: FanoutOptions): Promise<OrgListResult> {
+  const source = enabledSources(options.sources).find((candidate) => candidate.id === sourceId);
+
+  if (source === undefined) {
+    return {
+      id: sourceId,
+      connection: "connected",
+      orgs: [],
+      error: `No enabled source is configured with the id ${sourceId}.`,
+    };
+  }
+
+  // Refused before asking, the way `syncToTargets` refuses a `write: false`
+  // target. `capabilities` is the source's own statement about itself, so
+  // honouring it is this side's job; asking anyway would make it decorative.
+  if (!capabilitiesOf(source).read) {
+    return {
+      id: source.id,
+      connection: "connected",
+      orgs: [],
+      error: `${source.label} cannot be read.`,
+    };
+  }
+
+  try {
+    const orgs = await clientFor(source, options).list();
+
+    // Summarized here rather than at the route, so what crosses the wire to a
+    // picker is a name and an EIN rather than everyone's full profile.
+    return { id: source.id, connection: "connected", orgs: orgs.map(summarizeOrg) };
+  } catch (cause) {
+    return {
+      id: source.id,
+      connection: connectionFrom(cause),
+      orgs: [],
+      error: reasonFor(cause, source),
+    };
+  }
 }
 
 /**

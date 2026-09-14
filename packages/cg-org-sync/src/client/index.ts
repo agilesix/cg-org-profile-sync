@@ -12,6 +12,7 @@ export {
   DEMO_FIELD_PATHS,
   compareAcrossSources,
   isDemoFieldPath,
+  listOrgsAt,
   syncToTargets,
 } from "./fanout.js";
 export type { FanoutOptions, SyncChange } from "./fanout.js";

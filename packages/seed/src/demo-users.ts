@@ -1,4 +1,5 @@
-import { FUNDERHUB_ORG_ID, PORTAL_ORG_ID } from "./agile-six.js";
+import { PORTAL_ORG_ID } from "./agile-six.js";
+import { FUNDERHUB_SEEDS, PORTAL_SEEDS } from "./other-orgs.js";
 
 /**
  * The people the demo signs in as, and what each may touch on each system.
@@ -35,16 +36,26 @@ export interface DemoUser {
 
 export const DEMO_USERS: readonly DemoUser[] = [
   {
-    // The nonprofit's own admin: the same organization on both systems, which
+    // The nonprofit's own admin: the same organizations on both systems, which
     // is what makes a comparison across the two of them theirs to act on.
+    //
+    // Granted every seeded org rather than one. The organization picker asks
+    // each system what this person may touch there, and a list of one is a
+    // chooser with nothing to choose — so the demo's "select your
+    // organization" step needs the admin to genuinely have several. Derived
+    // from the seeds so an org added there cannot be left ungranted here.
     role: "admin",
     email: "admin@example.org",
     grants: {
-      portal: [PORTAL_ORG_ID],
-      funderhub: [FUNDERHUB_ORG_ID],
+      portal: PORTAL_SEEDS.map((seed) => seed.id),
+      funderhub: FUNDERHUB_SEEDS.map((seed) => seed.id),
     },
   },
   {
+    // Deliberately granted one organization, not all of GrantPortal's. This
+    // person is the demo's negative beat twice over: a stranger to FunderHub,
+    // and — when the picker opens on GrantPortal — someone with exactly one
+    // organization to their name, which is what a real applicant looks like.
     role: "portal-only",
     email: "portal-only@example.org",
     grants: {

@@ -1,4 +1,4 @@
-import { PORTAL_SEED } from "@cg-link/seed";
+import { PORTAL_SEEDS } from "@cg-link/seed";
 import {
   MemoryOrgStore,
   scopedStore,
@@ -23,8 +23,13 @@ export const SYSTEM_ID = "portal";
  * that isolate sees the same writes. Nothing outlives the isolate — which is
  * the whole of this system's durability story for the demo, and the reason the
  * store sits behind an interface a D1-backed one can take over.
+ *
+ * Three organizations, Agile Six first. What any one caller sees is narrowed
+ * by `scopedStore` to whatever they are granted, so the list is a different
+ * length for the admin than for someone with a single org — which is the whole
+ * point of having more than one here.
  */
-export const store = new MemoryOrgStore([PORTAL_SEED]);
+export const store = new MemoryOrgStore(PORTAL_SEEDS);
 
 /**
  * What the shared handlers need to know about this system.

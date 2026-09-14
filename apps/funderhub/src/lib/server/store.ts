@@ -1,4 +1,4 @@
-import { FUNDERHUB_SEED, FUNDERHUB_UNWRITABLE_FIELDS } from "@cg-link/seed";
+import { FUNDERHUB_SEEDS, FUNDERHUB_UNWRITABLE_FIELDS } from "@cg-link/seed";
 import {
   MemoryOrgStore,
   scopedStore,
@@ -23,8 +23,11 @@ export const SYSTEM_ID = "funderhub";
  * that isolate sees the same writes. Nothing outlives the isolate — which is
  * the whole of this system's durability story for the demo, and the reason the
  * store sits behind an interface a D1-backed one can take over.
+ *
+ * Three organizations, Agile Six first, the same as GrantPortal — but with
+ * FunderHub's own record ids, since no two systems agree on those.
  */
-export const store = new MemoryOrgStore([FUNDERHUB_SEED]);
+export const store = new MemoryOrgStore(FUNDERHUB_SEEDS);
 
 /**
  * What the shared handlers need to know about this system.

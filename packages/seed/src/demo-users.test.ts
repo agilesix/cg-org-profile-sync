@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { FUNDERHUB_ORG_ID, PORTAL_ORG_ID } from "./agile-six.js";
+import { PORTAL_ORG_ID } from "./agile-six.js";
 import { DEMO_USERS, demoUsers, grantsFor } from "./demo-users.js";
+import { FUNDERHUB_SEEDS, PORTAL_SEEDS } from "./other-orgs.js";
 
-const SEEDED_ORG_IDS = [PORTAL_ORG_ID, FUNDERHUB_ORG_ID];
+const PORTAL_ORG_IDS = PORTAL_SEEDS.map((seed) => seed.id);
+const FUNDERHUB_ORG_IDS = FUNDERHUB_SEEDS.map((seed) => seed.id);
+
+const SEEDED_ORG_IDS = [...PORTAL_ORG_IDS, ...FUNDERHUB_ORG_IDS];
 
 describe("DEMO_USERS", () => {
   it("holds exactly two people, with distinct emails", () => {
@@ -10,17 +14,30 @@ describe("DEMO_USERS", () => {
     expect(new Set(DEMO_USERS.map((user) => user.email)).size).toBe(2);
   });
 
-  it("grants the admin the portal org on portal and the funderhub org on funderhub", () => {
+  it("grants the admin every seeded org on portal", () => {
     const admin = DEMO_USERS.find((user) => user.email === "admin@example.org");
 
-    expect(admin?.grants.portal).toEqual([PORTAL_ORG_ID]);
-    expect(admin?.grants.funderhub).toEqual([FUNDERHUB_ORG_ID]);
+    expect(new Set(admin?.grants.portal)).toEqual(new Set(PORTAL_SEEDS.map((seed) => seed.id)));
   });
 
-  it("grants the portal-only user the portal org on portal", () => {
+  it("grants the admin every seeded org on funderhub", () => {
+    const admin = DEMO_USERS.find((user) => user.email === "admin@example.org");
+
+    expect(new Set(admin?.grants.funderhub)).toEqual(
+      new Set(FUNDERHUB_SEEDS.map((seed) => seed.id)),
+    );
+  });
+
+  it("grants the portal-only user only the portal org on portal", () => {
     const portalOnly = DEMO_USERS.find((user) => user.email === "portal-only@example.org");
 
     expect(portalOnly?.grants.portal).toEqual([PORTAL_ORG_ID]);
+  });
+
+  it("grants the portal-only user nothing on funderhub", () => {
+    const portalOnly = DEMO_USERS.find((user) => user.email === "portal-only@example.org");
+
+    expect(portalOnly?.grants.funderhub).toEqual([]);
   });
 
   it("every org id named in any user's grants is one of the seeded org ids", () => {
@@ -46,7 +63,7 @@ describe("grantsFor", () => {
   });
 
   it("matches the email case-insensitively", () => {
-    expect(grantsFor("portal", "Admin@Example.org")).toEqual([PORTAL_ORG_ID]);
+    expect(grantsFor("portal", "Admin@Example.org")).toEqual(PORTAL_ORG_IDS);
   });
 });
 
@@ -59,8 +76,8 @@ describe("demoUsers", () => {
     const [admin] = demoUsers({ admin: "someone-else@example.net" });
 
     expect(admin?.email).toBe("someone-else@example.net");
-    expect(admin?.grants.portal).toEqual([PORTAL_ORG_ID]);
-    expect(admin?.grants.funderhub).toEqual([FUNDERHUB_ORG_ID]);
+    expect(admin?.grants.portal).toEqual(PORTAL_ORG_IDS);
+    expect(admin?.grants.funderhub).toEqual(FUNDERHUB_ORG_IDS);
   });
 
   it("overriding one role leaves the other role's placeholder alone", () => {
@@ -96,13 +113,13 @@ describe("demoUsers", () => {
   it("grantsFor looks up an overridden email in the list passed to it", () => {
     const users = demoUsers({ admin: "someone-else@example.net" });
 
-    expect(grantsFor("portal", "someone-else@example.net", users)).toEqual([PORTAL_ORG_ID]);
+    expect(grantsFor("portal", "someone-else@example.net", users)).toEqual(PORTAL_ORG_IDS);
     expect(grantsFor("portal", "admin@example.org", users)).toEqual([]);
   });
 
   it("the overridden lookup still matches case-insensitively", () => {
     const users = demoUsers({ admin: "someone-else@example.net" });
 
-    expect(grantsFor("portal", "Someone-Else@Example.net", users)).toEqual([PORTAL_ORG_ID]);
+    expect(grantsFor("portal", "Someone-Else@Example.net", users)).toEqual(PORTAL_ORG_IDS);
   });
 });

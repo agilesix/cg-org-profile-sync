@@ -10,7 +10,7 @@ import type { Organization } from "../schemas/index.js";
 import type { JsonObject, SourceConfig, TokenProvider } from "../types.js";
 import { DEMO_FIELDS, buildMergePatch } from "../utils/index.js";
 import { NotConnectedError, StaticTokenProvider } from "./org-client.js";
-import { compareAcrossSources, syncToTargets } from "./fanout.js";
+import { compareAcrossSources, listOrgsAt, syncToTargets } from "./fanout.js";
 
 const PORTAL_SOURCE: SourceConfig = {
   id: "portal",
@@ -153,6 +153,158 @@ function errorEnvelope(status: number, message: string): Response {
     headers: { "content-type": "application/json" },
   });
 }
+
+/** A minimal, valid organization with no `org:us:ein` identifier. */
+const NO_EIN_ORG: Organization = {
+  id: "018f2e77-1a2b-7c3d-8e4f-000000000098",
+  name: "Org With No EIN",
+};
+
+/** A second organization, distinct from `PORTAL_SEED`, to prove ordering. */
+const SECOND_ORG: Organization = {
+  id: "018f2e77-1a2b-7c3d-8e4f-000000000097",
+  name: "Second Org",
+  identifiers: {
+    "org:us:ein": {
+      registry: { code: "org:us:ein", url: "https://commongrants.org/registries/org-us-ein" },
+      id: "987654321",
+    },
+  },
+};
+
+describe("listOrgsAt", () => {
+  it("returns every org a source holds, as summaries in the source's own order", async () => {
+    const fetch = stubFetchByOrigin({
+      "https://portal.example.com": listEnvelope([SECOND_ORG, PORTAL_SEED]),
+    });
+    const tokens = new StaticTokenProvider({ portal: "portal-token" });
+
+    const result = await listOrgsAt("portal", {
+      sources: [PORTAL_SOURCE],
+      tokens,
+      fetch,
+    });
+
+    expect(result.id).toBe("portal");
+    expect(result.connection).toBe("connected");
+    expect(result.error).toBeUndefined();
+    expect(result.orgs).toEqual([
+      { id: SECOND_ORG.id, name: SECOND_ORG.name, ein: "987654321" },
+      { id: PORTAL_ORG_ID, name: PORTAL_SEED.name, ein: AGILE_SIX_EIN },
+    ]);
+  });
+
+  it("keeps an org with no org:us:ein identifier in the list, with ein: null", async () => {
+    const fetch = stubFetchByOrigin({
+      "https://portal.example.com": listEnvelope([PORTAL_SEED, NO_EIN_ORG]),
+    });
+    const tokens = new StaticTokenProvider({ portal: "portal-token" });
+
+    const result = await listOrgsAt("portal", {
+      sources: [PORTAL_SOURCE],
+      tokens,
+      fetch,
+    });
+
+    expect(result.orgs).toHaveLength(2);
+    expect(result.orgs).toContainEqual({ id: NO_EIN_ORG.id, name: NO_EIN_ORG.name, ein: null });
+  });
+
+  it("reports a source with no connected token as not-connected without sending it a request", async () => {
+    const { fetch, calls } = captureFetch(stubFetchByOrigin({}));
+    const tokens = new PartialTokenProvider({}, ["portal"]);
+
+    const result = await listOrgsAt("portal", {
+      sources: [PORTAL_SOURCE],
+      tokens,
+      fetch,
+    });
+
+    expect(result.connection).toBe("not-connected");
+    expect(result.orgs).toEqual([]);
+    expect(typeof result.error).toBe("string");
+    expect(result.error).toContain("GrantPortal");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("marks a source that answers 401 as expired", async () => {
+    const fetch = stubFetchByOrigin({
+      "https://portal.example.com": errorEnvelope(401, "GrantPortal rejected the request."),
+    });
+    const tokens = new StaticTokenProvider({ portal: "portal-token" });
+
+    const result = await listOrgsAt("portal", {
+      sources: [PORTAL_SOURCE],
+      tokens,
+      fetch,
+    });
+
+    expect(result.connection).toBe("expired");
+    expect(result.orgs).toEqual([]);
+    expect(typeof result.error).toBe("string");
+  });
+
+  it("marks a source that fails with a 500 as connected, since being refused is not a connection problem", async () => {
+    const fetch = stubFetchByOrigin({
+      "https://portal.example.com": errorEnvelope(500, "GrantPortal had a problem."),
+    });
+    const tokens = new StaticTokenProvider({ portal: "portal-token" });
+
+    const result = await listOrgsAt("portal", {
+      sources: [PORTAL_SOURCE],
+      tokens,
+      fetch,
+    });
+
+    expect(result.connection).toBe("connected");
+    expect(result.orgs).toEqual([]);
+    expect(typeof result.error).toBe("string");
+    expect(result.error).toContain("GrantPortal");
+  });
+
+  it("reports no such enabled source without sending anything, for an unknown or disabled id", async () => {
+    const { fetch, calls } = captureFetch(stubFetchByOrigin({}));
+    const tokens = new StaticTokenProvider({ portal: "portal-token" });
+    const disabled: SourceConfig = { ...PORTAL_SOURCE, enabled: false };
+
+    const unknown = await listOrgsAt("nonexistent", { sources: [PORTAL_SOURCE], tokens, fetch });
+    const off = await listOrgsAt("portal", { sources: [disabled], tokens, fetch });
+
+    expect(unknown.orgs).toEqual([]);
+    expect(unknown.error).toBe("No enabled source is configured with the id nonexistent.");
+
+    expect(off.orgs).toEqual([]);
+    expect(off.error).toBe("No enabled source is configured with the id portal.");
+
+    // `connected` rather than `not-connected`, and pinned because Link's route
+    // turns only `not-connected` into a 401. A misconfigured source id is not
+    // something signing in again could fix, so offering Connect for it would
+    // send someone round a loop that ends back here.
+    expect(unknown.connection).toBe("connected");
+    expect(off.connection).toBe("connected");
+
+    expect(calls).toHaveLength(0);
+  });
+
+  it("refuses a source declared unreadable, without sending it anything", async () => {
+    const unreadable: SourceConfig = {
+      ...PORTAL_SOURCE,
+      capabilities: { read: false, write: true },
+    };
+    const { fetch, calls } = captureFetch(stubFetchByOrigin({}));
+    const tokens = new StaticTokenProvider({ portal: "portal-token" });
+
+    const result = await listOrgsAt("portal", { sources: [unreadable], tokens, fetch });
+
+    expect(result.orgs).toEqual([]);
+    expect(result.error).toContain("cannot be read");
+
+    // As above: a source that declares itself unreadable is not one a second
+    // sign-in would open up, so it must not come back as `not-connected`.
+    expect(result.connection).toBe("connected");
+    expect(calls).toHaveLength(0);
+  });
+});
 
 describe("compareAcrossSources", () => {
   it("resolves each enabled source's org id and compares DEMO_FIELDS across them", async () => {

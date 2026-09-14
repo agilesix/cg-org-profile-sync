@@ -180,6 +180,32 @@ export class OrgClient {
     return first === undefined ? undefined : this.#parseOrg(first, status);
   }
 
+  /**
+   * Every org this source says the caller may touch.
+   *
+   * The unfiltered sibling of `findByIdentifier`: same envelope, no `registry`
+   * and `id`, so the answer is scoped by nothing but the token. That is the
+   * point — the organization picker asks "who am I here?", and only the system
+   * holding the grants can answer it.
+   *
+   * An empty list is a real answer, not an error: a person can be signed in
+   * somewhere that has no organization of theirs on file.
+   */
+  async list(): Promise<Organization[]> {
+    const { body, status } = await this.#request(this.#url("/common-grants/orgs"), {
+      method: "GET",
+    });
+    const items = body["items"];
+
+    if (!Array.isArray(items)) {
+      throw this.#notConformant("a paginated list of organizations", status);
+    }
+
+    // Every record is parsed, so one malformed entry fails the list rather than
+    // being quietly dropped from a picker someone is about to choose from.
+    return items.map((item) => this.#parseOrg(item, status));
+  }
+
   /** Read this source's copy of an org by the id this source assigned it. */
   async read(orgId: string): Promise<Organization> {
     const { body, status } = await this.#request(this.#orgUrl(orgId), { method: "GET" });

@@ -1,4 +1,4 @@
-import { AGILE_SIX_EIN, PORTAL_ORG_ID, PORTAL_SEED } from "@cg-link/seed";
+import { AGILE_SIX_EIN, FUNDERHUB_SEED, PORTAL_ORG_ID, PORTAL_SEED } from "@cg-link/seed";
 import { describe, expect, it } from "vitest";
 import type { Organization } from "../schemas/index.js";
 import type { JsonObject, SourceConfig, TokenProvider } from "../types.js";
@@ -174,6 +174,125 @@ describe("findByIdentifier", () => {
     expect(url.searchParams.get("registry")).toBe("org:us:ein");
     expect(url.searchParams.get("id")).toBe(AGILE_SIX_EIN);
     expect(request?.headers.get("authorization")).toBe("Bearer test-token");
+  });
+});
+
+describe("list", () => {
+  it("requests every org with no registry or id query parameters, carrying a bearer token", async () => {
+    const { fetch, calls } = stubFetch(envelope([]));
+    const client = new OrgClient({
+      source: SOURCE,
+      tokens: new StaticTokenProvider({ portal: "test-token" }),
+      fetch,
+    });
+
+    await client.list();
+
+    expect(calls).toHaveLength(1);
+    const request = calls[0];
+    const url = new URL(request?.url ?? "");
+
+    expect(url.origin + url.pathname).toBe("https://portal.example.com/common-grants/orgs");
+    expect(url.searchParams.get("registry")).toBeNull();
+    expect(url.searchParams.get("id")).toBeNull();
+    expect(request?.headers.get("authorization")).toBe("Bearer test-token");
+  });
+
+  it("returns every organization from the paginated envelope, in order", async () => {
+    const { fetch } = stubFetch(envelope([PORTAL_SEED, FUNDERHUB_SEED]));
+    const client = new OrgClient({
+      source: SOURCE,
+      tokens: new StaticTokenProvider({ portal: "test-token" }),
+      fetch,
+    });
+
+    const orgs = await client.list();
+
+    expect(orgs.map((org) => org.id)).toEqual([PORTAL_SEED.id, FUNDERHUB_SEED.id]);
+    expect(orgs.map((org) => org.name)).toEqual([PORTAL_SEED.name, FUNDERHUB_SEED.name]);
+  });
+
+  it("returns an empty array when the source holds no orgs, rather than an error", async () => {
+    const { fetch } = stubFetch(envelope([]));
+    const client = new OrgClient({
+      source: SOURCE,
+      tokens: new StaticTokenProvider({ portal: "test-token" }),
+      fetch,
+    });
+
+    const orgs = await client.list();
+
+    expect(orgs).toEqual([]);
+  });
+
+  it("throws an OrgClientError when the envelope carries no items array", async () => {
+    const response = new Response(JSON.stringify({ status: 200, message: "Success" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+    const { fetch } = stubFetch(response);
+    const client = new OrgClient({
+      source: SOURCE,
+      tokens: new StaticTokenProvider({ portal: "test-token" }),
+      fetch,
+    });
+
+    try {
+      await client.list();
+      expect.unreachable("client.list should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(OrgClientError);
+      const orgClientError = error as OrgClientError;
+      expect(orgClientError.sourceId).toBe(SOURCE.id);
+    }
+  });
+
+  it("throws an OrgClientError with the envelope's status and message on a refusal", async () => {
+    const { fetch } = stubFetch(errorEnvelope(403, "This token is not scoped to that org.", []));
+    const client = new OrgClient({
+      source: SOURCE,
+      tokens: new StaticTokenProvider({ portal: "test-token" }),
+      fetch,
+    });
+
+    try {
+      await client.list();
+      expect.unreachable("client.list should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(OrgClientError);
+      const orgClientError = error as OrgClientError;
+      expect(orgClientError.sourceId).toBe(SOURCE.id);
+      expect(orgClientError.status).toBe(403);
+      expect(orgClientError.message).toBe("This token is not scoped to that org.");
+    }
+  });
+
+  it("throws an OrgClientError when an item fails schema validation", async () => {
+    const broken = structuredClone(PORTAL_SEED) as unknown as Record<string, unknown>;
+    delete broken.name;
+    const { fetch } = stubFetch(envelope([broken as unknown as Organization]));
+    const client = new OrgClient({
+      source: SOURCE,
+      tokens: new StaticTokenProvider({ portal: "test-token" }),
+      fetch,
+    });
+
+    try {
+      await client.list();
+      expect.unreachable("client.list should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(OrgClientError);
+      const orgClientError = error as OrgClientError;
+      expect(orgClientError.errors.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("throws NotConnectedError and sends no request when there is no token for this source", async () => {
+    const { fetch, calls } = stubFetch(envelope([]));
+    const client = new OrgClient({ source: SOURCE, tokens: new StaticTokenProvider({}), fetch });
+
+    await expect(client.list()).rejects.toBeInstanceOf(NotConnectedError);
+    expect(calls).toHaveLength(0);
   });
 });
 
