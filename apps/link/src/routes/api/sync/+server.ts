@@ -1,8 +1,8 @@
-import { isDemoFieldPath, syncToTargets } from "@cg-link/org-sync/client";
+import { isDemoFieldPath, syncToTargets, tokensFromHeader } from "@cg-link/org-sync/client";
 import type { JsonValue } from "@cg-link/org-sync/types";
 import { json } from "@sveltejs/kit";
 import { z } from "zod";
-import { SOURCES, tokenProvider } from "$lib/server/sources.js";
+import { SOURCES } from "$lib/server/sources.js";
 import type { RequestHandler } from "./$types.js";
 
 /**
@@ -71,7 +71,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
   const result = await syncToTargets(parsed.data, {
     sources: SOURCES,
-    tokens: tokenProvider(),
+    tokens: tokensFromHeader(request),
   });
 
   return json(result);

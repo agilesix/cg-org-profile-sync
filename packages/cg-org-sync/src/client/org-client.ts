@@ -45,6 +45,73 @@ export class OrgClientError extends Error {
   }
 }
 
+/**
+ * No credential for this source: the widget has not connected it yet.
+ *
+ * A subclass rather than a message anyone has to match on, because the fan-out
+ * has to tell it apart from "the source refused us" — one offers Connect and
+ * the other Reconnect, and a string comparison between them is a bug waiting
+ * for someone to reword an error.
+ */
+export class NotConnectedError extends OrgClientError {
+  constructor(sourceId: string) {
+    super(sourceId, `${sourceId} is not connected.`);
+    this.name = "NotConnectedError";
+  }
+}
+
+/**
+ * The header Link's own API carries one access token per source on.
+ *
+ * Shape: `portal=<jwt>, funderhub=<jwt>`. One header rather than one per
+ * source so a request carries the whole set or none of it, and so adding a
+ * system stays a registry entry rather than a new header name.
+ */
+export const SOURCE_TOKENS_HEADER = "x-source-tokens";
+
+/** Build the header value from a map of source id to token. */
+export function sourceTokensHeader(tokens: Readonly<Record<string, string>>): string {
+  return Object.entries(tokens)
+    .map(([id, token]) => `${id}=${token}`)
+    .join(", ");
+}
+
+/**
+ * Read the per-source tokens off a request.
+ *
+ * Deliberately lenient: an entry it cannot parse is skipped rather than
+ * failing the parse, so one malformed pair costs only that source. The others'
+ * columns still have to render, and a source left out simply reads as not
+ * connected — which is a state the widget already draws.
+ *
+ * Link never verifies what it finds here. It forwards, and the system that
+ * issued the token decides whether it is still good.
+ */
+export function tokensFromHeader(request: Request): TokenProvider {
+  const header = request.headers.get(SOURCE_TOKENS_HEADER) ?? "";
+  const tokens: Record<string, string> = {};
+
+  for (const entry of header.split(",")) {
+    // Split on the first `=` only, so a token containing one is never
+    // silently truncated. A later entry for the same source wins, the way a
+    // repeated header parameter usually does.
+    const separator = entry.indexOf("=");
+
+    if (separator === -1) {
+      continue;
+    }
+
+    const id = entry.slice(0, separator).trim();
+    const token = entry.slice(separator + 1).trim();
+
+    if (id && token) {
+      tokens[id] = token;
+    }
+  }
+
+  return new StaticTokenProvider(tokens);
+}
+
 export interface OrgClientOptions {
   /** The system to talk to. */
   source: SourceConfig;
@@ -68,7 +135,7 @@ export class StaticTokenProvider implements TokenProvider {
     const token = this.#tokens[sourceId];
 
     if (token === undefined) {
-      throw new OrgClientError(sourceId, `No access token is configured for ${sourceId}.`);
+      throw new NotConnectedError(sourceId);
     }
 
     return token;

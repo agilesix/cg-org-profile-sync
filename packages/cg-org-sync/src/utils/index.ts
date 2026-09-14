@@ -9,3 +9,5 @@ export {
 } from "./compare.js";
 export { formatFieldValue } from "./format.js";
 export type { FieldSpec } from "./compare.js";
+export { capabilitiesOf } from "./sources.js";
+export { sameOriginPath } from "./urls.js";

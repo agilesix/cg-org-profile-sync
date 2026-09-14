@@ -10,6 +10,7 @@
 -->
 
 <script lang="ts">
+  import { SOURCE_TOKENS_HEADER, sourceTokensHeader } from "@cg-link/org-sync/client";
   import { onMount, untrack } from "svelte";
   import type {
     ApiError,
@@ -21,6 +22,14 @@
   import ComparisonGrid from "$lib/components/ComparisonGrid.svelte";
   import SyncResults from "$lib/components/SyncResults.svelte";
   import { formatFieldValue, type Selection } from "$lib/demo.js";
+  import {
+    forget,
+    listenForConnect,
+    readDenied,
+    readTokens,
+    rememberDenied,
+    rememberToken,
+  } from "$lib/tokens.js";
   import type { PageData } from "./$types.js";
 
   let { data }: { data: PageData } = $props();
@@ -39,7 +48,20 @@
   /** What the lookup field holds, which is not the same as what is loaded. */
   let einInput = $state(untrack(() => data.id));
 
-  let comparison = $state.raw<CompareResult>(untrack(() => data.comparison));
+  /**
+   * One access token per system this tab has signed in with.
+   *
+   * Read from `sessionStorage` on mount rather than rendered into the page:
+   * they are the browser's, not the server's, and a token that appeared in
+   * server-rendered HTML would be a token in every proxy's log.
+   */
+  let tokens = $state<Record<string, string>>({});
+
+  /** Systems that signed us in and then said we have no organization there. */
+  let denied = $state<string[]>([]);
+
+  /** Null until at least one system is connected — there is nothing to read before that. */
+  let comparison = $state.raw<CompareResult | null>(null);
   let selection = $state<Selection | null>(null);
   let targets = $state<string[]>([]);
   let results = $state.raw<SyncTargetResult[] | null>(null);
@@ -61,16 +83,65 @@
   let ready = $state(false);
 
   onMount(() => {
+    tokens = readTokens();
+    denied = readDenied();
     ready = true;
+
+    // A popup reporting back, which is how the flow finishes when Link is
+    // embedded. `listenForConnect` checks the origin; anything else is ignored.
+    const stop = listenForConnect((message) => {
+      if (message.denied) {
+        rememberDenied(message.sourceId);
+        denied = [...new Set([...denied, message.sourceId])];
+        tokens = Object.fromEntries(
+          Object.entries(tokens).filter(([sourceId]) => sourceId !== message.sourceId),
+        );
+      } else if (message.token) {
+        rememberToken(message.sourceId, message.token);
+        tokens = { ...tokens, [message.sourceId]: message.token };
+        denied = denied.filter((sourceId) => sourceId !== message.sourceId);
+      }
+
+      void reload();
+    });
+
+    void reload();
+
+    return stop;
   });
 
+  /** Systems Link can talk to, each with what it allows and where it stands. */
+  const sourceStates = $derived(
+    data.sources.map((source) => {
+      const row = comparison?.sources.find((candidate) => candidate.id === source.id);
+      const connection = denied.includes(source.id)
+        ? "denied"
+        : row?.connection === "expired"
+          ? "expired"
+          : tokens[source.id]
+            ? "connected"
+            : "not-connected";
+
+      return { ...source, connection, error: row?.error };
+    }),
+  );
+
+  const connectedCount = $derived(Object.keys(tokens).length);
+
+  /**
+   * Labels come from the registry, not the comparison.
+   *
+   * The comparison is null until something is connected, and a source that is
+   * down is still a source with a name — falling back to an id in either case
+   * would put `funderhub` on screen where FunderHub belongs.
+   */
   const labels = $derived(
-    Object.fromEntries(comparison.sources.map((source) => [source.id, source.label])),
+    Object.fromEntries(data.sources.map((source) => [source.id, source.label])),
   );
 
   /** The systems a change could actually reach, given what is picked. */
   const candidates = $derived(
-    comparison.sources.filter(
+    (comparison?.sources ?? []).filter(
       (source) => source.id !== selection?.sourceId && source.orgId !== null && !source.error,
     ),
   );
@@ -89,6 +160,54 @@
   );
 
   const canSync = $derived(selection !== null && chosen.length > 0 && !busy);
+
+  /** Every request to Link's own API carries the whole set of tokens, or none. */
+  function authHeaders(): Record<string, string> {
+    return { [SOURCE_TOKENS_HEADER]: sourceTokensHeader(tokens) };
+  }
+
+  /** Where the sign-in round trip should come back to, org and all. */
+  function returnPath(): string {
+    return `/?${new URLSearchParams({ registry, id })}`;
+  }
+
+  /**
+   * Send the person through one system's sign-in.
+   *
+   * Embedded, the flow has to leave the frame — Google will not render its
+   * sign-in page in an iframe — so it runs in a popup that posts the token
+   * back. Standalone, the tab goes itself and comes back to `returnPath`.
+   * A blocked popup falls back to navigating, with a note, rather than
+   * silently doing nothing.
+   */
+  function connect(sourceId: string): void {
+    const start = `/api/connect/start?${new URLSearchParams({
+      source: sourceId,
+      return: returnPath(),
+    })}`;
+
+    if (window.self !== window.top) {
+      const popup = window.open(start, "cg-link-connect", "width=520,height=680");
+
+      if (popup) {
+        return;
+      }
+
+      problem = "Your browser blocked the sign-in window, so this frame will navigate instead.";
+    }
+
+    window.location.href = start;
+  }
+
+  /** Drop what we knew about a system and start its sign-in again. */
+  function reconnect(sourceId: string): void {
+    forget(sourceId);
+    tokens = Object.fromEntries(
+      Object.entries(tokens).filter(([candidate]) => candidate !== sourceId),
+    );
+    denied = denied.filter((candidate) => candidate !== sourceId);
+    connect(sourceId);
+  }
 
   /**
    * Take a source's value as the correct one.
@@ -141,7 +260,7 @@
     const query = new URLSearchParams({ registry: nextRegistry, id: nextId });
 
     try {
-      const response = await fetch(`/api/compare?${query}`);
+      const response = await fetch(`/api/compare?${query}`, { headers: authHeaders() });
 
       if (!response.ok) {
         problem = `Reading the systems failed (${response.status}).`;
@@ -157,6 +276,22 @@
       problem = `The systems could not be read: ${describe(cause)}`;
       return false;
     }
+  }
+
+  /**
+   * Read the org on screen, if there is anyone to read it as.
+   *
+   * With nothing connected there is no request worth making: every column
+   * would come back "not connected", which the connect list above already
+   * says more plainly.
+   */
+  async function reload(): Promise<boolean> {
+    if (connectedCount === 0) {
+      comparison = null;
+      return false;
+    }
+
+    return await load(registry, id);
   }
 
   /** Re-read the org already on screen. */
@@ -208,7 +343,7 @@
     try {
       const response = await fetch("/api/sync", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           registry,
           id,
@@ -241,6 +376,16 @@
       busy = false;
     }
   }
+
+  /** What a source allows, in the words the widget uses for it. */
+  function capabilityWords(capabilities: { read: boolean; write: boolean }): string {
+    const allowed = [
+      capabilities.read ? "pull" : undefined,
+      capabilities.write ? "push" : undefined,
+    ].filter((word): word is string => word !== undefined);
+
+    return allowed.length === 0 ? "no access" : allowed.join(" and ");
+  }
 </script>
 
 <main data-testid="widget" data-ready={ready}>
@@ -251,16 +396,65 @@
     corrections back out.
   </p>
 
-  <form onsubmit={lookUp}>
-    <label for="ein">EIN</label>
-    <input id="ein" data-testid="ein" name="ein" bind:value={einInput} spellcheck="false" />
-    <button type="submit" data-testid="look-up" disabled={busy}>Look up</button>
-  </form>
+  <section class="connect" data-testid="connect-panel">
+    <h2>Systems</h2>
+    <ul class="sources">
+      {#each sourceStates as source (source.id)}
+        <li data-testid="source-{source.id}">
+          <span class="source-name">{source.label}</span>
+          <span class="source-caps">{capabilityWords(source.capabilities)}</span>
 
-  <ComparisonGrid {comparison} {selection} onpick={pick} />
+          {#if source.connection === "connected"}
+            <span class="source-ok" data-testid="connected-{source.id}">Connected</span>
+          {:else if source.connection === "expired"}
+            <button
+              type="button"
+              class="connect-button"
+              data-testid="reconnect-{source.id}"
+              onclick={() => reconnect(source.id)}>Reconnect</button
+            >
+            <span class="source-note">This connection expired.</span>
+          {:else if source.connection === "denied"}
+            <span class="source-note" data-testid="denied-{source.id}"
+              >No access on this system</span
+            >
+            <button
+              type="button"
+              class="connect-button"
+              data-testid="connect-{source.id}"
+              onclick={() => connect(source.id)}>Try another account</button
+            >
+          {:else}
+            <button
+              type="button"
+              class="connect-button"
+              data-testid="connect-{source.id}"
+              onclick={() => connect(source.id)}>Connect</button
+            >
+          {/if}
+        </li>
+      {/each}
+    </ul>
+  </section>
+
+  {#if comparison === null}
+    <p class="prompt" data-testid="nothing-connected">
+      Connect at least one system to see how the copies of a profile compare.
+    </p>
+  {:else}
+    <form onsubmit={lookUp}>
+      <label for="ein">EIN</label>
+      <input id="ein" data-testid="ein" name="ein" bind:value={einInput} spellcheck="false" />
+      <button type="submit" data-testid="look-up" disabled={busy}>Look up</button>
+    </form>
+
+    <ComparisonGrid {comparison} {selection} onpick={pick} />
+  {/if}
 
   <section class="panel" data-testid="panel">
-    {#if selection === null}
+    {#if comparison === null}
+      <p class="prompt">Nothing is connected yet.</p>
+    {:else if selection === null}
       <p class="prompt" data-testid="prompt">
         Click the value a system holds to choose it as the correct one.
       </p>
@@ -308,6 +502,61 @@
 </main>
 
 <style>
+  .connect {
+    margin: 0 0 2rem;
+    padding: 1rem 1.2rem;
+    border: 1px solid #d9e0dd;
+    border-radius: 0.4rem;
+    background: #ffffff;
+  }
+  .connect h2 {
+    margin: 0 0 0.6rem;
+    font-size: 0.72rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #6b7a77;
+  }
+  .sources {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .sources li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.3rem 0.75rem;
+  }
+  .source-name {
+    font-weight: 600;
+  }
+  .source-caps {
+    font-size: 0.8rem;
+    color: #6b7a77;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .source-ok {
+    font-size: 0.8rem;
+    color: #0d6e63;
+  }
+  .source-note {
+    font-size: 0.8rem;
+    color: #8a5a1e;
+  }
+  .connect-button {
+    font: inherit;
+    font-size: 0.85rem;
+    padding: 0.15rem 0.7rem;
+    border: 1px solid #0d6e63;
+    border-radius: 0.25rem;
+    background: #0d6e63;
+    color: #ffffff;
+    cursor: pointer;
+  }
   :global(body) {
     margin: 0;
     background: #f5f7f6;
@@ -446,6 +695,20 @@
   }
 
   @media (prefers-color-scheme: dark) {
+    .connect {
+      background: #131d1c;
+      border-color: #2a3736;
+    }
+    .connect h2,
+    .source-caps {
+      color: #8a9895;
+    }
+    .source-ok {
+      color: #56b7a9;
+    }
+    .source-note {
+      color: #d7a55c;
+    }
     :global(body) {
       background: #0f1615;
       color: #e7edeb;

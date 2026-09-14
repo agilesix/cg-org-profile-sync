@@ -14,6 +14,7 @@
 import type { Organization } from "../schemas/index.js";
 import type {
   CompareResult,
+  SourceConnection,
   JsonObject,
   JsonValue,
   SourceConfig,
@@ -22,8 +23,8 @@ import type {
   SyncTargetResult,
   TokenProvider,
 } from "../types.js";
-import { DEMO_FIELDS, buildMergePatch, compareProfiles } from "../utils/index.js";
-import { OrgClient, OrgClientError } from "./org-client.js";
+import { DEMO_FIELDS, buildMergePatch, capabilitiesOf, compareProfiles } from "../utils/index.js";
+import { NotConnectedError, OrgClient, OrgClientError } from "./org-client.js";
 
 /** What both fan-outs need: who to talk to, and how to authenticate to each. */
 export interface FanoutOptions {
@@ -83,21 +84,27 @@ export async function compareAcrossSources(
           source,
           org: await clientFor(source, options).findByIdentifier(registry, id),
           error: undefined,
+          connection: "connected" as SourceConnection,
         };
       } catch (cause) {
-        return { source, org: undefined, error: reasonFor(cause, source) };
+        return {
+          source,
+          org: undefined,
+          error: reasonFor(cause, source),
+          connection: connectionFrom(cause),
+        };
       }
     }),
   );
 
   const profiles: Record<string, Organization | undefined> = {};
 
-  const sources = resolved.map(({ source, org, error }): SourceResolution => {
+  const sources = resolved.map(({ source, org, error, connection }): SourceResolution => {
     if (org !== undefined) {
       profiles[source.id] = org;
     }
 
-    return { id: source.id, label: source.label, orgId: org?.id ?? null, error };
+    return { id: source.id, label: source.label, orgId: org?.id ?? null, error, connection };
   });
 
   return { sources, fields: compareProfiles(profiles, DEMO_FIELDS) };
@@ -127,6 +134,13 @@ function clientFor(source: SourceConfig, options: FanoutOptions): OrgClient {
  * what actually went wrong.
  */
 function reasonFor(cause: unknown, source: SourceConfig): string {
+  // Reworded with the source's own label, which the error cannot know: this is
+  // the sentence under a Connect button, and "portal is not connected" reads as
+  // an internal id leaking into the UI.
+  if (cause instanceof NotConnectedError) {
+    return `${source.label} is not connected.`;
+  }
+
   if (cause instanceof OrgClientError) {
     return cause.message;
   }
@@ -139,6 +153,26 @@ function reasonFor(cause: unknown, source: SourceConfig): string {
   const detail = cause instanceof Error ? cause.message : String(cause);
 
   return `${source.label} could not be reached: ${detail}`;
+}
+
+/**
+ * Which control the widget should offer for a source that did not answer.
+ *
+ * Only these two failures are about the connection itself. Everything else —
+ * a 500, an unreachable host, a response that did not parse — happened after
+ * the source let us in, and offering Reconnect for those would send someone
+ * round a sign-in loop that was never the problem.
+ */
+function connectionFrom(cause: unknown): SourceConnection {
+  if (cause instanceof NotConnectedError) {
+    return "not-connected";
+  }
+
+  if (cause instanceof OrgClientError && cause.status === 401) {
+    return "expired";
+  }
+
+  return "connected";
 }
 
 /**
@@ -169,6 +203,19 @@ export async function syncToTargets(
           ok: false,
           status: null,
           message: `No enabled source is configured with the id ${id}.`,
+        };
+      }
+
+      // A source that says it cannot be written to is refused here rather than
+      // asked and allowed to say no. `capabilities` is a statement about the
+      // system, so honouring it is this side's job — sending the patch anyway
+      // would make the declaration decorative.
+      if (!capabilitiesOf(source).write) {
+        return {
+          id,
+          ok: false,
+          status: null,
+          message: `${source.label} does not accept changes.`,
         };
       }
 

@@ -3,7 +3,15 @@ import { describe, expect, it } from "vitest";
 import type { Organization } from "../schemas/index.js";
 import type { JsonObject, SourceConfig, TokenProvider } from "../types.js";
 import { buildMergePatch } from "../utils/index.js";
-import { OrgClient, OrgClientError, StaticTokenProvider } from "./org-client.js";
+import {
+  NotConnectedError,
+  OrgClient,
+  OrgClientError,
+  SOURCE_TOKENS_HEADER,
+  sourceTokensHeader,
+  StaticTokenProvider,
+  tokensFromHeader,
+} from "./org-client.js";
 
 const SOURCE: SourceConfig = {
   id: "portal",
@@ -97,6 +105,13 @@ function failingFetch(error: Error): { fetch: typeof globalThis.fetch } {
   };
 
   return { fetch };
+}
+
+/** A `Request` carrying the source-tokens header, as Link's own API would receive it. */
+function requestWithTokens(header: string): Request {
+  return new Request("https://link.test/api/compare", {
+    headers: { [SOURCE_TOKENS_HEADER]: header },
+  });
 }
 
 describe("findByIdentifier", () => {
@@ -487,5 +502,96 @@ describe("OrgClientError", () => {
     });
 
     await expect(client.read(PORTAL_ORG_ID)).rejects.toThrow(OrgClientError);
+  });
+});
+
+describe("sourceTokensHeader / tokensFromHeader round trip", () => {
+  it("round-trips a token per source", async () => {
+    const header = sourceTokensHeader({ portal: "token-a", funderhub: "token-b" });
+    const tokens = tokensFromHeader(requestWithTokens(header));
+
+    expect(await tokens.tokenFor("portal")).toBe("token-a");
+    expect(await tokens.tokenFor("funderhub")).toBe("token-b");
+  });
+
+  it("round-trips an empty map to a provider that grants nothing", async () => {
+    const header = sourceTokensHeader({});
+    const tokens = tokensFromHeader(requestWithTokens(header));
+
+    await expect(tokens.tokenFor("portal")).rejects.toBeInstanceOf(NotConnectedError);
+  });
+
+  it("round-trips a realistic JWT, dots and base64url characters intact", async () => {
+    const jwt =
+      "eyJhbGciOiJFUzI1NiIsImtpZCI6ImFiYyJ9.eyJzdWIiOiJwZXJzb24tMSIsIm9yZ3MiOiIqIn0.MEUCIQD-_9AbC12z3";
+    const header = sourceTokensHeader({ portal: jwt });
+    const tokens = tokensFromHeader(requestWithTokens(header));
+
+    expect(await tokens.tokenFor("portal")).toBe(jwt);
+  });
+});
+
+describe("tokensFromHeader", () => {
+  it("treats a request with no source-tokens header as connected to nothing", async () => {
+    const request = new Request("https://link.test/api/compare");
+    const tokens = tokensFromHeader(request);
+
+    await expect(tokens.tokenFor("portal")).rejects.toBeInstanceOf(NotConnectedError);
+  });
+
+  it("rejects a source the header does not name with NotConnectedError", async () => {
+    const tokens = tokensFromHeader(requestWithTokens("funderhub=token-b"));
+
+    await expect(tokens.tokenFor("portal")).rejects.toThrow(NotConnectedError);
+  });
+
+  it("NotConnectedError is also an OrgClientError, carrying the source id", async () => {
+    const tokens = tokensFromHeader(requestWithTokens("funderhub=token-b"));
+
+    try {
+      await tokens.tokenFor("portal");
+      expect.unreachable("tokenFor should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(OrgClientError);
+      expect(error).toBeInstanceOf(NotConnectedError);
+      expect((error as NotConnectedError).sourceId).toBe("portal");
+    }
+  });
+
+  it("tolerates whitespace around entries and around the =", async () => {
+    const tokens = tokensFromHeader(requestWithTokens("portal = token-a , funderhub = token-b"));
+
+    expect(await tokens.tokenFor("portal")).toBe("token-a");
+    expect(await tokens.tokenFor("funderhub")).toBe("token-b");
+  });
+
+  const malformedEntries = [
+    ["no `=` separator", "malformed"],
+    ["an empty key", "=token-b"],
+    ["an empty value", "funderhub="],
+  ] as const;
+
+  it.each(malformedEntries)(
+    "drops only the malformed entry (%s) rather than failing the whole header, since the other sources' columns still have to render",
+    async (_label, malformedEntry) => {
+      const tokens = tokensFromHeader(requestWithTokens(`portal=token-a, ${malformedEntry}`));
+
+      expect(await tokens.tokenFor("portal")).toBe("token-a");
+      await expect(tokens.tokenFor("funderhub")).rejects.toBeInstanceOf(NotConnectedError);
+    },
+  );
+
+  it("keeps a value containing = whole, splitting only on the first", async () => {
+    const tokens = tokensFromHeader(requestWithTokens("portal=part1=part2"));
+
+    expect(await tokens.tokenFor("portal")).toBe("part1=part2");
+  });
+
+  // Repeated header parameters conventionally resolve to the last one seen, so
+  // that is what a repeated source name resolves to here too.
+  it("resolves a repeated source to the last token in the header", async () => {
+    const tokens = tokensFromHeader(requestWithTokens("portal=first, portal=second"));
+
+    expect(await tokens.tokenFor("portal")).toBe("second");
   });
 });

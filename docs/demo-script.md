@@ -30,7 +30,8 @@ Restart `pnpm dev`, or `POST /__test/reset` on FunderHub, to run it again from t
 Talking points, one per step:
 
 - The widget knows nothing about how many systems there are. A third one is an entry in
-  `apps/link/src/lib/server/sources.ts` and a token in Link's `.env`.
+  `apps/link/src/lib/server/sources.ts`. Link holds no credentials of its own: you connect each
+  system through its own sign-in, and the browser keeps that system's token for the session.
 - Ids are assigned per system, so every operation starts from the EIN lookup. No two systems agree
   on ids and the contract does not ask them to.
 - The write is a JSON Merge Patch that sets exactly one field. A system that cannot store the
@@ -117,8 +118,8 @@ curl -s -X POST http://localhost:5176/api/sync \
 
 ## If something is off
 
-- **Every column says "no access token is configured"**: Link's `.env` is missing. Copy
-  `apps/link/.env.example`.
+- **Every column says a system is not connected**: nothing has been connected yet. Use the
+  Connect control on each system in the widget's list.
 - **Every route answers 401**: that system's `.env` is missing. Copy its `.env.example`.
 - **`/.well-known/jwks.json` answers 500**: that system's `SIGNING_KEY_JWK` is unset or is not a
   private ES256 JWK. The server log names the variable. The org routes still work on

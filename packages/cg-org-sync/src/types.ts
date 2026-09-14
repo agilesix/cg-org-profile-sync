@@ -28,14 +28,22 @@ export interface SourceConfig {
   /** Origin serving `/common-grants/orgs`, with no trailing slash. */
   baseUrl: string;
 
-  /**
-   * Endpoint that mints this system's own access token.
-   *
-   * Ignored for now — the demo holds a static bearer token per source and
-   * `POST /token` is a later ticket. Recorded here so the registry already
-   * names it when token minting lands.
-   */
+  /** Where this system's OAuth flow starts, for the widget's Connect control. */
+  authorizeUrl?: string;
+
+  /** Endpoint that trades an authorization code for this system's access token. */
   tokenUrl?: string;
+
+  /**
+   * What this source allows. Omitted means both.
+   *
+   * The permissive default is the compatible one: the demo's systems declare
+   * nothing and have to keep working. `write: false` is enforced —
+   * `syncToTargets` refuses such a target without sending it anything. `read`
+   * is so far only a label on the connect screen; #1189-T3 is where direction
+   * becomes something the comparison itself acts on.
+   */
+  capabilities?: SourceCapabilities;
 
   /**
    * Field paths this source can store. Fields outside the list are dropped from
@@ -47,6 +55,26 @@ export interface SourceConfig {
   /** Set false to keep a source in the registry but out of the current demo. */
   enabled?: boolean;
 }
+
+/** What a source allows a caller to do with it. */
+export interface SourceCapabilities {
+  /** Can be read from: it contributes a column to the comparison. */
+  read: boolean;
+
+  /** Can be written to: it can be a sync target. */
+  write: boolean;
+}
+
+/**
+ * Whether this source's token got us in.
+ *
+ * Three states rather than two because the widget offers a different control
+ * for each: Connect for a source never connected, Reconnect for one whose
+ * token the source no longer accepts, and nothing at all for one that
+ * answered. A source that let us in and then failed some other way is still
+ * `connected` — being reached and refused is not the same as not being let in.
+ */
+export type SourceConnection = "connected" | "not-connected" | "expired";
 
 /** Whether the sources that hold a field agree on its value. */
 export type ComparisonStatus = "agree" | "differs";
@@ -97,6 +125,9 @@ export interface SourceResolution {
 
   /** Why this source contributed nothing. Absent when it did. */
   error?: string;
+
+  /** Whether this source's token got us in, and so which control to offer. */
+  connection: SourceConnection;
 }
 
 /** What a fan-out read across every source produces. */

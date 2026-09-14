@@ -1,29 +1,32 @@
-import { compareAcrossSources } from "@cg-link/org-sync/client";
+import { capabilitiesOf } from "@cg-link/org-sync/utils";
 import { DEFAULT_EIN, EIN_REGISTRY } from "$lib/demo.js";
-import { SOURCES, tokenProvider } from "$lib/server/sources.js";
+import { enabledSources } from "$lib/server/sources.js";
 import type { PageServerLoad } from "./$types.js";
 
 /**
- * Read every system before the page is sent, so the grid paints filled in.
+ * What the page needs before anyone has connected anything.
  *
- * Calls `compareAcrossSources` directly rather than fetching Link's own
- * `/api/compare`: the route is a thin wrapper over this same function, and a
- * server asking itself over HTTP would only add a hop. The browser does use
- * the route — that is what a refresh after a sync goes through — so both paths
- * stay exercised.
+ * No longer a comparison. The widget now opens on the list of systems it can
+ * talk to, because it holds no credentials of its own — until the person has
+ * signed in with at least one, there is nothing to read and nobody to read it
+ * as. That is the Plaid pattern, and it wants the connect list first anyway.
  *
- * `?registry=` and `?id=` are honoured so a demo can be deep-linked at a
- * particular org, and the resolved pair is handed back for the page to echo
- * into its lookup field.
+ * `?registry=` and `?id=` are still honoured so a demo can be deep-linked at a
+ * particular org, and they survive the sign-in round trip because the connect
+ * flow carries them back.
  */
-export const load: PageServerLoad = async ({ url }) => {
+export const load: PageServerLoad = ({ url }) => {
   const registry = url.searchParams.get("registry") || EIN_REGISTRY;
   const id = url.searchParams.get("id") || DEFAULT_EIN;
 
-  const comparison = await compareAcrossSources(registry, id, {
-    sources: SOURCES,
-    tokens: tokenProvider(),
-  });
+  // Only what the browser has any use for. `baseUrl`, `authorizeUrl` and
+  // `tokenUrl` stay on the server: the Connect control goes through Link's own
+  // `/api/connect/start`, so the page never needs a system's address.
+  const sources = enabledSources().map((source) => ({
+    id: source.id,
+    label: source.label,
+    capabilities: capabilitiesOf(source),
+  }));
 
-  return { registry, id, comparison };
+  return { registry, id, sources };
 };

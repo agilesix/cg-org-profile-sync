@@ -63,7 +63,9 @@ export async function oauthConfig(url: URL): Promise<OAuthConfig | undefined> {
     // Trimmed because this is compared to what Link sends as an exact string:
     // a trailing slash here would refuse every request with a message about
     // the `redirect_uri` being unregistered.
-    redirectUris: env.LINK_ORIGIN ? [`${env.LINK_ORIGIN.replace(/\/+$/, "")}/oauth/callback`] : [],
+    redirectUris: env.LINK_ORIGIN
+      ? [`${env.LINK_ORIGIN.replace(/\/+$/, "")}/connect/callback`]
+      : [],
     grantsFor: (email) => grantsFor(SYSTEM_ID, email, users),
     onProblem: (problem, cause) => {
       // The client is told `access_denied` and nothing else, so this is the

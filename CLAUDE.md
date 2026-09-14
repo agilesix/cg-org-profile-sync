@@ -25,10 +25,13 @@ read and write to the caller's orgs, serves `GET /.well-known/jwks.json`, and is
 authorization server — `/oauth/authorize`, `/oauth/callback` and `POST /token` run a full PKCE flow
 that delegates identity to Google or to a dev-only form, and mints a token scoped to the orgs that
 person may touch there. A person granted an org on GrantPortal and nothing on FunderHub is refused
-at FunderHub, which is the beat the demo turns on. **Link does not use any of it yet** — it still
-connects with the static service credential, so the connect screen and the PKCE client are
-#1188-T3. Not started: that connect screen, the embed loader (the widget is a standalone page, not
-an iframe in a host app), and `temelio-adapter`. `README.md` is the short overview for someone new —
+at FunderHub, which is the beat the demo turns on. Link uses it: the widget opens on a list of
+systems with a Connect control each, runs that system's PKCE flow, keeps the tokens in
+`sessionStorage` for the tab, and forwards them on `x-source-tokens`. A source it has no token for
+reads as "not connected" in its own column while the rest of the fan-out proceeds; one that answers
+401 offers Reconnect. **`pnpm e2e` is red until #1188-T4**, which teaches the specs to connect
+first — they still assume a grid on first paint and static tokens. Not started: the embed loader
+(the widget is a standalone page, not an iframe in a host app), and `temelio-adapter`. `README.md` is the short overview for someone new —
 why the project exists, what the widget does with screenshots, and setup. `docs/demo-script.md`
 is the presenter's runbook: the click path, the `curl` block per system, and what to check when
 something is off. Keep both in step with the code.
@@ -63,14 +66,11 @@ are read through `$env/dynamic/private`, so `svelte-check` does not need them pr
 `.env.example` are real private keys that live in git — placeholders for localhost and nothing
 else.
 
-**Link needs a `.env` too.** `apps/link/.env.example` holds `PORTAL_ACCESS_TOKEN` and
-`FUNDERHUB_ACCESS_TOKEN` — one per source, and each must match that system's own
-`CG_ACCESS_TOKEN`, since a token minted for one system is meant to be useless at another. A source
-whose variable is unset is reported in the comparison as "no access token is configured" rather than
-silently 401ing. Read per request via `$env/dynamic/private`, not at module load: on the Workers
-runtime the env is only populated inside a request, so a module-level read comes back empty.
+**Link holds no credentials.** Each system issues its own token through its own OAuth flow, the
+browser keeps them in `sessionStorage` for the session, and Link forwards them on the
+`x-source-tokens` header. `apps/link/.env.example` is deliberately empty of secrets.
 
-**`pnpm e2e` needs all three `.env` files**, since it drives the real servers. A missing one shows
+**`pnpm e2e` needs the two portal `.env` files**, since it drives the real servers. A missing one shows
 up as the reset fixture failing with a sentence naming the app, rather than as a spec that mystery-
 fails on an assertion. The suite itself holds no credentials: `/__test/reset` is gated by the env
 flag rather than the bearer, and Link's own routes are unauthenticated, so the tokens only ever
@@ -107,8 +107,8 @@ Per-package work:
 - `packages/seed` (`@cg-link/seed`) — seed org profiles for the demo, deliberately inconsistent across systems, plus `demo-users.ts`: the two people the demo signs in as and which orgs each may touch on each system. The grants live next to the profiles they point at; `demoUsers({ admin, "portal-only" })` applies the environment's addresses over the placeholders (an empty override is ignored, so an unset variable cannot blank out an address and strip someone's access), and `grantsFor(systemId, email, users)` is the lookup. Each user carries a `role`, so a caller can tell which person is which without matching on an address that may have been overridden.
 - `apps/portal`, `apps/funderhub`, `apps/temelio-adapter`, `apps/link` — SvelteKit apps on the Cloudflare adapter, deployed as Workers. `portal`/`funderhub` are CommonGrants-native systems, `temelio-adapter` is a conformant proxy over a non-protocol vendor, `link` is the widget. `portal` and `funderhub` serve the org routes; `link` serves its own `/api/compare` and `/api/sync` fan-out routes and the widget page over them; `temelio-adapter` is still a scaffold.
 - Wiring in `portal`/`funderhub` is the same fifteen files in each, differing only in seed, `SYSTEM_ID`, `unwritableFields`, and the signing key: `src/lib/server/store.ts` (module-level `MemoryOrgStore`, `SYSTEM_ID`, and `routesFor(principal)` — the only way the routes reach the store, so one cannot serve it unscoped), `src/lib/server/keys.ts` (imports `SIGNING_KEY_JWK` once per isolate, memoized by value), `src/routes/common-grants/orgs/{+server.ts,[orgId]/+server.ts}`, `src/routes/[x+2e]well-known/jwks.json/+server.ts` (the `[x+2e]` escape is how SvelteKit spells a leading dot, which its router otherwise skips), `src/routes/__test/reset/+server.ts`, `src/hooks.server.ts` (`requireAccess` on `/common-grants/`, principal onto `event.locals`), `src/app.d.ts` (which declares `Locals.principal`), `src/lib/server/oauth.ts` (builds an `OAuthConfig` per request from env, since `$env/dynamic/private` is empty at module load), `src/routes/oauth/{authorize,callback,fake-login}/+server.ts`, `src/routes/token/+server.ts`, `.env.example`, and the route list on `src/routes/+page.svelte` — plus `@cg-link/seed` in `package.json`. The `oauth` routes and `/token` sit outside the bearer guard by construction: it matches `/common-grants/` only, and a sign-in route that needed a credential would have nowhere to get one. Two app trees instead of one parameterised app is deliberate — the demo's story is two independent vendors that happen to speak the same contract.
-- Wiring in `link` is four files: `src/lib/server/sources.ts` (the `SourceConfig[]` registry and the per-request `tokenProvider()`), `src/routes/api/{compare,sync}/+server.ts` (thin — validate with a small Zod schema, call the fan-out, `json()` the result), and `src/lib/api-types.ts` (type-only re-exports so the page and the e2e specs name one type). Adding a third system is an entry in `sources.ts` and a token in `.env`; no route changes.
-- The widget is `src/routes/+page.server.ts` (calls `compareAcrossSources` directly, so first paint has data), `src/routes/+page.svelte` (all the state and both `fetch`es), `src/lib/components/{ComparisonGrid,SyncResults}.svelte`, and `src/lib/demo.ts` (the default EIN, the `Selection` type, and a re-export of `EIN_REGISTRY`/`formatFieldValue` — client-safe, unlike `$lib/server/sources.ts`). Controls carry `data-testid`s the browser specs select by, and `<main>` publishes `data-ready` on mount because everything is server-rendered and clickable a moment before it is live.
+- Wiring in `link`: `src/lib/server/sources.ts` (the `SourceConfig[]` registry, now carrying each system's `authorizeUrl`, `tokenUrl` and `capabilities`), `src/routes/api/{compare,sync}/+server.ts` (thin — validate with a small Zod schema, call the fan-out with `tokensFromHeader(request)`, `json()` the result), `src/lib/api-types.ts` (type-only re-exports so the page and the e2e specs name one type), and the connect flow: `src/routes/api/connect/start/+server.ts` (generate the PKCE pair, keep the verifier in an `HttpOnly` cookie keyed by `state`, 302 to the system), `src/routes/connect/callback/+server.ts` (exchange the code server-to-server, then either `postMessage` to the opener or write `sessionStorage` and return to the widget; `Accept: application/json` takes a third exit for the e2e suite), `src/lib/server/connect.ts` (the cookie's name and shape), and `src/lib/tokens.ts` (the browser's `sessionStorage` half, client-safe). Adding a third system is still one entry in `sources.ts`; no route changes.
+- The widget is `src/routes/+page.server.ts` (returns the source list only — first paint is the connect screen, since Link has no credentials until someone signs in), `src/routes/+page.svelte` (all the state and both `fetch`es), `src/lib/components/{ComparisonGrid,SyncResults}.svelte`, and `src/lib/demo.ts` (the default EIN, the `Selection` type, and a re-export of `EIN_REGISTRY`/`formatFieldValue` — client-safe, unlike `$lib/server/sources.ts`). Controls carry `data-testid`s the browser specs select by, and `<main>` publishes `data-ready` on mount because everything is server-rendered and clickable a moment before it is live.
 - `e2e` (`@cg-link/e2e`) — the Playwright workspace, and the only test in the repo that runs the real apps. `playwright.config.ts` holds one `webServer` per app; `env.ts` holds the three origins; `fixtures.ts` holds the single automatic `api` fixture (it resets both systems, so a browser spec gets isolation without asking for `api`); `specs/` holds the specs — the `api-*` pair drives Link's routes over HTTP, `widget.spec.ts` drives the page in Chromium. It is a root-level workspace, not under `packages/`, because it is not a package anything imports — `pnpm-workspace.yaml` lists `e2e` alongside the two globs.
 
 ## Architecture
@@ -258,10 +258,24 @@ separately as `{ ok, status, message }` — passing the target's own sentence th
 that is where a system says which fields it declined. `null` is a legal value throughout: it is how
 RFC 7396 spells clearing a field.
 
+**Link forwards tokens; it never holds or verifies them.** `SOURCE_TOKENS_HEADER`
+(`x-source-tokens`, `client/org-client.ts`) carries one token per source as
+`portal=<jwt>, funderhub=<jwt>`; `tokensFromHeader(request)` parses it into a `TokenProvider` and
+`sourceTokensHeader(tokens)` builds it. The parse is deliberately lenient — an entry it cannot read
+is skipped rather than failing the request, so one malformed pair costs only that source, and a
+source left out simply reads as not connected. A missing token raises `NotConnectedError`, which the
+fan-out turns into `SourceResolution.connection: "not-connected"` **without sending a request**;
+a 401 from a source becomes `"expired"`; everything else stays `"connected"`, because being reached
+and refused is not the same as never being let in. That three-way split is what decides whether the
+widget offers Connect, Reconnect, or nothing. `client/pkce.ts` holds `createPkcePair` and
+`challengeFor`, in the library rather than in Link because a challenge that disagrees with the
+server's fails only at the token exchange, with nothing on either side saying which half was wrong.
+
 **Shared plain types** (`src/types.ts`) — `JsonValue`/`JsonObject` and `FieldComparison`, plus
 `SourceConfig` and `TokenProvider`. Deliberately Zod-free so app config and UI can import them
-without the schema layer. `SourceConfig.tokenUrl` is optional and currently ignored — the demo uses
-a static bearer token per source and `POST /token` is a later ticket.
+without the schema layer. `SourceConfig` carries `authorizeUrl`, `tokenUrl` and an optional
+`capabilities` (`utils/sources.ts`'s `capabilitiesOf` applies the both-true default in one place;
+the UI words are pull and push).
 
 ## Conventions
 
