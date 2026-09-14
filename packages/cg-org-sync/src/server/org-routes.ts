@@ -130,6 +130,16 @@ export async function updateOrg(
   // path shows it. The parse is a gate here, not a filter; nothing in the org
   // schemas coerces or defaults, so the two differ only by what was stripped.
   const stored = await config.store.write(updated as Organization);
+
+  // A store that declines the write stored nothing, so the record is not one
+  // this caller can reach — the same answer `read` above already gave for it.
+  // Unreachable through `scopedStore`, whose `read` and `write` share a grant;
+  // here so a store that scopes them differently cannot report a change it
+  // never made.
+  if (!stored) {
+    return notFound(`No organization with id ${orgId}.`);
+  }
+
   const now = new Date().toISOString();
 
   return ok(

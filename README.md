@@ -32,7 +32,7 @@ receive it, and sync. Each system gets a JSON Merge Patch that changes only that
 ![After syncing GrantPortal's address to FunderHub, the row agrees and FunderHub reports the change was applied](docs/screenshots/3-synced.png)
 
 **Find out what a system could not store.** A system that does not model a field accepts the
-change, drops the field, and says so. 
+change, drops the field, and says so.
 
 ![Pushing the website to FunderHub: accepted, with the message that this system does not store socials](docs/screenshots/4-declined.png)
 
@@ -43,6 +43,7 @@ is a config entry and an access token, not a feature.
 GET   /common-grants/orgs             find an org by identifier, e.g. ?registry=org:us:ein&id=
 GET   /common-grants/orgs/{orgId}     read one profile
 PATCH /common-grants/orgs/{orgId}     apply a JSON Merge Patch
+GET   /.well-known/jwks.json          this system's public keys
 ```
 
 ## Get set up
@@ -96,15 +97,18 @@ and `pnpm format:check` cover types, lint and formatting for the whole repo.
 | `apps/temelio-adapter` | Planned proxy over a vendor that has not adopted the protocol |
 | `e2e`                  | Playwright specs that run the real apps                       |
 
-Storage is in memory, so restarting `pnpm dev` puts every system back to its seed. Auth is a static
-token per system. Both are stand-ins with an interface behind them, chosen so the demo shows the
-data exchange rather than infrastructure.
+Storage is in memory, so restarting `pnpm dev` puts every system back to its seed — a stand-in
+with an interface behind it, chosen so the demo shows the data exchange rather than
+infrastructure. Each system signs its own access tokens and publishes the public half, and every
+read and write is scoped to the organizations the caller may touch. Nothing mints a token for a
+person yet, so the widget still connects with a static service credential per system.
 
 ## Status and what's next
 
-The two-system exchange works end to end and is pinned by tests. Not built yet: embedding the
-widget inside a host system, real per-system tokens and Google sign-in, the Temelio adapter, and
-durable storage. The build plan lives outside this repo. Ask Billy for a copy.
+The two-system exchange works end to end and is pinned by tests, and so is per-organization
+access once a caller has a token. Not built yet: the sign-in flow that gets a person one (Google,
+and a connect screen in the widget), embedding the widget inside a host system, the Temelio
+adapter, and durable storage. The build plan lives outside this repo. Ask Billy for a copy.
 
 ## License
 

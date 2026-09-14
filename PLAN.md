@@ -424,7 +424,7 @@ see or change it there, which is the key thing Billy wants on stage. `POST /toke
 - Whether 404 (this plan) or 403 is the right answer for an org outside the principal's grants.
   404 hides existence and needs no handler change; revisit when the protocol says.
 
-### #1188-T1: Per-system access tokens, guard, org scoping, and JWKS
+### #1188-T1: [✓] Per-system access tokens, guard, org scoping, and JWKS
 
 - **Acceptance criteria**:
   - When a portal receives `Authorization: Bearer <JWT>` signed by its own key with `aud` equal

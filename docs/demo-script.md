@@ -39,8 +39,11 @@ Talking points, one per step:
 
 ## Poke the routes directly
 
-The tokens are the placeholder values from the `.env.example` files. Ids are assigned per system,
-so the EIN lookup is always the first call; the ids shown are the seeded ones.
+The tokens are the placeholder `CG_ACCESS_TOKEN` values from the `.env.example` files — each
+system's static service credential, which is scoped to every organization it holds. A token minted
+for a person is scoped to theirs instead, and a system answers 404 for an org outside that grant.
+Ids are assigned per system, so the EIN lookup is always the first call; the ids shown are the
+seeded ones.
 
 ```bash
 PORTAL_TOKEN=portal-local-placeholder-change-me
@@ -81,10 +84,16 @@ failure. A `PATCH` returns an `OrgRevision` whose `snapshot` is the profile afte
 Two things worth confirming while you are here:
 
 ```bash
-# No token, or the other system's token: 401.
+# No token, or the other system's token: 401. A system only accepts a token
+# minted for itself, which is what makes one lifted from elsewhere useless.
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:5173/common-grants/orgs
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:5173/common-grants/orgs \
   -H "Authorization: Bearer $FUNDERHUB_TOKEN"
+
+# Each system's public keys, unauthenticated. The two `kid`s differ, because
+# the two systems sign with different keys.
+curl -s http://localhost:5173/.well-known/jwks.json
+curl -s http://localhost:5174/.well-known/jwks.json
 
 # Put a system back to its seed. 204 with ENABLE_TEST_ROUTES=true, 404 without.
 curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:5174/__test/reset
@@ -111,6 +120,9 @@ curl -s -X POST http://localhost:5176/api/sync \
 - **Every column says "no access token is configured"**: Link's `.env` is missing. Copy
   `apps/link/.env.example`.
 - **Every route answers 401**: that system's `.env` is missing. Copy its `.env.example`.
+- **`/.well-known/jwks.json` answers 500**: that system's `SIGNING_KEY_JWK` is unset or is not a
+  private ES256 JWK. The server log names the variable. The org routes still work on
+  `CG_ACCESS_TOKEN`, so this shows up on its own rather than taking the demo down.
 - **A port is taken**: every app sets `strictPort`, so the dev server fails instead of moving. To
   move one, change the port together in the app's `vite.config.ts`, Link's registry in
   `apps/link/src/lib/server/sources.ts`, and the Playwright origins in `e2e/env.ts`.

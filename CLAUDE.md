@@ -11,27 +11,42 @@ they disagree, and pushes corrections back. The build plan lives outside this re
 
 **The project is early.** The workspace, shared schema layer, `applyMergePatch`, and seed data are
 real and tested. The org route handlers are tested (`src/server/org-routes.test.ts`) and wired into
-`apps/portal` and `apps/funderhub`: both serve the three org routes for real, behind a static bearer
-token, over their own drifted seed. The comparison engine, the org client and the fan-out over both
+`apps/portal` and `apps/funderhub`: both serve the three org routes for real, behind an access
+token that names the orgs its bearer may touch, over their own drifted seed. The comparison engine, the org client and the fan-out over both
 of them are written and tested, and `apps/link` now serves `GET /api/compare` and `POST /api/sync`
 for real against both systems over its source registry — so two systems _are_ read together, and a
 chosen value does reach them — and `pnpm e2e` now proves it end to end: the `e2e/` Playwright
 workspace boots all three apps and drives Link's two routes against the real portal and funderhub,
 so the data exchange is pinned by a test rather than by a curl someone ran once. Link's **page** is
 now the widget: `apps/link/+page.svelte` renders the comparison grid, picks a value, syncs it, and
-shows what each target said, and `e2e/specs/widget.spec.ts` drives that in a browser. Not started:
-real auth (Google SSO + per-system JWTs), the embed loader (the widget is a standalone page, not an
-iframe in a host app), and `temelio-adapter`. `README.md` is the short overview for someone new —
+shows what each target said, and `e2e/specs/widget.spec.ts` drives that in a browser. Auth is
+half-built: each system now signs, verifies and publishes its own ES256 keys, scopes every read and
+write to the caller's orgs, and serves `GET /.well-known/jwks.json` for real — but nothing mints a
+token for a person yet, so Link still connects with the static service credential. Not started: the
+OAuth flow that gets a person a token (`POST /token`, Google SSO, Link's connect screen), the embed
+loader (the widget is a standalone page, not an iframe in a host app), and `temelio-adapter`. `README.md` is the short overview for someone new —
 why the project exists, what the widget does with screenshots, and setup. `docs/demo-script.md`
 is the presenter's runbook: the click path, the `curl` block per system, and what to check when
 something is off. Keep both in step with the code.
 
 **Running portal or funderhub needs a `.env`.** Copy each app's `.env.example` to `.env`
-(gitignored). `CG_ACCESS_TOKEN` is the bearer that app accepts on `/common-grants/*` — the guard
-fails closed, so without it every request 401s. `ENABLE_TEST_ROUTES=true` mounts `POST /__test/reset`,
-which re-seeds that system's store; unset, the route 404s. Both are read through
-`$env/dynamic/private`, so `svelte-check` does not need them present. Keep `ENABLE_TEST_ROUTES` out
-of `wrangler.jsonc` `vars` so a deploy can never turn it on.
+(gitignored). Three variables:
+
+- `CG_ACCESS_TOKEN` — the static service credential that app accepts on `/common-grants/*`, scoped
+  to every org. It is what the `curl` block, the `api-*` specs and Link currently use.
+- `SIGNING_KEY_JWK` — that system's own private ES256 JWK, on one line. It backs
+  `GET /.well-known/jwks.json` and verifies the access tokens the system mints for a person. Unset
+  or malformed, the system logs one line naming the variable, verifies no tokens and serves no
+  keys — it still honours `CG_ACCESS_TOKEN`, so the demo and the specs keep working. The
+  `.env.example` comment carries a `node -e` one-liner that generates a fresh key.
+- `ENABLE_TEST_ROUTES=true` — mounts `POST /__test/reset`, which re-seeds that system's store;
+  unset, the route 404s.
+
+The guard fails closed: a system with neither credential configured 401s every request. All three
+are read through `$env/dynamic/private`, so `svelte-check` does not need them present. Keep
+`ENABLE_TEST_ROUTES` out of `wrangler.jsonc` `vars` so a deploy can never turn it on. The JWKs in
+`.env.example` are real private keys that live in git — placeholders for localhost and nothing
+else.
 
 **Link needs a `.env` too.** `apps/link/.env.example` holds `PORTAL_ACCESS_TOKEN` and
 `FUNDERHUB_ACCESS_TOKEN` — one per source, and each must match that system's own
@@ -73,10 +88,10 @@ Per-package work:
 
 ## Layout
 
-- `packages/cg-org-sync` (`@cg-link/org-sync`) — the shared library. Schemas, server route handlers, store, client, and (planned) token helpers. Consumed by everything else. Subpath exports: `./schemas`, `./server`, `./utils`, `./types`, `./client`.
-- `packages/seed` (`@cg-link/seed`) — seed org profiles for the demo, deliberately inconsistent across systems.
+- `packages/cg-org-sync` (`@cg-link/org-sync`) — the shared library. Schemas, server route handlers, store, client, and token helpers. Consumed by everything else. Subpath exports: `./schemas`, `./server`, `./utils`, `./types`, `./client`.
+- `packages/seed` (`@cg-link/seed`) — seed org profiles for the demo, deliberately inconsistent across systems, plus `demo-users.ts`: the two people the demo signs in as and which orgs each may touch on each system. The grants live next to the profiles they point at, and `grantsFor(systemId, email)` is the lookup; placeholder emails, overridden by env in #1188-T2.
 - `apps/portal`, `apps/funderhub`, `apps/temelio-adapter`, `apps/link` — SvelteKit apps on the Cloudflare adapter, deployed as Workers. `portal`/`funderhub` are CommonGrants-native systems, `temelio-adapter` is a conformant proxy over a non-protocol vendor, `link` is the widget. `portal` and `funderhub` serve the org routes; `link` serves its own `/api/compare` and `/api/sync` fan-out routes and the widget page over them; `temelio-adapter` is still a scaffold.
-- Wiring in `portal`/`funderhub` is the same seven files in each, differing only in seed, `source` name, and `unwritableFields`: `src/lib/server/store.ts` (module-level `MemoryOrgStore` + `OrgRoutesConfig`), `src/routes/common-grants/orgs/{+server.ts,[orgId]/+server.ts}`, `src/routes/__test/reset/+server.ts`, `src/hooks.server.ts` (bearer guard on `/common-grants/`), `.env.example`, and the route list on `src/routes/+page.svelte` — plus `@cg-link/seed` in `package.json`. Two app trees instead of one parameterised app is deliberate — the demo's story is two independent vendors that happen to speak the same contract.
+- Wiring in `portal`/`funderhub` is the same ten files in each, differing only in seed, `SYSTEM_ID`, `unwritableFields`, and the signing key: `src/lib/server/store.ts` (module-level `MemoryOrgStore`, `SYSTEM_ID`, and `routesFor(principal)` — the only way the routes reach the store, so one cannot serve it unscoped), `src/lib/server/keys.ts` (imports `SIGNING_KEY_JWK` once per isolate, memoized by value), `src/routes/common-grants/orgs/{+server.ts,[orgId]/+server.ts}`, `src/routes/[x+2e]well-known/jwks.json/+server.ts` (the `[x+2e]` escape is how SvelteKit spells a leading dot, which its router otherwise skips), `src/routes/__test/reset/+server.ts`, `src/hooks.server.ts` (`requireAccess` on `/common-grants/`, principal onto `event.locals`), `src/app.d.ts` (which declares `Locals.principal`), `.env.example`, and the route list on `src/routes/+page.svelte` — plus `@cg-link/seed` in `package.json`. Two app trees instead of one parameterised app is deliberate — the demo's story is two independent vendors that happen to speak the same contract.
 - Wiring in `link` is four files: `src/lib/server/sources.ts` (the `SourceConfig[]` registry and the per-request `tokenProvider()`), `src/routes/api/{compare,sync}/+server.ts` (thin — validate with a small Zod schema, call the fan-out, `json()` the result), and `src/lib/api-types.ts` (type-only re-exports so the page and the e2e specs name one type). Adding a third system is an entry in `sources.ts` and a token in `.env`; no route changes.
 - The widget is `src/routes/+page.server.ts` (calls `compareAcrossSources` directly, so first paint has data), `src/routes/+page.svelte` (all the state and both `fetch`es), `src/lib/components/{ComparisonGrid,SyncResults}.svelte`, and `src/lib/demo.ts` (the default EIN, the `Selection` type, and a re-export of `EIN_REGISTRY`/`formatFieldValue` — client-safe, unlike `$lib/server/sources.ts`). Controls carry `data-testid`s the browser specs select by, and `<main>` publishes `data-ready` on mount because everything is server-rendered and clickable a moment before it is live.
 - `e2e` (`@cg-link/e2e`) — the Playwright workspace, and the only test in the repo that runs the real apps. `playwright.config.ts` holds one `webServer` per app; `env.ts` holds the three origins; `fixtures.ts` holds the single automatic `api` fixture (it resets both systems, so a browser spec gets isolation without asking for `api`); `specs/` holds the specs — the `api-*` pair drives Link's routes over HTTP, `widget.spec.ts` drives the page in Chromium. It is a root-level workspace, not under `packages/`, because it is not a package anything imports — `pnpm-workspace.yaml` lists `e2e` alongside the two globs.
@@ -90,7 +105,7 @@ widget can treat a new source as configuration (a `SourceConfig` entry) rather t
 GET   /common-grants/orgs             list, filtered by ?registry= &id=
 GET   /common-grants/orgs/{orgId}     read one profile
 PATCH /common-grants/orgs/{orgId}     apply a JSON Merge Patch
-POST  /token                          mint this system's own access token
+POST  /token                          mint this system's own access token (#1188-T2)
 GET   /.well-known/jwks.json          this system's public keys
 ```
 
@@ -103,10 +118,39 @@ validates the patched result but stores the _unvalidated_ object, because the sc
 keys and a patch must never be what deletes what an older sender left behind. Each app is expected
 to import these handlers and wire them to its own routes; `portal` and `funderhub` do.
 
-**Auth is a static per-system bearer token.** `requireBearer(request, expectedToken)`
-(`server/auth.ts`) returns a 401 envelope or `undefined`, so a SvelteKit hook reads as
-`requireBearer(...) ?? resolve(event)`. It fails closed when the system has no token configured.
-Placeholder for the per-system JWT with an `aud` claim that `POST /token` will mint.
+**Every system mints and verifies its own access tokens.** `server/tokens.ts` holds the ES256
+half: `loadSigningKey` imports a system's private JWK and derives its `kid` from the RFC 7638
+thumbprint (a thumbprint, not a random id, so two isolates booting from the same key publish the
+same JWKS), `mintAccessToken` signs `{ iss, aud, sub, orgs }`, `verifyAccessToken` checks signature,
+audience, expiry and `kid` and returns a `Principal { sub, orgs }`, and `jwks` serves the public
+half. `aud` is what makes a token per-system: one minted by GrantPortal names GrantPortal and is
+refused at FunderHub, which never had the key that signed it.
+
+`createSigningKeyCache(onProblem)` memoizes the import against the value it came from, and
+resolves to `undefined` rather than rejecting when there is no usable key — it lives in the library
+rather than inline in each app because "no key is configured" has to leave the system serving its
+service token and refusing everything else, not answering 500 to every route, and `apps/*` has no
+harness to pin that with.
+
+`requireAccess(request, { key, audience, serviceToken })` (`server/auth.ts`) is the guard. It
+resolves to a `Principal` or to the 401 envelope to return unchanged, so a SvelteKit hook reads as
+`const principal = await requireAccess(...); if (principal instanceof Response) return principal;`.
+Two credentials are accepted: a JWT this system signed, and the static `CG_ACCESS_TOKEN`, which
+answers `{ sub: "service", orgs: "*" }` — nobody behind it, scoped to everything. The service token
+stays because a system reachable only through an OAuth round trip is one nobody can debug at a
+terminal, and because it is what the `curl` block and the `api-*` specs use. It fails closed on
+every axis: no credentials configured, no signing key plus a non-service bearer, or any token that
+does not verify. `requireBearer` stays for callers that want a yes-or-no on a shared secret and
+have no use for a principal.
+
+**A principal scopes the store, not the handlers.** `scopedStore(store, principal)`
+(`server/store.ts`) narrows an `OrgStore` to the orgs a principal may touch: `list` is filtered,
+`read` and `write` answer `undefined` outside the grant, so `readOrg` and `updateOrg` 404 without
+either handler learning what a principal is. 404 rather than 403 is deliberate — to someone with no
+grant, an org they cannot touch and an org that does not exist should be the same answer. `"*"` is
+returned unwrapped. An **absent** principal is granted nothing, so a route mounted outside the guard
+serves an empty store rather than every profile. This is why `OrgStore.write` returns
+`Organization | undefined`: a declined write has to be distinguishable from a completed one.
 
 **Storage is behind an interface.** `OrgStore` (`server/store.ts`) has `list`/`read`/`write`.
 `MemoryOrgStore` is the only implementation — seeded once per Worker isolate, so writes live only as

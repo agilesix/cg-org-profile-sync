@@ -1,5 +1,5 @@
 import { listOrgs } from "@cg-link/org-sync/server";
-import { orgRoutes } from "$lib/server/store.js";
+import { routesFor } from "$lib/server/store.js";
 import type { RequestHandler } from "./$types.js";
 
-export const GET: RequestHandler = ({ url }) => listOrgs(url, orgRoutes);
+export const GET: RequestHandler = ({ url, locals }) => listOrgs(url, routesFor(locals.principal));

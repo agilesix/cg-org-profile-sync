@@ -14,7 +14,7 @@
       live: true,
     },
     { verb: "POST", path: "/token", note: "mint this system's own access token", live: false },
-    { verb: "GET", path: "/.well-known/jwks.json", note: "this system's public keys", live: false },
+    { verb: "GET", path: "/.well-known/jwks.json", note: "this system's public keys", live: true },
   ];
 </script>
 
@@ -37,8 +37,9 @@
     {/each}
   </ul>
   <p class="status">
-    The three org routes are live, behind a bearer token, over an in-memory store that re-seeds
-    whenever the dev server restarts. Token minting and JWKS are still ahead.
+    The three org routes are live, behind an access token that names the organizations its bearer
+    may touch, over an in-memory store that re-seeds whenever the dev server restarts. This system
+    publishes the public half of its signing key; minting a token is still ahead.
   </p>
 </main>
 
