@@ -575,7 +575,7 @@ verifier }` (five minutes), 302 to the source's `authorizeUrl`. The cookie is se
   anyway. Tokens in `sessionStorage` are per tab and vanish on close, which is what Billy asked
   for. Link never verifies a token; it forwards, and the portal decides.
 
-### #1188-T4: End-to-end proof through the fake provider, fixtures, and docs
+### #1188-T4: [✓] End-to-end proof through the fake provider, fixtures, and docs
 
 Depends on: #1188-T2, #1188-T3
 
