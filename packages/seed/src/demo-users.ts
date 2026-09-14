@@ -13,8 +13,19 @@ import { FUNDERHUB_ORG_ID, PORTAL_ORG_ID } from "./agile-six.js";
  * and arrive through the environment; #1188-T2 is where that override lands.
  */
 
+/**
+ * Which of the demo's two people a user is.
+ *
+ * Independent of the address they sign in with, because that address is
+ * decided the day before and arrives from the environment. A caller that needs
+ * to know which person this is asks the role, not the email.
+ */
+export type DemoRole = "admin" | "portal-only";
+
 /** A person the demo can sign in as, and what they may touch on each system. */
 export interface DemoUser {
+  role: DemoRole;
+
   /** The address the identity provider returns for them. */
   email: string;
 
@@ -26,6 +37,7 @@ export const DEMO_USERS: readonly DemoUser[] = [
   {
     // The nonprofit's own admin: the same organization on both systems, which
     // is what makes a comparison across the two of them theirs to act on.
+    role: "admin",
     email: "admin@example.org",
     grants: {
       portal: [PORTAL_ORG_ID],
@@ -33,6 +45,7 @@ export const DEMO_USERS: readonly DemoUser[] = [
     },
   },
   {
+    role: "portal-only",
     email: "portal-only@example.org",
     grants: {
       portal: [PORTAL_ORG_ID],
@@ -45,7 +58,25 @@ export const DEMO_USERS: readonly DemoUser[] = [
 ];
 
 /**
- * Which orgs `email` may touch on `systemId`.
+ * The demo users, with any supplied address replacing that role's placeholder.
+ *
+ * An absent or empty override leaves the placeholder in place. That matters
+ * more than it looks: an unset environment variable must not blank out an
+ * address, because an empty email matches nobody and would silently strip that
+ * person's access on the morning of the demo.
+ */
+export function demoUsers(
+  emails: Partial<Record<DemoRole, string | undefined>> = {},
+): readonly DemoUser[] {
+  return DEMO_USERS.map((user) => {
+    const override = emails[user.role];
+
+    return override ? { ...user, email: override } : user;
+  });
+}
+
+/**
+ * Which orgs `email` may touch on `systemId`, among `users`.
  *
  * Empty for an unknown person, and for a known person with no grant on that
  * system — "no record of you here" and "you may touch nothing here" are the
@@ -55,9 +86,13 @@ export const DEMO_USERS: readonly DemoUser[] = [
  * someone seeded as `admin@…`, and a case-sensitive lookup would read that as
  * a different person and silently strip their access.
  */
-export function grantsFor(systemId: string, email: string): readonly string[] {
+export function grantsFor(
+  systemId: string,
+  email: string,
+  users: readonly DemoUser[] = DEMO_USERS,
+): readonly string[] {
   const normalized = email.toLowerCase();
-  const user = DEMO_USERS.find((candidate) => candidate.email.toLowerCase() === normalized);
+  const user = users.find((candidate) => candidate.email.toLowerCase() === normalized);
 
   return user?.grants[systemId] ?? [];
 }

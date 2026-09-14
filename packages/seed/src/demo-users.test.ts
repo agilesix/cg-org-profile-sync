@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FUNDERHUB_ORG_ID, PORTAL_ORG_ID } from "./agile-six.js";
-import { DEMO_USERS, grantsFor } from "./demo-users.js";
+import { DEMO_USERS, demoUsers, grantsFor } from "./demo-users.js";
 
 const SEEDED_ORG_IDS = [PORTAL_ORG_ID, FUNDERHUB_ORG_ID];
 
@@ -47,5 +47,62 @@ describe("grantsFor", () => {
 
   it("matches the email case-insensitively", () => {
     expect(grantsFor("portal", "Admin@Example.org")).toEqual([PORTAL_ORG_ID]);
+  });
+});
+
+describe("demoUsers", () => {
+  it("with no argument, returns the same people as DEMO_USERS", () => {
+    expect(demoUsers()).toEqual(DEMO_USERS);
+  });
+
+  it("replaces the admin's email with an override, leaving their grants untouched", () => {
+    const [admin] = demoUsers({ admin: "someone-else@example.net" });
+
+    expect(admin?.email).toBe("someone-else@example.net");
+    expect(admin?.grants.portal).toEqual([PORTAL_ORG_ID]);
+    expect(admin?.grants.funderhub).toEqual([FUNDERHUB_ORG_ID]);
+  });
+
+  it("overriding one role leaves the other role's placeholder alone", () => {
+    const users = demoUsers({ admin: "someone-else@example.net" });
+    const portalOnly = users.find((user) => user.role === "portal-only");
+
+    expect(portalOnly?.email).toBe("portal-only@example.org");
+  });
+
+  it("an undefined override leaves the placeholder in place", () => {
+    const users = demoUsers({ admin: undefined });
+    const admin = users.find((user) => user.role === "admin");
+
+    expect(admin?.email).toBe("admin@example.org");
+  });
+
+  it("an empty string override leaves the placeholder in place", () => {
+    const users = demoUsers({ admin: "" });
+    const admin = users.find((user) => user.role === "admin");
+
+    expect(admin?.email).toBe("admin@example.org");
+  });
+
+  it("tags each returned user with the role they play in the demo", () => {
+    const users = demoUsers({ admin: "someone-else@example.net" });
+
+    expect(users.find((user) => user.email === "someone-else@example.net")?.role).toBe("admin");
+    expect(users.find((user) => user.role === "portal-only")?.email).toBe(
+      "portal-only@example.org",
+    );
+  });
+
+  it("grantsFor looks up an overridden email in the list passed to it", () => {
+    const users = demoUsers({ admin: "someone-else@example.net" });
+
+    expect(grantsFor("portal", "someone-else@example.net", users)).toEqual([PORTAL_ORG_ID]);
+    expect(grantsFor("portal", "admin@example.org", users)).toEqual([]);
+  });
+
+  it("the overridden lookup still matches case-insensitively", () => {
+    const users = demoUsers({ admin: "someone-else@example.net" });
+
+    expect(grantsFor("portal", "Someone-Else@Example.net", users)).toEqual([PORTAL_ORG_ID]);
   });
 });

@@ -100,15 +100,17 @@ and `pnpm format:check` cover types, lint and formatting for the whole repo.
 Storage is in memory, so restarting `pnpm dev` puts every system back to its seed — a stand-in
 with an interface behind it, chosen so the demo shows the data exchange rather than
 infrastructure. Each system signs its own access tokens and publishes the public half, and every
-read and write is scoped to the organizations the caller may touch. Nothing mints a token for a
-person yet, so the widget still connects with a static service credential per system.
+read and write is scoped to the organizations the caller may touch. Each is also its own sign-in:
+you authorize with a system, it decides which organizations you may touch there, and it issues you
+a token good only at itself. The widget does not use that yet — it still connects with a static
+service credential per system.
 
 ## Status and what's next
 
 The two-system exchange works end to end and is pinned by tests, and so is per-organization
-access once a caller has a token. Not built yet: the sign-in flow that gets a person one (Google,
-and a connect screen in the widget), embedding the widget inside a host system, the Temelio
-adapter, and durable storage. The build plan lives outside this repo. Ask Billy for a copy.
+access: each system runs its own sign-in flow and issues tokens scoped to what you may touch there.
+Not built yet: the connect screen that lets the widget use it, embedding the widget inside a host
+system, the Temelio adapter, and durable storage. The build plan lives outside this repo. Ask Billy for a copy.
 
 ## License
 

@@ -13,7 +13,7 @@
       note: "apply a JSON Merge Patch",
       live: true,
     },
-    { verb: "POST", path: "/token", note: "mint this system's own access token", live: false },
+    { verb: "POST", path: "/token", note: "mint this system's own access token", live: true },
     { verb: "GET", path: "/.well-known/jwks.json", note: "this system's public keys", live: true },
   ];
 </script>
@@ -41,7 +41,8 @@
     may touch, over an in-memory store that re-seeds whenever the dev server restarts. This system
     declines <code>socials</code>, <code>yearFounded</code> and <code>orgType</code>: a patch
     setting one is accepted, dropped, and named back to the sender. It publishes the public half of
-    its signing key; minting a token is still ahead.
+    its signing key, and signs in a person through its own OAuth flow to mint them a token scoped to
+    the organizations they may touch here.
   </p>
 </main>
 

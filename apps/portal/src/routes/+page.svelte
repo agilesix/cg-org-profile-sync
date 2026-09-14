@@ -13,7 +13,7 @@
       note: "apply a JSON Merge Patch",
       live: true,
     },
-    { verb: "POST", path: "/token", note: "mint this system's own access token", live: false },
+    { verb: "POST", path: "/token", note: "mint this system's own access token", live: true },
     { verb: "GET", path: "/.well-known/jwks.json", note: "this system's public keys", live: true },
   ];
 </script>
@@ -39,7 +39,8 @@
   <p class="status">
     The three org routes are live, behind an access token that names the organizations its bearer
     may touch, over an in-memory store that re-seeds whenever the dev server restarts. This system
-    publishes the public half of its signing key; minting a token is still ahead.
+    signs in a person through its own OAuth flow and mints them a token scoped to the organizations
+    they may touch here, and it publishes the public half of its signing key.
   </p>
 </main>
 
