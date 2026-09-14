@@ -375,8 +375,8 @@ specs/widget.spec.ts`).
 **Goal**: Replace Link's static per-system bearer tokens with a Plaid-style connect flow. The
 widget opens on a list of the systems this Link is configured to talk to, each labelled with what
 it allows (read, write). Clicking one runs that portal's own OAuth flow; the portal delegates
-identity to Google, checks which orgs that person may touch, and mints its own short-lived access
-token with an `aud` of that system. Link holds the tokens for the browser session and forwards
+identity to an identity provider, checks which orgs that person may touch, and mints its own
+short-lived access token with an `aud` of that system. Link holds the tokens for the browser session and forwards
 them with every compare and sync. A person who is not granted access to an org on a system cannot
 see or change it there, which is the key thing Billy wants on stage. `POST /token` and
 `GET /.well-known/jwks.json`, promised on every landing page since the scaffold, become real.
@@ -388,11 +388,16 @@ see or change it there, which is the key thing Billy wants on stage. `POST /toke
   `callback`, `token`, JWKS) with a Google identity provider and a dev-only fake one on the same
   callback path; a PKCE client in Link with a connect screen; per-source token forwarding on one
   request header; demo users in the seed; e2e fixtures that obtain real tokens through the fake
-  provider; docs.
+  provider; docs. Added 2026-09-14 (T5–T8): a Plaid-style modal (a system picker with stub
+  systems, a Google sign-in step in a popup, an organization picker locked to the first-linked
+  EIN), a success banner, two more seed orgs per system, and `GET /api/orgs` on Link. T9 stands
+  real Google sign-in up after the demo.
 - Out: refresh tokens; one-time-use authorization codes (stateless codes are replayable for their
-  sixty-second life, named in a comment); the "which of my several orgs" chooser (per Billy);
-  Link verifying tokens itself (it only forwards); spec-complete `authorize` parameter validation;
-  auth on the portals' own pages.
+  sixty-second life, named in a comment); Link verifying tokens itself (it only forwards);
+  spec-complete `authorize` parameter validation; auth on the portals' own pages; a same-tab
+  connect as the primary path (the modal needs the popup, and same-tab stays only as the
+  blocked-popup fallback); connecting the five stub systems, which are catalog entries only. The
+  "which of my several orgs" chooser was out of scope per Billy for T1–T4 and is in scope from T7.
 
 **Assumptions**:
 
@@ -408,21 +413,40 @@ see or change it there, which is the key thing Billy wants on stage. `POST /toke
 - The static `CG_ACCESS_TOKEN` stays accepted by the portals as a service credential (principal
   `{ sub: "service", orgs: "*" }`) so the `curl` block and the `api-*` specs keep working. Link
   stops holding it, otherwise the negative case cannot be shown.
-- Google Cloud: one project, one "Web application" OAuth client, redirect URIs
+- **The demo runs on the stand-in sign-in form, not Google** (decided 2026-09-14). Both portals
+  stay on `IDENTITY_PROVIDER=fake` through T8, which is also what `pnpm e2e` drives. The Google
+  provider is written, unit-tested against a local JWKS, and unverified against Google itself;
+  T9 stands it up afterwards. Nothing in T5–T8 needs a Google account, and no ticket is blocked
+  on the console work.
+- Google Cloud, when T9 lands: one project, one "Web application" OAuth client, redirect URIs
   `http://localhost:5173/oauth/callback` and `http://localhost:5174/oauth/callback`, scopes
   `openid email`, consent screen in Testing with the demo Gmail accounts as test users. Only the
   portals hold the client id and secret.
 - Google's sign-in page will not render in an iframe, so when Link is embedded (#1189) the flow
-  runs in a popup; standalone it runs in the same tab, which is the path `pnpm e2e` drives.
+  runs in a popup. Through T4 the standalone flow ran in the same tab, which is the path the e2e
+  suite drove; from T6 the popup is the only primary path, standalone or embedded.
 - Capabilities are spelled `{ read: boolean; write: boolean }` on `SourceConfig`; the UI words are
   pull and push. #1189-T3 and #1191-T2 build on this field.
+- From T6 the connect flow always runs in a popup because the modal has to stay open to show a
+  loading state and to receive the token. Google renders no sign-in page inside another origin's
+  frame and a third party never collects a Google password, so the modal holds a "Continue with
+  Google" button rather than credential inputs; the form inside the popup is what looks like the
+  "Enter your credentials" screenshot, and for the demo that form is the stand-in. The button says
+  Google either way, because the popup is the only thing that changes when T9 flips the provider.
+  The e2e suite drives the popup with Playwright's `page.waitForEvent("popup")`.
+- The five unconnectable systems in the picker carry real vendor names (Temelio, SimplerGrants,
+  Fluxx, Submittable, Foundant GLM) marked "Coming soon"; none is called, linked or described
+  beyond a name and a website.
 
 **Open questions**:
 
-- Which Gmail accounts play the admin and the portal-only user on the 18th. Env overrides the
-  seed placeholders, so this can be decided the day before.
+- Which Gmail accounts play the admin and the portal-only user once Google is real. Deferred to
+  T9 with the rest of the Google work; the stand-in takes any address, and env overrides the seed
+  placeholders either way.
 - Whether 404 (this plan) or 403 is the right answer for an org outside the principal's grants.
   404 hides existence and needs no handler change; revisit when the protocol says.
+- Whether stub systems should show a capabilities line (pull/push) at all, since nothing is known
+  about them. Plan says no.
 
 ### #1188-T1: [✓] Per-system access tokens, guard, org scoping, and JWKS
 
@@ -607,6 +631,263 @@ Depends on: #1188-T2, #1188-T3
 - **Unit tests**: none new; this ticket is the e2e suite and the docs.
 - **Trade-offs**: The Google path is verified only by hand before the demo. The JSON exit on the
   callback exists solely for the API specs.
+
+### #1188-T5: Seed two more organizations per system and list a person's orgs
+
+Depends on: #1188-T1 (scoped store), #1188-T3 (token forwarding)
+
+- **Acceptance criteria**:
+  - When either system boots, then its store holds three orgs: Agile Six plus two invented ones,
+    each with a distinct EIN, the same EIN for the same org on both systems, Agile Six first.
+  - When the admin signs in on either system, then `GET /common-grants/orgs` lists all three; when
+    the portal-only person signs in on GrantPortal, then it lists Agile Six only.
+  - When `POST /__test/reset` runs, then all three come back to seed.
+  - When `GET /api/orgs?source=<id>` is called on Link with a token for that source, then it
+    returns `{ connection, orgs: [{ id, name, ein }] }` in the system's order; with no token for
+    that source it answers 401 with `connection: "not-connected"` and sends the source nothing; a
+    401 from the source maps to `"expired"`.
+  - When a listed org has no `org:us:ein` identifier, then `ein` is `null` rather than the org
+    being dropped.
+- **Implementation plan**:
+  1. `packages/seed/src/other-orgs.ts` (new): two invented orgs per system (four `Organization`
+     objects, two EINs, ids in the existing UUID series), copies deliberately identical across
+     systems so they never show as drift. Export from `index.ts`, plus `PORTAL_SEEDS` and
+     `FUNDERHUB_SEEDS` arrays alongside the existing singletons, which stay for the specs.
+  2. `packages/seed/src/demo-users.ts`: the admin's grants gain the two new ids on both systems;
+     portal-only is unchanged.
+  3. `apps/portal` and `apps/funderhub` `src/lib/server/store.ts`: `new MemoryOrgStore(*_SEEDS)`.
+  4. `packages/cg-org-sync/src/client/org-client.ts`: `OrgClient.list(): Promise<Organization[]>`
+     over `GET /common-grants/orgs` (the paginated envelope `findByIdentifier` already parses),
+     with the same `OrgClientError` mapping. `src/utils/orgs.ts` (new): `summarizeOrg(org):
+OrgSummary { id, name, ein: string | null }` reading `identifiers["org:us:ein"].id`; export
+     both.
+  5. `client/fanout.ts`: `listOrgsAt(sourceId, options: FanoutOptions): Promise<OrgListResult>`
+     returning `{ connection, orgs }`, with `NotConnectedError` → `"not-connected"` and no request,
+     401 → `"expired"`, reusing the resolution logic `compareAcrossSources` has.
+  6. `apps/link/src/routes/api/orgs/+server.ts` (new, thin): Zod-validate `?source=`, call
+     `listOrgsAt` with `tokensFromHeader(request)`, `json()` it, 401 when not connected so the page
+     can offer Connect. `src/lib/api-types.ts` re-exports `OrgSummary` and `OrgListResult`.
+- **Edge cases**: an org with several identifiers (only `org:us:ein` is read); the source down
+  (`OrgClientError` becomes `{ message }` with the source's status, not a crash); a source with
+  `read: false` (refused before any request, as `syncToTargets` does for writes); the seed spec in
+  `packages/seed` that asserts the two Agile Six copies differ must not start comparing the new
+  orgs, which agree by design.
+- **Unit tests**: `packages/seed`: every seed parses with `OrganizationBaseSchema`, ids and EINs
+  are unique per system, the same EIN maps to the same name on both systems;
+  `demo-users.test.ts`: the admin lists three on each system, portal-only one on portal and none
+  on funderhub. `org-client.test.ts`: `list` parses the envelope and surfaces an error envelope as
+  `OrgClientError`. `orgs.test.ts`: `summarizeOrg` with and without an EIN. `fanout.test.ts`:
+  `listOrgsAt` not connected sends nothing; 401 is `"expired"`; the happy path returns summaries
+  in order. `org-routes.test.ts`: `listOrgs` under a scoped store for both demo users.
+- **Trade-offs**: Four more seed objects to keep conformant when the protocol moves. The new orgs
+  agree across systems on purpose: the demo's drift story stays Agile Six's, and the others exist
+  to be greyed out.
+
+### #1188-T6: Empty state, system picker modal, and the Google sign-in step in a popup
+
+Depends on: #1188-T3 (connect routes). Parallel with #1188-T5.
+
+- **Acceptance criteria**:
+  - When the widget opens with nothing linked, then the page shows only a title, a subtitle and a
+    button reading "Link Grant Management System" (`data-testid="link-system"`): no system list,
+    no EIN field, no grid, and no comparison request is made.
+  - When that button is clicked, then a modal (`data-testid="link-modal"`, `role="dialog"`, focus
+    trapped, closed by Escape and by ×) titled "Select your grant management system" lists
+    GrantPortal, FunderHub, Temelio, SimplerGrants, Fluxx, Submittable and Foundant GLM in that
+    order, each with a monogram, name and website line, and a search field that filters by name.
+  - When a stub row is clicked, then nothing navigates; the row is greyed with a "Coming soon"
+    note, and the stub never appears in `/api/compare` or `/api/sync` results.
+  - When an available row is clicked, then the modal moves to a sign-in step showing the system's
+    name and a "Continue with Google" button (`data-testid="continue-with-google"`); clicking it
+    opens the portal's authorize URL in a popup and the modal shows a spinner with "Waiting for
+    sign-in…" (`data-testid="signing-in"`) until the popup posts back. The spinner does not name
+    Google, because with the stand-in provider that is not where the popup went.
+  - When the popup posts a token, then the modal advances (to T7's org step; until T7 lands, it
+    closes and the system shows as linked); when it posts `denied`, then the modal shows "No
+    organization on <system> for that account" with "Try another account" and Close
+    (`data-testid="denied-{id}"` inside the modal).
+  - When `IDENTITY_PROVIDER=fake`, which is what the demo and the e2e suite run on, then the
+    popup's form looks like the "Enter your credentials" screenshot: system name, email and
+    password inputs, Submit. The password is accepted and ignored, and the page says in one line
+    that it stands in for Google, so nobody watching mistakes it for the real thing.
+  - When the popup is blocked, then the tab navigates instead, and on return the modal reopens
+    where it left off.
+- **Implementation plan**:
+  1. `packages/cg-org-sync/src/types.ts`: `SourceConfig.website?: string` and
+     `SourceConfig.status?: "available" | "coming-soon"` (default available).
+     `utils/sources.ts`: `isConnectable(source)`. In Link, `enabledSources()` excludes
+     `coming-soon` from the fan-out and a new `catalogSources()` includes them for the picker.
+  2. `apps/link/src/lib/server/sources.ts`: `website` on the two real entries; five `coming-soon`
+     entries with `website` and no URLs. `+page.server.ts` returns the catalog as
+     `{ id, label, website, capabilities, status }`.
+  3. `apps/link/src/lib/components/LinkModal.svelte` (new): a `<dialog>`-based modal owning a
+     small state machine `{ step: "pick" | "sign-in" | "waiting" | "denied" | "problem" }` plus
+     the chosen source, steps as snippets. `SystemList.svelte` (new) for the searchable rows with
+     a monogram from the label. Colours from the existing palette in `+page.svelte`.
+  4. `+page.svelte`: strip the systems section, the EIN form and the `nothing-connected` prompt;
+     render the empty state; open the modal; `connect(sourceId)` always tries `window.open` first
+     and falls back to navigation with `?resume=<sourceId>&step=sign-in` in `returnPath()`, which
+     the page reads on mount to reopen the modal. `listenForConnect` already receives the popup's
+     message; route it into the modal's machine.
+  5. `packages/cg-org-sync/src/server/identity.ts`: `fakeLoginPage` restyled, with the system
+     label passed in (a new optional argument, wired from each portal's `fake-login` route), email
+     plus a password input the form does not submit, and one sentence saying it stands in for
+     Google. Escaping unchanged.
+  6. Linked-system chips under the header once anything is connected (`connected-{id}`,
+     `reconnect-{id}` and `denied-{id}` keep their meaning), with the "Link Grant Management
+     System" button still shown.
+- **Edge cases**: two popups (`window.open` with a fixed name reuses one); the popup closed by
+  hand (poll `popup.closed` and return the modal to the sign-in step with a note); a
+  `postMessage` for a source the modal is not waiting on (still stored, chip updates, modal
+  untouched); search with no matches ("No systems match"); an available system with
+  `read: false` (listed, but the sign-in step says it cannot be read); `resume=` naming an unknown
+  source (ignored); the stand-in form pre-filling from `login_hint`.
+- **Unit tests**: `sources.test.ts`: `isConnectable` and the default. `identity.test.ts`:
+  `fakeLoginPage` renders the system name, still escapes `state` and the hint, and submits no
+  password field. Everything else is app code, pinned in T8.
+- **Trade-offs**: Real behaviour lands in Svelte (the modal machine) where no Vitest reaches it;
+  kept to state transitions, with every decision about tokens and orgs in the library. A
+  decorative password field is a lie the demo tells on purpose, and it is labelled. Real vendor
+  names on a "coming soon" row carry a small reputational risk, accepted on 2026-09-14.
+
+### #1188-T7: Organization step, EIN lock-in on the second connect, and the success banner
+
+Depends on: #1188-T5, #1188-T6
+
+- **Acceptance criteria**:
+  - When the popup posts a token for the first system linked, then the modal shows "Select your
+    organization" listing that system's orgs from `GET /api/orgs` as name and EIN
+    (`data-testid="org-{id}"`), Agile Six first, with Continue disabled.
+  - When one org is picked, then Continue enables and every other row is disabled and greyed;
+    picking the same row again clears it.
+  - When Continue is clicked, then the modal closes, a dismissible banner reads "<System> linked"
+    (`data-testid="linked-banner"`), the header shows the org's name and EIN
+    (`data-testid="linked-org"`), and the grid loads for that EIN.
+  - When a second system is connected, then only the row whose EIN matches the linked org is
+    selectable and it is pre-selected; the rest are greyed with "Different organization"; when no
+    row matches, the step says "<System> holds no organization with EIN <ein>" and offers Close,
+    and that system's column then reads "No record of this organization" as it does today.
+  - When the tab reloads, then the linked org and every token survive from `sessionStorage`, the
+    modal stays closed, and the grid reloads.
+- **Implementation plan**:
+  1. `packages/cg-org-sync/src/utils/orgs.ts`: `selectableOrgs(orgs, lockedEin: string | null)`
+     returning each `OrgSummary` with `selectable: boolean` and an optional `reason`. Pure and
+     tested; the lock rule lives here and the component only renders it.
+  2. `apps/link/src/lib/tokens.ts`: `rememberLinkedOrg({ registry, id, name })`,
+     `readLinkedOrg()` and `forgetLinkedOrg()` on the same `sessionStorage` wrappers.
+  3. `LinkModal.svelte`: steps `"orgs"` and `"no-match"`; on entering `"orgs"` fetch
+     `/api/orgs?source=` with the `x-source-tokens` header; on Continue call an `onlinked` prop
+     with the summary.
+  4. `+page.svelte`: `linkedOrg` state seeded from storage on mount; `registry`/`id` derive from it
+     (`EIN_REGISTRY` plus the EIN); `reload()` requires a linked org, not just a token; banner
+     state with a Dismiss control. `DEFAULT_EIN` stops being the opening state (nothing linked
+     is), but `?registry=&id=` is still honoured as a pre-locked EIN for the demo script.
+  5. `OrgSummary` and the lock reason strings exported from `api-types.ts` so the e2e specs and
+     the page name one type.
+- **Edge cases**: a token arrives for a system with no matching org and the person closes the
+  modal (token kept, chip says linked, column says no record; not an error); the linked org has
+  no EIN (lock by org name as a fallback, and say so); `/api/orgs` 401 mid-step (return to
+  sign-in with "This connection expired"); Reconnect on a linked system (skip the org step when
+  the EIN still matches, otherwise run it); the deep-link EIN and a stored linked org disagree
+  (the URL wins and the storage is replaced, since the URL is what the presenter typed).
+- **Unit tests**: `orgs.test.ts`: `selectableOrgs` with no lock (all selectable), with a lock (one
+  selectable, the others carrying the reason), with no match (none selectable), and with a `null`
+  EIN. App behaviour is pinned in T8.
+- **Trade-offs**: The org list is the system's own answer, so a person granted several orgs sees
+  several; "you may link one at a time" is enforced only in Link's UI, since the contract has no
+  notion of a linked org. Storage of the linked org is per tab, like the tokens.
+
+### #1188-T8: End-to-end specs for the Plaid flow, and docs
+
+Depends on: #1188-T7
+
+- **Acceptance criteria**:
+  - When `pnpm e2e` runs, then every existing assertion in `widget.spec.ts`, `connect.spec.ts` and
+    the `api-*` specs still passes, driven through the modal and popup rather than the old list.
+  - When the new `link-flow.spec.ts` runs, then it proves: the empty state shows one button; the
+    picker lists seven systems with five greyed; a stub click goes nowhere; the first connect
+    shows three orgs and Continue disabled until a pick; the banner and linked header appear; the
+    second connect pre-selects the matching org and greys the other two; and picking a different
+    org first, then connecting a system holding no org with that EIN, shows "holds no organization
+    with EIN".
+  - When the README and demo script are followed, then the click path matches the modal, both say
+    plainly that sign-in is the stand-in form and that Google is T9, and `CLAUDE.md`'s "The project
+    is early" paragraph and the `apps/link` wiring list name the new components and route.
+- **Implementation plan**:
+  1. `e2e/fixtures.ts`: `connect(page, sourceId, email, { orgId? })` becomes open modal → click
+     the system row → Continue with Google → `page.waitForEvent("popup")` → fill the stand-in form
+     in the popup → wait for the org step → pick → Continue → wait for `connected-{id}`;
+     `connectExpectingDenial` waits for the modal's `denied-{id}`; `openWidget` is unchanged;
+     `connectViaApi` and `tokenFor` are unchanged, since they never touch the page.
+  2. `e2e/specs/link-flow.spec.ts` (new) with the beats above; `widget.spec.ts` swaps the `ein`
+     assertion for `linked-org`; `connect.spec.ts` asserts against the modal and the chips.
+  3. `e2e/env.ts`: the second seed org's EIN from `@cg-link/seed` for the no-match beat.
+  4. Docs: `README.md` (what the widget does, with new screenshots of the three modal steps, and
+     a line in the Google section saying the stand-in is what the demo runs on until T9),
+     `docs/demo-script.md` (the click path rewritten
+     around the modal, the "second system pre-selects the org" beat, and what to check when the
+     popup is blocked), `CLAUDE.md` (the widget paragraph, the `link` wiring list, the new
+     `SourceConfig` fields, `GET /api/orgs`), and all three landing-page route lists.
+- **Edge cases**: Vite compiling the popup's first route (reuse the retry helper); Playwright's
+  popup must be awaited before the click that opens it; the `problem` banner must stay absent in
+  every happy path; the blocked-popup fallback gets one spec that stubs `window.open` to return
+  `null`.
+- **Unit tests**: none new; this ticket is the suite and the docs.
+- **Trade-offs**: The Google path is neither driven by the suite nor verified by hand at this
+  point; T9 is where it becomes real, and until then every sign-in on screen is the stand-in. The
+  specs now depend on the popup mechanism, with the same-tab fallback covered by the one stubbed
+  spec.
+
+### #1188-T9: Stand real Google sign-in up behind the stub, after the demo
+
+Depends on: #1188-T8. Deliberately the last ticket: the demo runs on the stand-in, and nothing
+before this ticket needs a Google account.
+
+- **Acceptance criteria**:
+  - When a portal has `IDENTITY_PROVIDER=google` with a client id and secret, then clicking
+    "Continue with Google" in the modal opens Google's own account chooser in the popup, and
+    signing in as the admin account returns to the modal on the organization step with that
+    system's orgs listed.
+  - When the same flow is run as an account with no grant on that system, then the popup returns
+    the modal to its denied step, exactly as the stand-in does.
+  - When a portal starts, then one log line names which identity provider it is using, so a
+    presenter can tell a misconfigured portal from a working one without reading `.env`.
+  - When `IDENTITY_PROVIDER` is unset or `google` while the client id or secret is missing, then
+    `/oauth/authorize` fails with a sentence naming the missing variable rather than sending
+    someone to Google with an empty client id.
+  - When `pnpm e2e` runs with both portals back on `fake`, then the whole suite still passes.
+  - When the README is followed by someone with no Google project, then the console steps, the
+    redirect URIs, the test-user list and the popup settings are all there.
+- **Implementation plan**:
+  1. Google Cloud console, by hand (see "Google sign-in setup" below): one project, consent screen
+     in Testing with both demo accounts as test users, one Web application OAuth client with each
+     portal's own `/oauth/callback` as a redirect URI.
+  2. `apps/portal` and `apps/funderhub` `src/lib/server/oauth.ts`: refuse to build a
+     `GoogleIdentityProvider` with an empty client id or secret, returning the same shape
+     `oauthConfig` already returns for a missing signing key so `authorize` answers a sentence;
+     add the provider-name log line, emitted once per isolate like `keys.ts` memoizes.
+  3. Both `.env.example` files: the Google variables move from "fill these in later" to the real
+     instructions, with the callback URI spelled out per app.
+  4. `README.md`: the "Signing in with Google instead" section becomes the verified procedure,
+     including the popup allowance and the one-time unverified-app screen. `docs/demo-script.md`
+     gains a short "if we are running on Google today" note beside the stand-in click path.
+  5. Run the whole demo script by hand against Google, both people, both systems, and record what
+     the unverified-app screen looks like so nobody meets it for the first time on stage.
+- **Edge cases**: a redirect URI that differs from `SYSTEM_ORIGIN` by a trailing slash (Google
+  refuses with nothing in the request explaining why; `callbackUrl` already trims, and the README
+  says to match them); an account that is not on the test-user list (Google returns
+  `access_denied` before our callback runs, which the modal shows as denied and the portal logs
+  through `onProblem`); `email_verified` false (already refused in `GoogleIdentityProvider`); the
+  browser already signed into a different Google account (the chooser, not a silent sign-in);
+  Chrome blocking the popup on the demo machine (the same-tab fallback still works, and the README
+  says to allow popups beforehand); `pnpm e2e` run while a portal is on `google` (the suite
+  already fails with a sentence naming that app).
+- **Unit tests**: none new. `identity.test.ts` already pins `GoogleIdentityProvider` against a
+  local JWKS, and nothing here can be reached from a test that does not talk to Google.
+- **Trade-offs**: This is mostly console work and a by-hand run, which is why it is a ticket of its
+  own and why it sits after the demo. Until it lands, every sign-in in this repo is the stand-in
+  form, which proves nothing about who someone is — acceptable while the grant model, not the
+  identity, is what the demo is claiming.
 
 ## #1189: End-to-end field edit and sync flow across portals
 
@@ -952,10 +1233,16 @@ Depends on: #1191-T1
 ## Cross-issue dependency graph
 
 - #1188-T1 → #1188-T2, #1188-T3; #1188-T2, #1188-T3 → #1188-T4
+- #1188-T4 → #1188-T5, #1188-T6; #1188-T5, #1188-T6 → #1188-T7 → #1188-T8 → #1188-T9
 - #1188-T1 → #1189-T3, #1190-T1
 - #1189-T1 → #1189-T2 → #1189-T3
 - #1191-T1 → #1191-T2
 - **Parallel**: #1188-T1, #1189-T1, and #1191-T1 have no dependencies on each other and can start
   now. Once #1188-T1 lands, #1188-T2 and #1188-T3 can run in parallel. #1191 touches
   `apps/link/src/routes/+page.svelte` heavily, as do #1188-T3's connect screen and #1189-T3; land
-  #1191-T1 early or expect merge work there. #1190-T1 waits for Monday Sept 14.
+  #1191-T1 early or expect merge work there. #1190-T1 waits for Monday Sept 14. #1188-T5 and
+  #1188-T6 can run in parallel now that T4 is done; #1188-T6 rewrites `+page.svelte` around the
+  modal, so #1189-T3's "connect-list badges" land on its picker rows and chips instead, and
+  #1189-T2's embed keeps working because the popup already reports to `window.opener`. #1188-T9 is
+  console work plus a by-hand run and is deliberately last: the demo ships on the stand-in sign-in
+  form, so nothing waits on a Google project.
