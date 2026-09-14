@@ -1,3 +1,5 @@
+import { DEMO_USERS, type DemoRole } from "@cg-link/seed";
+
 /**
  * Where the three demo apps live, and what the suite looks the org up by.
  *
@@ -35,3 +37,29 @@ export const SYSTEM_ORIGINS: Readonly<Record<string, string>> = {
  * chance to drift.
  */
 export { EIN_REGISTRY } from "@cg-link/org-sync/utils";
+
+/**
+ * The two people the demo signs in as, taken from the seed rather than spelled
+ * again here.
+ *
+ * The portals resolve the same list, so the suite and the systems it drives
+ * agree on who these people are by construction. A deployment that overrode
+ * the addresses through `DEMO_ADMIN_EMAIL` / `DEMO_PORTAL_ONLY_EMAIL` would
+ * break that agreement — which is one more reason the suite refuses to run
+ * against a portal configured for anything but the fake provider.
+ */
+function emailFor(role: DemoRole): string {
+  const user = DEMO_USERS.find((candidate) => candidate.role === role);
+
+  if (!user) {
+    throw new Error(`@cg-link/seed no longer defines a ${role} demo user`);
+  }
+
+  return user.email;
+}
+
+/** Granted the org on both systems. */
+export const ADMIN_EMAIL = emailFor("admin");
+
+/** Granted the org on GrantPortal and nothing on FunderHub — the demo's negative beat. */
+export const PORTAL_ONLY_EMAIL = emailFor("portal-only");

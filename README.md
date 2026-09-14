@@ -53,15 +53,16 @@ You need Node 22 or newer and pnpm 11.
 ```bash
 pnpm install
 
-# Each app reads its access tokens from a gitignored .env. Copy all three:
+# Each system reads its configuration from a gitignored .env. Copy both:
 cp apps/portal/.env.example apps/portal/.env
 cp apps/funderhub/.env.example apps/funderhub/.env
-cp apps/link/.env.example apps/link/.env
 
 pnpm dev
 ```
 
-Then open **http://localhost:5176**. The grid loads with the demo organization already looked up.
+Then open **http://localhost:5176** and connect each system. Out of the box they use a stand-in
+sign-in form, so any address works — use `admin@example.org` to see both systems, or
+`portal-only@example.org` to see one system refuse you.
 
 | App             | URL                     | What it is                                       |
 | --------------- | ----------------------- | ------------------------------------------------ |
@@ -70,9 +71,36 @@ Then open **http://localhost:5176**. The grid loads with the demo organization a
 | FunderHub       | `http://localhost:5174` | A system holding a stale copy, without `socials` |
 | Temelio adapter | `http://localhost:5175` | Placeholder, not built yet                       |
 
-Do not skip the `.env` step. Each system only answers requests carrying its own token, and Link
-holds one token per system. Copying the three example files unchanged lines them up. The values are
-local placeholders only.
+Do not skip the `.env` step: a system with no configuration answers 401 to everything. Link needs
+no `.env` — it holds no credentials, and forwards the token each system issues you.
+
+Every value in the examples is a local placeholder, including the signing keys, which are real
+private keys sitting in git. Generate your own for anything that is not localhost.
+
+| Variable in each portal's `.env`              | What it does                                                    |
+| --------------------------------------------- | --------------------------------------------------------------- |
+| `CG_ACCESS_TOKEN`                             | A static service credential, for `curl` and the route specs     |
+| `SIGNING_KEY_JWK`                             | That system's own ES256 key: signs its tokens, backs its JWKS   |
+| `ENABLE_TEST_ROUTES`                          | Mounts `POST /__test/reset`; unset, that route 404s             |
+| `IDENTITY_PROVIDER`                           | `fake` for the stand-in sign-in form; `google` for the real one |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`   | The Google client, when `IDENTITY_PROVIDER` is not `fake`       |
+| `SYSTEM_ORIGIN`                               | This system's own origin; defaults to the request's             |
+| `LINK_ORIGIN`                                 | The only origin it will send an authorization code to           |
+| `DEMO_ADMIN_EMAIL` / `DEMO_PORTAL_ONLY_EMAIL` | Real addresses for the two demo people, if you have them        |
+
+### Signing in with Google instead
+
+The stand-in form is enough to run and demo everything. To use real Google sign-in, make one
+project in the Google Cloud console with one **Web application** OAuth client:
+
+- Authorized redirect URIs: `http://localhost:5173/oauth/callback` and
+  `http://localhost:5174/oauth/callback` — each portal's own callback, not Link's.
+- Scopes: `openid` and `email`. Nothing else is read.
+- Leave the consent screen in **Testing** and add the demo accounts as test users.
+
+Then set `IDENTITY_PROVIDER=google`, `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in both portals,
+and point `DEMO_ADMIN_EMAIL` / `DEMO_PORTAL_ONLY_EMAIL` at the accounts you added. Only the portals
+hold the client secret; Link never sees it.
 
 ### Tests
 
@@ -82,8 +110,10 @@ pnpm --filter @cg-link/e2e install-browsers  # once per machine
 pnpm e2e                                     # boots all three apps and drives the widget in a browser
 ```
 
-`pnpm e2e` needs the same three `.env` files, since it runs the real apps. `pnpm check`, `pnpm lint`
-and `pnpm format:check` cover types, lint and formatting for the whole repo.
+`pnpm e2e` runs the real apps, so it needs both portal `.env` files and `IDENTITY_PROVIDER=fake` —
+it signs in through the stand-in form and cannot drive Google. A portal set to `google` fails the
+suite with a sentence naming it. `pnpm check`, `pnpm lint` and `pnpm format:check` cover types,
+lint and formatting for the whole repo.
 
 ## What's in the repo
 

@@ -8,20 +8,31 @@ the `curl` block, and what to say while it runs. Everything assumes `pnpm dev` i
 
 About two minutes. Everything is at `http://localhost:5176`.
 
-1. **Open Link.** The EIN field already holds the demo org (`123456789`) and the grid shows one
-   column per system, GrantPortal and FunderHub, and one row per compared field. Three rows agree.
+1. **Open Link.** It opens on the systems it can talk to, not on data: GrantPortal and FunderHub,
+   each labelled with what it allows and each offering **Connect**. Link holds no credentials of
+   its own, so there is nothing for it to read until you sign in with one.
+2. **Connect GrantPortal** as `admin@example.org`. The tab goes to GrantPortal's own sign-in, comes
+   back, and GrantPortal's column fills in. FunderHub's column says it is not connected — a state,
+   not an error: the grid still renders everything GrantPortal holds.
+3. **Connect FunderHub** as the same person. Now the EIN field holds the demo org (`123456789`) and
+   the grid shows one column per system, with one row per compared field. Three rows agree.
    The **Primary address** row is marked as differing: GrantPortal says Suite 300, FunderHub says
    Suite 210. The **Website** row shows a value under GrantPortal and nothing under FunderHub. That
    is a gap, not a conflict, so the row is not flagged.
-2. **Fix the address.** Click GrantPortal's address to choose it. The panel echoes the pick, and
+4. **Fix the address.** Click GrantPortal's address to choose it. The panel echoes the pick, and
    FunderHub is pre-selected as the target (the system a value came from is never offered, since it
    already holds it). Click **Sync**. FunderHub answers "accepted", the grid re-reads both systems,
    and the address row now agrees on Suite 300.
-3. **Push the website.** Click GrantPortal's website, then **Sync**. FunderHub still answers
+5. **Push the website.** Click GrantPortal's website, then **Sync**. FunderHub still answers
    "accepted", but its message reads "This system does not store socials." The patch was applied,
    the field was dropped, and the sender was told so. The grid re-reads and the website row is
    unchanged: FunderHub still holds nothing.
-4. **Optional: an org nobody knows.** Type `000000000` in the EIN field and click **Look up**. Each
+6. **The beat worth ending on.** Open a new tab at `http://localhost:5176` — tokens live for the
+   tab, so this one starts disconnected — and connect as `portal-only@example.org`. GrantPortal
+   signs them in. FunderHub signs them in too, and then says **No access on this system**: that
+   person has no organization there. Same widget, same person, two answers, because each system
+   decides for itself. Nothing is broken, and the comparison still shows what GrantPortal holds.
+7. **Optional: an org nobody knows.** Type `000000000` in the EIN field and click **Look up**. Each
    column reports that the system has no record of the org, the grid still renders, and the value
    picked for the previous org is dropped so it cannot be written onto the wrong organization.
 
@@ -37,6 +48,9 @@ Talking points, one per step:
 - The write is a JSON Merge Patch that sets exactly one field. A system that cannot store the
   field accepts the patch, drops the field, and says so in its message. The sender learns the
   value went no further without the whole change failing.
+- Nobody typed a password into Link, and Link stores nothing. Each system runs its own sign-in and
+  issues its own short-lived token, scoped to the organizations that person may touch there. The
+  browser holds them for the tab; close it and they are gone.
 
 ## Poke the routes directly
 
@@ -99,6 +113,36 @@ curl -s http://localhost:5174/.well-known/jwks.json
 # Put a system back to its seed. 204 with ENABLE_TEST_ROUTES=true, 404 without.
 curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:5174/__test/reset
 ```
+
+### Minting a token by hand
+
+The flow the Connect button runs, one hop at a time — useful when something is off and you want to
+know which hop broke. Assumes `IDENTITY_PROVIDER=fake`; against Google the middle hop is a browser
+sign-in rather than a URL you can curl.
+
+```bash
+# 1. Link starts the flow: a PKCE verifier into a cookie jar, a redirect to the portal.
+curl -s -c /tmp/link-jar -o /dev/null -D - \
+  'http://localhost:5176/api/connect/start?source=portal' | grep -i '^location'
+
+# 2. Follow that location. The portal's /oauth/authorize redirects on to its own sign-in page,
+#    carrying a signed state. Submitting the form is a GET the state travels on:
+#      http://localhost:5173/oauth/callback?state=<state>&email=admin@example.org
+#    which redirects back to Link with ?code=<code>&state=<...>.
+
+# 3. Link exchanges the code for the portal's token. Ask for JSON to see it:
+curl -s -b /tmp/link-jar -H 'Accept: application/json' \
+  'http://localhost:5176/connect/callback?code=<code>&state=<state>'
+
+# 4. That token works at the system that issued it, and nowhere else:
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:5173/common-grants/orgs \
+  -H "Authorization: Bearer $TOKEN"   # 200
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:5174/common-grants/orgs \
+  -H "Authorization: Bearer $TOKEN"   # 401 — minted for another audience
+```
+
+`e2e/fixtures.ts`'s `connectViaApi` drives exactly these hops, if you would rather read it than
+type it.
 
 Link's own two routes are unauthenticated. The tokens only matter server-side, between Link and
 the systems:

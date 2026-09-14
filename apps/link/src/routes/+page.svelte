@@ -400,7 +400,7 @@
     <h2>Systems</h2>
     <ul class="sources">
       {#each sourceStates as source (source.id)}
-        <li data-testid="source-{source.id}">
+        <li data-testid="system-{source.id}">
           <span class="source-name">{source.label}</span>
           <span class="source-caps">{capabilityWords(source.capabilities)}</span>
 
