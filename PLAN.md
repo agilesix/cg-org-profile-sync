@@ -471,7 +471,7 @@ orgId[]> }`, `DEMO_USERS` with an admin (both org ids) and a portal-only user, a
   `.env` and Link stops reading it in T3. This is the largest ticket of the four; if it runs long,
   step 5's app wiring can split off on its own.
 
-### #1188-T2: Portal OAuth authorization server with Google and fake identity providers
+### #1188-T2: [✓] Portal OAuth authorization server with Google and fake identity providers
 
 Depends on: #1188-T1
 
