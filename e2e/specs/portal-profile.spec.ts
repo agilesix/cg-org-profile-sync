@@ -7,6 +7,7 @@
  * is the hop the demo opens with.
  */
 
+import type { Page } from "@playwright/test";
 import { FUNDERHUB_ORG_ID, PORTAL_ORG_ID, PORTAL_SEED } from "@cg-link/seed";
 import { FUNDERHUB_ORIGIN, PORTAL_ORIGIN } from "../env.js";
 import { expect, rowFor, test, valueHeldBy } from "../fixtures.js";
@@ -14,11 +15,25 @@ import { expect, rowFor, test, valueHeldBy } from "../fixtures.js";
 /** GrantPortal's profile page for the demo org. */
 const PORTAL_PROFILE = `${PORTAL_ORIGIN}/orgs/${PORTAL_ORG_ID}`;
 
+/**
+ * Open a profile page and wait for the browser to have taken it over.
+ *
+ * The form is a plain `POST` and works without JavaScript, but the page is
+ * server-rendered and SvelteKit's router hydrates over it — so a submit
+ * clicked in that window starts a navigation the router then takes over
+ * mid-flight, and the result is a save that occasionally goes missing.
+ * `data-ready` is published on mount, the same way the widget does it.
+ */
+async function openProfile(page: Page, url: string): Promise<void> {
+  await page.goto(url);
+  await expect(page.getByTestId("profile")).toHaveAttribute("data-ready", "true");
+}
+
 test("an edit on GrantPortal's page is what Link's comparison then reads", async ({
   page,
   api,
 }) => {
-  await page.goto(PORTAL_PROFILE);
+  await openProfile(page, PORTAL_PROFILE);
 
   await page.getByTestId("input-street2").fill("Suite 400");
   await page.getByTestId("save").click();
@@ -37,7 +52,7 @@ test("a change the schema refuses shows the system's message and stores nothing"
   page,
   api,
 }) => {
-  await page.goto(PORTAL_PROFILE);
+  await openProfile(page, PORTAL_PROFILE);
 
   // An organization has to have a legal name, so emptying the box is a change
   // the system declines — the beat that proves the page is behind the same
@@ -54,7 +69,7 @@ test("a change the schema refuses shows the system's message and stores nothing"
 });
 
 test("a reset puts the page back to the seed", async ({ page, request }) => {
-  await page.goto(PORTAL_PROFILE);
+  await openProfile(page, PORTAL_PROFILE);
 
   await page.getByTestId("input-street2").fill("Suite 400");
   await page.getByTestId("save").click();
@@ -67,14 +82,14 @@ test("a reset puts the page back to the seed", async ({ page, request }) => {
 });
 
 test("FunderHub's page offers no website, because it does not store socials", async ({ page }) => {
-  await page.goto(`${FUNDERHUB_ORIGIN}/orgs/${FUNDERHUB_ORG_ID}`);
+  await openProfile(page, `${FUNDERHUB_ORIGIN}/orgs/${FUNDERHUB_ORG_ID}`);
 
   await expect(page.getByTestId("profile")).toBeVisible();
   await expect(page.getByTestId("input-website")).toHaveCount(0);
 
   // Asserted against the other system in the same spec, so this reads as a
   // difference between two configurations rather than as a missing field.
-  await page.goto(PORTAL_PROFILE);
+  await openProfile(page, PORTAL_PROFILE);
 
   await expect(page.getByTestId("input-website")).toHaveValue(PORTAL_SEED.socials?.website ?? "");
 });
@@ -84,7 +99,7 @@ test("each system's landing page links to the seeded profile", async ({ page }) 
     await page.goto(origin);
     await page.getByTestId("profile-link").click();
 
-    await expect(page.getByTestId("profile")).toBeVisible();
+    await expect(page.getByTestId("profile")).toHaveAttribute("data-ready", "true");
     await expect(page.getByTestId("input-name")).toHaveValue(PORTAL_SEED.name);
   }
 });

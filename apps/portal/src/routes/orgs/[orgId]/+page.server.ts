@@ -1,9 +1,10 @@
 import { error, fail } from "@sveltejs/kit";
+import { env } from "$env/dynamic/private";
 import { applyOrgPatch } from "@cg-link/org-sync/server";
 import { OrgPatchDataSchema } from "@cg-link/org-sync/schemas";
-import { buildMergePatch } from "@cg-link/org-sync/utils";
+import { EIN_REGISTRY, buildMergePatch, parseOrigin } from "@cg-link/org-sync/utils";
 import type { JsonObject, JsonValue } from "@cg-link/org-sync/types";
-import { store, unscopedRoutes } from "$lib/server/store.js";
+import { SYSTEM_ID, store, unscopedRoutes } from "$lib/server/store.js";
 import type { Actions, PageServerLoad } from "./$types.js";
 
 /** The parts of the primary address the form offers, in display order. */
@@ -41,7 +42,31 @@ export const load: PageServerLoad = async ({ params }) => {
     error(404, `No organization with id ${params.orgId}.`);
   }
 
-  return { org, editsWebsite };
+  return {
+    org,
+    editsWebsite,
+
+    /** This system's id, which the widget is told so it can name its host. */
+    system: SYSTEM_ID,
+
+    /** The EIN the widget looks this org up by — ids are assigned per system. */
+    registry: EIN_REGISTRY,
+    ein: org.identifiers?.[EIN_REGISTRY]?.id ?? null,
+
+    /**
+     * Where Link is served from, or `null` if this system has no Link.
+     *
+     * The same `LINK_ORIGIN` this system already uses as the one origin it
+     * will send an authorization code to. One variable rather than two: a
+     * deployment whose Link lives somewhere else would have to be wrong in
+     * both places at once to embed one Link and trust another.
+     *
+     * Normalized through `parseOrigin`, so the page has either something the
+     * loader can use or no Open Link button at all, rather than a malformed
+     * value it throws on.
+     */
+    linkOrigin: parseOrigin(env.LINK_ORIGIN) ?? null,
+  };
 };
 
 export const actions: Actions = {

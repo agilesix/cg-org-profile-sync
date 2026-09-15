@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { invalidateAll } from "$app/navigation";
   import { resolve } from "$app/paths";
   import { formatFieldValue, getAtPath } from "@cg-link/org-sync/utils";
   import type { ActionData, PageData } from "./$types.js";
@@ -38,15 +40,122 @@
   function shown(path: string): string {
     return formatFieldValue(getAtPath(org, path)) || "—";
   }
+
+  /**
+   * Whether this page can open the widget at all.
+   *
+   * Needs both a Link to open and an EIN to open it on: the widget matches one
+   * organization across systems by identifier, since no two of them agree on
+   * ids, so a record without one is a record it cannot look up anywhere.
+   */
+  const canOpenLink = $derived(data.linkOrigin !== null && data.ein !== null);
+
+  /**
+   * Whether the browser has taken this page over.
+   *
+   * The form works without JavaScript — it is a plain `POST` — but Open Link
+   * does not, and the whole page is server-rendered, so that button is
+   * clickable a moment before it does anything. Publishing hydration is what
+   * lets a spec wait for something true instead of sleeping, the same way the
+   * widget does.
+   */
+  let ready = $state(false);
+
+  onMount(() => {
+    ready = true;
+  });
+
+  /** One in-flight fetch of the loader, so two clicks load one script. */
+  let loader: Promise<NonNullable<Window["CgLink"]>> | null = null;
+
+  /** Anything that stopped the widget opening, said on the page. */
+  let linkProblem = $state<string | null>(null);
+
+  /**
+   * Fetch Link's loader from Link's own origin, once.
+   *
+   * Injected on demand rather than included in `<svelte:head>`: a script added
+   * to the head during a client-side navigation is not executed, and this page
+   * is reached by a link from the landing page. On demand also means a page
+   * nobody embeds from fetches nothing.
+   */
+  function loadLoader(origin: string): Promise<NonNullable<Window["CgLink"]>> {
+    if (window.CgLink) {
+      return Promise.resolve(window.CgLink);
+    }
+
+    loader ??= new Promise((accept, refuse) => {
+      const script = document.createElement("script");
+
+      script.src = `${origin}/embed.js`;
+      script.onload = () =>
+        window.CgLink
+          ? accept(window.CgLink)
+          : refuse(new Error(`${origin}/embed.js loaded but defined no widget.`));
+      script.onerror = () => {
+        // Cleared so a later click retries rather than re-rejecting forever —
+        // the usual cause is Link not being up yet.
+        loader = null;
+        refuse(new Error(`Link could not be reached at ${origin}.`));
+      };
+
+      document.head.appendChild(script);
+    });
+
+    return loader;
+  }
+
+  /**
+   * Open the widget over this page, pointed at this organization.
+   *
+   * `onSynced` and `onClose` both re-run the server load, which is what makes
+   * a change made inside the frame appear here without a reload. Refreshing on
+   * close as well as on sync is deliberate belt-and-braces: a message missed
+   * for any reason would otherwise leave this page showing stale values with
+   * no way back but F5.
+   */
+  async function openLink(): Promise<void> {
+    if (data.linkOrigin === null || data.ein === null) return;
+
+    linkProblem = null;
+
+    try {
+      const cgLink = await loadLoader(data.linkOrigin);
+
+      cgLink.open({
+        linkOrigin: data.linkOrigin,
+        registry: data.registry,
+        id: data.ein,
+        host: data.system,
+        onSynced: () => void invalidateAll(),
+        onClose: () => void invalidateAll(),
+      });
+    } catch (cause) {
+      linkProblem = cause instanceof Error ? cause.message : String(cause);
+    }
+  }
 </script>
 
-<main data-testid="profile">
+<main data-testid="profile" data-ready={ready}>
   <p class="role">GrantPortal · organization profile</p>
   <h1>{org.name}</h1>
   <p class="tagline">
     This system's own copy. The four fields the demo compares are editable here; everything else is
     shown as it is stored.
   </p>
+
+  {#if canOpenLink}
+    <p class="open-link">
+      <button type="button" data-testid="open-link" onclick={openLink} disabled={!ready}
+        >Open Link</button
+      >
+      <span class="note">compare this profile with the other systems, and fix what disagrees</span>
+    </p>
+  {/if}
+
+  {#if linkProblem}
+    <p class="problem" role="status" data-testid="link-problem">{linkProblem}</p>
+  {/if}
 
   <h2>As this system holds it</h2>
   <dl>
@@ -218,6 +327,22 @@
     text-transform: uppercase;
     color: #6b7a77;
   }
+  .open-link {
+    margin: 0 0 2rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.9rem;
+    align-items: baseline;
+  }
+  .note {
+    font-size: 0.85rem;
+    color: #6b7a77;
+  }
+  .problem {
+    margin: 0 0 2rem;
+    font-size: 0.85rem;
+    color: #9c2f2f;
+  }
   .save {
     display: flex;
     flex-wrap: wrap;
@@ -278,8 +403,12 @@
     dt,
     label,
     legend,
+    .note,
     .status {
       color: #8a9895;
+    }
+    .problem {
+      color: #e08b8b;
     }
     dl,
     form,

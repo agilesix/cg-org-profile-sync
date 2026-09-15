@@ -53,9 +53,10 @@ You need Node 22 or newer and pnpm 11.
 ```bash
 pnpm install
 
-# Each system reads its configuration from a gitignored .env. Copy both:
+# Each app reads its configuration from a gitignored .env. Copy all three:
 cp apps/portal/.env.example apps/portal/.env
 cp apps/funderhub/.env.example apps/funderhub/.env
+cp apps/link/.env.example apps/link/.env
 
 pnpm dev
 ```
@@ -71,8 +72,12 @@ sign-in form, so any address works — use `admin@example.org` to see both syste
 | FunderHub       | `http://localhost:5174` | A system holding a stale copy, without `socials` |
 | Temelio adapter | `http://localhost:5175` | Placeholder, not built yet                       |
 
-Do not skip the `.env` step: a system with no configuration answers 401 to everything. Link needs
-no `.env` — it holds no credentials, and forwards the token each system issues you.
+Then open GrantPortal's profile page from its landing page and click **Open Link** to see the
+widget the way a nonprofit would: in an overlay on the system they were already using.
+
+Do not skip the `.env` step: a system with no configuration answers 401 to everything. Link's own
+`.env` holds no credentials — it forwards the token each system issues you — but it does say which
+origins may frame the widget, and unset means none may.
 
 Every value in the examples is a local placeholder, including the signing keys, which are real
 private keys sitting in git. Generate your own for anything that is not localhost.
@@ -87,6 +92,10 @@ private keys sitting in git. Generate your own for anything that is not localhos
 | `SYSTEM_ORIGIN`                               | This system's own origin; defaults to the request's             |
 | `LINK_ORIGIN`                                 | The only origin it will send an authorization code to           |
 | `DEMO_ADMIN_EMAIL` / `DEMO_PORTAL_ONLY_EMAIL` | Real addresses for the two demo people, if you have them        |
+
+| Variable in Link's `.env` | What it does                                                           |
+| ------------------------- | ---------------------------------------------------------------------- |
+| `EMBED_ALLOWED_ORIGINS`   | Which origins may frame the widget, and which it will post messages to |
 
 ### Signing in with Google instead
 
@@ -110,7 +119,7 @@ pnpm --filter @cg-link/e2e install-browsers  # once per machine
 pnpm e2e                                     # boots all three apps and drives the widget in a browser
 ```
 
-`pnpm e2e` runs the real apps, so it needs both portal `.env` files and `IDENTITY_PROVIDER=fake` —
+`pnpm e2e` runs the real apps, so it needs all three `.env` files and `IDENTITY_PROVIDER=fake` —
 it signs in through the stand-in form and cannot drive Google. A portal set to `google` fails the
 suite with a sentence naming it. `pnpm check`, `pnpm lint` and `pnpm format:check` cover types,
 lint and formatting for the whole repo.

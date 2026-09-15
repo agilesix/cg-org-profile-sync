@@ -82,9 +82,23 @@
    */
   let ready = $state(false);
 
+  /**
+   * Whether the widget is running inside somebody else's page.
+   *
+   * Two conditions, both required: the deployment has to allow the origin that
+   * claims to be framing us (`data.parentOrigin`, decided on the server), and
+   * we have to actually be in a frame. The second is what keeps a standalone
+   * Link opened with a stray `?parent=` from growing a Close button that
+   * closes nothing, and it can only be answered in the browser.
+   */
+  let framed = $state(false);
+
+  const embedded = $derived(framed && data.parentOrigin !== null);
+
   onMount(() => {
     tokens = readTokens();
     denied = readDenied();
+    framed = window.self !== window.top;
     ready = true;
 
     // A popup reporting back, which is how the flow finishes when Link is
@@ -325,6 +339,25 @@
   }
 
   /**
+   * Tell the host page something happened, if there is a host to tell.
+   *
+   * Always targeted at `data.parentOrigin` rather than `"*"`: the message
+   * names the systems a change reached, and a wildcard target would hand that
+   * to whatever page happened to be framing us instead of to the one the
+   * deployment allows.
+   */
+  function postToHost(message: { type: string; [key: string]: unknown }): void {
+    if (!embedded || data.parentOrigin === null) return;
+
+    window.parent.postMessage(message, data.parentOrigin);
+  }
+
+  /** Ask the host to take the frame away. It owns the overlay, so it decides. */
+  function close(): void {
+    postToHost({ type: "cg-link:close" });
+  }
+
+  /**
    * Send the picked value to every checked target, then re-read.
    *
    * The result lines are published *after* the refresh, so a result line with
@@ -364,6 +397,16 @@
 
       results = (body as SyncResult).results;
 
+      // After the refresh, so a host that re-reads on this message sees the
+      // post-change values rather than racing Link's own re-read. Sent even
+      // when a target failed: the host's copy may still have changed, and the
+      // per-target results are in the message for it to say so.
+      postToHost({
+        type: "cg-link:synced",
+        targets: chosen,
+        results: (body as SyncResult).results,
+      });
+
       if (!refreshed) {
         // `load` has already said why it could not re-read. Say what that
         // means for what is on screen: the write happened and the lines below
@@ -388,7 +431,16 @@
   }
 </script>
 
-<main data-testid="widget" data-ready={ready}>
+<main data-testid="widget" data-ready={ready} data-embedded={embedded}>
+  {#if embedded}
+    <div class="host-bar">
+      <p class="host" data-testid="host-system">
+        {data.host ? `Opened from ${data.host.label}` : "Opened from a host page"}
+      </p>
+      <button type="button" class="close" data-testid="close" onclick={close}>Close</button>
+    </div>
+  {/if}
+
   <p class="role">Widget</p>
   <h1>CommonGrants Link</h1>
   <p class="tagline">
@@ -502,6 +554,31 @@
 </main>
 
 <style>
+  .host-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    margin: -2rem 0 2rem;
+    padding-bottom: 0.9rem;
+    border-bottom: 1px solid #d9e0dd;
+  }
+  .host {
+    margin: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #6b7a77;
+  }
+  .close {
+    font-size: 0.8rem;
+    padding: 0.2rem 0.75rem;
+    color: #14201f;
+    background: transparent;
+    border-color: #b7c4c1;
+  }
   .connect {
     margin: 0 0 2rem;
     padding: 1rem 1.2rem;
@@ -700,8 +777,17 @@
       border-color: #2a3736;
     }
     .connect h2,
-    .source-caps {
+    .source-caps,
+    .host {
       color: #8a9895;
+    }
+    .host-bar {
+      border-color: #2a3736;
+    }
+    .close {
+      color: #e7edeb;
+      background: transparent;
+      border-color: #3f5250;
     }
     .source-ok {
       color: #56b7a9;

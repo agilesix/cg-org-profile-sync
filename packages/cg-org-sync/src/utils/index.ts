@@ -11,4 +11,4 @@ export { formatFieldValue } from "./format.js";
 export { summarizeOrg } from "./orgs.js";
 export type { FieldSpec } from "./compare.js";
 export { capabilitiesOf } from "./sources.js";
-export { sameOriginPath } from "./urls.js";
+export { originIfAllowed, parseOrigin, parseOriginList, sameOriginPath } from "./urls.js";
