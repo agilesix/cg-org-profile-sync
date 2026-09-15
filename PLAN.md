@@ -750,7 +750,7 @@ Depends on: #1188-T3 (connect routes). Parallel with #1188-T5.
   decorative password field is a lie the demo tells on purpose, and it is labelled. Real vendor
   names on a "coming soon" row carry a small reputational risk, accepted on 2026-09-14.
 
-### #1188-T7: Organization step, EIN lock-in on the second connect, and the success banner
+### #1188-T7: [✓] Organization step, EIN lock-in on the second connect, and the success banner
 
 Depends on: #1188-T5, #1188-T6
 
