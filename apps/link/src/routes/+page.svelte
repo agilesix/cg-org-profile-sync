@@ -789,7 +789,7 @@
     cursor: pointer;
   }
   .chips {
-    margin: 1.75rem 0 0;
+    margin: 1.75rem 0 2rem;
     padding: 0;
     list-style: none;
     display: flex;

@@ -242,8 +242,11 @@ test("the second system is locked to the organization already linked", async ({ 
   await expect(matching).toBeEnabled();
   await expect(page.getByTestId("confirm-org")).toBeEnabled();
 
+  // Whatever else FunderHub holds — the count is the seeds' business, not this
+  // spec's, and pinning it here made the spec fail the moment FunderHub
+  // stopped holding an organization GrantPortal does.
   const others = FUNDERHUB_SEEDS.filter((seed) => seed.id !== FUNDERHUB_ORG_ID);
-  expect(others).toHaveLength(2);
+  expect(others.length).toBeGreaterThan(0);
 
   for (const seed of others) {
     const row = page.getByTestId(`org-${seed.id}`);

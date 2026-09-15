@@ -23,8 +23,8 @@ About two minutes. Everything is at `http://localhost:5176`.
    Pick **Agile Six Applications, Inc.** and click **Continue**. The modal closes, a banner says
    GrantPortal is linked, and the organization's name and EIN sit above the grid.
 4. **Link FunderHub** as the same person. Same flow, with one difference worth pausing on: at the
-   organization step, only Agile Six can be chosen and it is already selected. The other two are
-   greyed and say **Different organization**. You link one organization at a time, so the second
+   organization step, only Agile Six can be chosen and it is already selected. The other one is
+   greyed and says **Different organization**. You link one organization at a time, so the second
    system is held to the first system's answer — and FunderHub's own ids are different, which is
    exactly why the match is on the EIN rather than an id.
 5. **Read the grid.** One column per system, one row per compared field. Three rows agree. The
@@ -45,8 +45,18 @@ About two minutes. Everything is at `http://localhost:5176`.
    FunderHub for that account**. Same widget, same person, two answers, because each system decides
    for itself. Nothing is broken, and the comparison still shows what GrantPortal holds.
 
+**Optional, if someone asks what happens with a system that has never heard of you.** Start a fresh
+tab and link **Tallgrass Literacy Project** on GrantPortal instead of Agile Six — FunderHub does not
+hold that organization. Link FunderHub and the organization step says it holds no organization with
+that EIN. Close it, and FunderHub's column reads "No record of this organization" while GrantPortal's
+copy still shows. Signed in fine, simply not known there: a state, not a failure.
+
 If a browser blocks the sign-in window, the flow falls back to this tab and comes back to the step
 it was on — worth knowing, not worth demonstrating. Allow popups for `localhost:5176` beforehand.
+
+Sign-in is the stand-in form, not Google. It looks like a credentials screen on purpose; the
+password field is decorative and submits nothing, and the page says so above it. Real Google
+sign-in is the last ticket in the plan and happens after this demo.
 
 Restart `pnpm dev`, or `POST /__test/reset` on FunderHub, to run it again from the seed.
 

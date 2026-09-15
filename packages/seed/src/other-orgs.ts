@@ -35,8 +35,16 @@ interface SharedOrg {
   /** The id GrantPortal assigned it. */
   portalId: string;
 
-  /** The id FunderHub assigned it, which is deliberately a different one. */
-  funderhubId: string;
+  /**
+   * The id FunderHub assigned it, or `null` when FunderHub has never heard of
+   * it.
+   *
+   * Two independent systems do not hold the same set of organizations, and
+   * pretending they do would hide a state the widget has to handle: signing in
+   * to a second system that has no record of the organization you linked. That
+   * is a real answer, not a failure, and the demo should be able to show it.
+   */
+  funderhubId: string | null;
 }
 
 const SHARED_ORGS: readonly SharedOrg[] = [
@@ -67,7 +75,11 @@ const SHARED_ORGS: readonly SharedOrg[] = [
     },
     email: "hello@tallgrassliteracy.org",
     portalId: "018f2e77-1a2b-7c3d-8e4f-000000000005",
-    funderhubId: "018f2e77-1a2b-7c3d-8e4f-000000000006",
+
+    // GrantPortal only. This is the organization that makes "FunderHub holds
+    // no organization with that EIN" reachable — the partial-coverage system
+    // being partial about whole records, not only about fields.
+    funderhubId: null,
   },
 ];
 
@@ -108,9 +120,9 @@ export const PORTAL_OTHER_SEEDS: readonly Organization[] = SHARED_ORGS.map((shar
   copyFor(shared, shared.portalId, "org:grants.gov:system"),
 );
 
-/** FunderHub's copies of the same two organizations. */
-export const FUNDERHUB_OTHER_SEEDS: readonly Organization[] = SHARED_ORGS.map((shared) =>
-  copyFor(shared, shared.funderhubId, "org:funderhub:system"),
+/** FunderHub's copies of the ones it holds, which is not all of them. */
+export const FUNDERHUB_OTHER_SEEDS: readonly Organization[] = SHARED_ORGS.flatMap((shared) =>
+  shared.funderhubId === null ? [] : [copyFor(shared, shared.funderhubId, "org:funderhub:system")],
 );
 
 /**
@@ -122,5 +134,10 @@ export const FUNDERHUB_OTHER_SEEDS: readonly Organization[] = SHARED_ORGS.map((s
  */
 export const PORTAL_SEEDS: readonly Organization[] = [PORTAL_SEED, ...PORTAL_OTHER_SEEDS];
 
-/** Everything FunderHub holds, Agile Six first, for the same reason. */
+/**
+ * Everything FunderHub holds, Agile Six first, for the same reason.
+ *
+ * Shorter than GrantPortal's list on purpose: one organization exists on
+ * GrantPortal and nowhere else.
+ */
 export const FUNDERHUB_SEEDS: readonly Organization[] = [FUNDERHUB_SEED, ...FUNDERHUB_OTHER_SEEDS];
