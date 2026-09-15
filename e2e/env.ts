@@ -1,3 +1,5 @@
+import { DEMO_USERS, FUNDERHUB_SEEDS, PORTAL_SEEDS, type DemoRole } from "@cg-link/seed";
+
 /**
  * Where the three demo apps live, and what the suite looks the org up by.
  *
@@ -35,3 +37,56 @@ export const SYSTEM_ORIGINS: Readonly<Record<string, string>> = {
  * chance to drift.
  */
 export { EIN_REGISTRY } from "@cg-link/org-sync/utils";
+import { EIN_REGISTRY } from "@cg-link/org-sync/utils";
+
+/**
+ * The two people the demo signs in as, taken from the seed rather than spelled
+ * again here.
+ *
+ * The portals resolve the same list, so the suite and the systems it drives
+ * agree on who these people are by construction. A deployment that overrode
+ * the addresses through `DEMO_ADMIN_EMAIL` / `DEMO_PORTAL_ONLY_EMAIL` would
+ * break that agreement — which is one more reason the suite refuses to run
+ * against a portal configured for anything but the fake provider.
+ */
+function emailFor(role: DemoRole): string {
+  const user = DEMO_USERS.find((candidate) => candidate.role === role);
+
+  if (!user) {
+    throw new Error(`@cg-link/seed no longer defines a ${role} demo user`);
+  }
+
+  return user.email;
+}
+
+/** Granted the org on both systems. */
+export const ADMIN_EMAIL = emailFor("admin");
+
+/** Granted the org on GrantPortal and nothing on FunderHub — the demo's negative beat. */
+export const PORTAL_ONLY_EMAIL = emailFor("portal-only");
+
+/**
+ * The organization GrantPortal holds and FunderHub has never heard of.
+ *
+ * Derived from the seeds rather than named, so it follows them if the demo
+ * data changes. This is what makes the organization step's "no organization
+ * with that EIN" reachable from a browser: link this one first, then sign in
+ * to FunderHub and there is nothing there it could be.
+ */
+function onlyOnPortal(): { id: string; ein: string; name: string } {
+  const funderhubEins = new Set(
+    FUNDERHUB_SEEDS.map((seed) => seed.identifiers?.[EIN_REGISTRY]?.id),
+  );
+
+  for (const seed of PORTAL_SEEDS) {
+    const ein = seed.identifiers?.[EIN_REGISTRY]?.id;
+
+    if (ein !== undefined && !funderhubEins.has(ein)) {
+      return { id: seed.id, ein, name: seed.name };
+    }
+  }
+
+  throw new Error("every GrantPortal org is also on FunderHub, so the no-match beat cannot be run");
+}
+
+export const PORTAL_ONLY_ORG = onlyOnPortal();

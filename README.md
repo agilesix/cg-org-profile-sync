@@ -20,29 +20,42 @@ back. The whole exchange is covered by browser tests.
 
 ## What you can do with it
 
-**See where systems disagree.** Look an organization up by EIN and get one row per field, one
-column per system. Rows that differ are flagged. A field one system simply does not have shows as a
-gap, not a conflict.
+**Link the systems that hold your profile.** The widget opens on one button. Behind it is a list of
+grant management systems — the two this demo runs, and others named but not wired up — the way you
+would pick a bank in Plaid.
 
-![The comparison grid: two systems, four fields, the address row flagged as differing](docs/screenshots/1-compare.png)
+![The system picker: GrantPortal and FunderHub selectable, five more marked coming soon](docs/screenshots/1-picker.png)
+
+**Sign in to each system, on its own terms.** Every system runs its own sign-in and then tells the
+widget which organizations you may act for. You pick one, and that is what the widget works on.
+
+![The organization step: three organizations with their EINs, and Continue waiting for a pick](docs/screenshots/2-organization.png)
+
+**See where systems disagree.** One row per field, one column per system. Rows that differ are
+flagged. A field one system simply does not have shows as a gap, not a conflict. Link a second
+system and it is held to the organization you already chose — matched by EIN, since no two systems
+agree on ids.
+
+![The comparison grid: two systems, four fields, the address row flagged as differing](docs/screenshots/3-compare.png)
 
 **Fix a field everywhere in one click.** Click the value that is right, pick which systems should
 receive it, and sync. Each system gets a JSON Merge Patch that changes only that field.
 
-![After syncing GrantPortal's address to FunderHub, the row agrees and FunderHub reports the change was applied](docs/screenshots/3-synced.png)
+![After syncing GrantPortal's address to FunderHub, the row agrees and FunderHub reports the change was applied](docs/screenshots/5-synced.png)
 
 **Find out what a system could not store.** A system that does not model a field accepts the
-change, drops the field, and says so. 
+change, drops the field, and says so.
 
-![Pushing the website to FunderHub: accepted, with the message that this system does not store socials](docs/screenshots/4-declined.png)
+![Pushing the website to FunderHub: accepted, with the message that this system does not store socials](docs/screenshots/6-declined.png)
 
 **Connect another system without new code.** Every system exposes the same routes, so a third one
-is a config entry and an access token, not a feature.
+is a config entry, not a feature.
 
 ```
 GET   /common-grants/orgs             find an org by identifier, e.g. ?registry=org:us:ein&id=
 GET   /common-grants/orgs/{orgId}     read one profile
 PATCH /common-grants/orgs/{orgId}     apply a JSON Merge Patch
+GET   /.well-known/jwks.json          this system's public keys
 ```
 
 ## Get set up
@@ -52,15 +65,16 @@ You need Node 22 or newer and pnpm 11.
 ```bash
 pnpm install
 
-# Each app reads its access tokens from a gitignored .env. Copy all three:
+# Each system reads its configuration from a gitignored .env. Copy both:
 cp apps/portal/.env.example apps/portal/.env
 cp apps/funderhub/.env.example apps/funderhub/.env
-cp apps/link/.env.example apps/link/.env
 
 pnpm dev
 ```
 
-Then open **http://localhost:5176**. The grid loads with the demo organization already looked up.
+Then open **http://localhost:5176** and connect each system. Out of the box they use a stand-in
+sign-in form, so any address works — use `admin@example.org` to see both systems, or
+`portal-only@example.org` to see one system refuse you.
 
 | App             | URL                     | What it is                                       |
 | --------------- | ----------------------- | ------------------------------------------------ |
@@ -69,9 +83,41 @@ Then open **http://localhost:5176**. The grid loads with the demo organization a
 | FunderHub       | `http://localhost:5174` | A system holding a stale copy, without `socials` |
 | Temelio adapter | `http://localhost:5175` | Placeholder, not built yet                       |
 
-Do not skip the `.env` step. Each system only answers requests carrying its own token, and Link
-holds one token per system. Copying the three example files unchanged lines them up. The values are
-local placeholders only.
+Do not skip the `.env` step: a system with no configuration answers 401 to everything. Link needs
+no `.env` — it holds no credentials, and forwards the token each system issues you.
+
+Every value in the examples is a local placeholder, including the signing keys, which are real
+private keys sitting in git. Generate your own for anything that is not localhost.
+
+| Variable in each portal's `.env`              | What it does                                                    |
+| --------------------------------------------- | --------------------------------------------------------------- |
+| `CG_ACCESS_TOKEN`                             | A static service credential, for `curl` and the route specs     |
+| `SIGNING_KEY_JWK`                             | That system's own ES256 key: signs its tokens, backs its JWKS   |
+| `ENABLE_TEST_ROUTES`                          | Mounts `POST /__test/reset`; unset, that route 404s             |
+| `IDENTITY_PROVIDER`                           | `fake` for the stand-in sign-in form; `google` for the real one |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`   | The Google client, when `IDENTITY_PROVIDER` is not `fake`       |
+| `SYSTEM_ORIGIN`                               | This system's own origin; defaults to the request's             |
+| `LINK_ORIGIN`                                 | The only origin it will send an authorization code to           |
+| `DEMO_ADMIN_EMAIL` / `DEMO_PORTAL_ONLY_EMAIL` | Real addresses for the two demo people, if you have them        |
+
+### Signing in with Google instead
+
+**The demo runs on the stand-in form, not Google.** Both portals ship set to `IDENTITY_PROVIDER=fake`,
+which is also what `pnpm e2e` drives, so nothing here needs a Google account. The Google provider is
+written and unit-tested against a local key set but has not been exercised against Google itself;
+standing it up is the last ticket in the plan. What follows is what that will take.
+
+The stand-in form is enough to run and demo everything. To use real Google sign-in, make one
+project in the Google Cloud console with one **Web application** OAuth client:
+
+- Authorized redirect URIs: `http://localhost:5173/oauth/callback` and
+  `http://localhost:5174/oauth/callback` — each portal's own callback, not Link's.
+- Scopes: `openid` and `email`. Nothing else is read.
+- Leave the consent screen in **Testing** and add the demo accounts as test users.
+
+Then set `IDENTITY_PROVIDER=google`, `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in both portals,
+and point `DEMO_ADMIN_EMAIL` / `DEMO_PORTAL_ONLY_EMAIL` at the accounts you added. Only the portals
+hold the client secret; Link never sees it.
 
 ### Tests
 
@@ -81,8 +127,10 @@ pnpm --filter @cg-link/e2e install-browsers  # once per machine
 pnpm e2e                                     # boots all three apps and drives the widget in a browser
 ```
 
-`pnpm e2e` needs the same three `.env` files, since it runs the real apps. `pnpm check`, `pnpm lint`
-and `pnpm format:check` cover types, lint and formatting for the whole repo.
+`pnpm e2e` runs the real apps, so it needs both portal `.env` files and `IDENTITY_PROVIDER=fake` —
+it signs in through the stand-in form and cannot drive Google. A portal set to `google` fails the
+suite with a sentence naming it. `pnpm check`, `pnpm lint` and `pnpm format:check` cover types,
+lint and formatting for the whole repo.
 
 ## What's in the repo
 
@@ -96,15 +144,20 @@ and `pnpm format:check` cover types, lint and formatting for the whole repo.
 | `apps/temelio-adapter` | Planned proxy over a vendor that has not adopted the protocol |
 | `e2e`                  | Playwright specs that run the real apps                       |
 
-Storage is in memory, so restarting `pnpm dev` puts every system back to its seed. Auth is a static
-token per system. Both are stand-ins with an interface behind them, chosen so the demo shows the
-data exchange rather than infrastructure.
+Storage is in memory, so restarting `pnpm dev` puts every system back to its seed — a stand-in
+with an interface behind it, chosen so the demo shows the data exchange rather than
+infrastructure. Each system signs its own access tokens and publishes the public half, and every
+read and write is scoped to the organizations the caller may touch. Each is also its own sign-in: the
+widget opens on a button, you pick systems from a list and link them one at a time, and each runs
+its own sign-in. A system you have not linked simply says so in its column; the rest still answer.
 
 ## Status and what's next
 
-The two-system exchange works end to end and is pinned by tests. Not built yet: embedding the
-widget inside a host system, real per-system tokens and Google sign-in, the Temelio adapter, and
-durable storage. The build plan lives outside this repo. Ask Billy for a copy.
+The two-system exchange works end to end and is pinned by tests, and so is per-organization
+access: each system runs its own sign-in flow and issues tokens scoped to what you may touch there.
+Sign-in currently goes through a stand-in form rather than Google — see above. Not built yet: real
+Google sign-in, embedding the widget inside a host system, the Temelio adapter, and durable
+storage. The build plan lives outside this repo. Ask Billy for a copy.
 
 ## License
 

@@ -7,7 +7,13 @@
  * otherwise run against whatever the spec before it wrote.
  */
 
-import { test as base, expect, type APIRequestContext, type APIResponse } from "@playwright/test";
+import {
+  test as base,
+  expect,
+  type APIRequestContext,
+  type APIResponse,
+  type Page,
+} from "@playwright/test";
 import type {
   CompareResult,
   FieldComparison,
@@ -15,7 +21,8 @@ import type {
   SyncResult,
 } from "@cg-link/org-sync/types";
 import { AGILE_SIX_EIN } from "@cg-link/seed";
-import { EIN_REGISTRY, SYSTEM_ORIGINS } from "./env.js";
+import { SOURCE_TOKENS_HEADER, sourceTokensHeader } from "@cg-link/org-sync/client";
+import { ADMIN_EMAIL, EIN_REGISTRY, LINK_ORIGIN, SYSTEM_ORIGINS } from "./env.js";
 
 /** The body `POST /api/sync` takes, minus the registry and id the helper fills in. */
 export interface SyncRequest {
@@ -42,7 +49,22 @@ export interface SyncRequest {
  * test and there is more than one of them.
  */
 export class LinkApi {
-  constructor(private readonly request: APIRequestContext) {}
+  constructor(
+    private readonly request: APIRequestContext,
+    private readonly tokens: Readonly<Record<string, string>>,
+  ) {}
+
+  /**
+   * The per-source tokens on every call.
+   *
+   * Link holds no credentials of its own, so a request without this header
+   * reports every system as not connected — which is a legitimate answer, and
+   * would make most of these specs pass while proving nothing. Putting it on
+   * the client rather than in each spec is what stops one being forgotten.
+   */
+  private get headers(): Record<string, string> {
+    return { [SOURCE_TOKENS_HEADER]: sourceTokensHeader(this.tokens) };
+  }
 
   /** `GET /api/compare` for one org, asserting it answered. */
   async compare(
@@ -58,7 +80,7 @@ export class LinkApi {
 
   /** `GET /api/compare` with whatever query the spec wants, status included. */
   rawCompare(query: Record<string, string>): Promise<APIResponse> {
-    return this.request.get("/api/compare", { params: query });
+    return this.request.get("/api/compare", { params: query, headers: this.headers });
   }
 
   /** `POST /api/sync` for one field, asserting it answered. */
@@ -83,14 +105,14 @@ export class LinkApi {
   rawSync(body: unknown): Promise<APIResponse> {
     if (typeof body === "string") {
       return this.request.post("/api/sync", {
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...this.headers },
         data: body,
       });
     }
 
     // Playwright serializes anything non-string as JSON. The cast is only to
     // get `unknown` past the overload; the value is whatever the spec sent.
-    return this.request.post("/api/sync", { data: body as object });
+    return this.request.post("/api/sync", { data: body as object, headers: this.headers });
   }
 }
 
@@ -139,7 +161,22 @@ export const test = base.extend<{ api: LinkApi }>({
   api: [
     async ({ request }, use) => {
       await resetSystems(request);
-      await use(new LinkApi(request));
+
+      // Real tokens through the real flow, rather than a credential the suite
+      // was handed. Anything the specs prove about access is then something
+      // the systems actually decided, not something the fixture asserted.
+      //
+      // Done for the browser specs too, which never read `api` and sign in
+      // themselves. That is deliberate rather than waste: it is what makes a
+      // portal running the real Google provider fail immediately, with the
+      // sentence below naming the app, instead of as a browser click timing
+      // out on a sign-in page the suite cannot fill in.
+      await use(
+        new LinkApi(request, {
+          portal: await tokenFor(request, "portal", ADMIN_EMAIL),
+          funderhub: await tokenFor(request, "funderhub", ADMIN_EMAIL),
+        }),
+      );
     },
     { auto: true },
   ],
@@ -196,4 +233,219 @@ async function postReset(
 /** A one-line "what came back" for an assertion message. */
 async function failureDetail(response: APIResponse, what: string): Promise<string> {
   return `${what} answered ${response.status()}: ${(await response.text()).slice(0, 400)}`;
+}
+
+/**
+ * Sign in to one system and come back with the access token it issued.
+ *
+ * Drives the same four hops a browser does — Link's `/api/connect/start`, the
+ * portal's `/oauth/authorize`, the fake sign-in form's callback, and Link's
+ * own `/connect/callback` — and takes the JSON exit at the end, which exists
+ * for exactly this. The PKCE verifier never appears here: it lives in an
+ * `HttpOnly` cookie that Playwright's request context carries for us, the same
+ * way a browser would.
+ */
+export async function tokenFor(
+  request: APIRequestContext,
+  sourceId: string,
+  email: string,
+): Promise<string> {
+  const result = await connectViaApi(request, sourceId, email);
+
+  if (!result.token) {
+    // Said specifically. "Access denied" is a real answer about this person;
+    // `problem` is the connect flow itself having gone wrong, and reporting
+    // one as the other would send whoever reads this looking at grants when
+    // the cookie had expired.
+    const because = result.denied
+      ? `it refused ${email} access`
+      : (result.problem ?? "it returned no token and no reason");
+
+    throw new Error(`${sourceId} issued no token: ${because}.`);
+  }
+
+  return result.token;
+}
+
+/**
+ * The raw outcome of a connect attempt: a token, a refusal, or a broken flow.
+ *
+ * All three come back rather than only the first, because they mean different
+ * things and the caller has to be able to say which happened.
+ */
+export interface ConnectOutcome {
+  token?: string;
+  denied?: boolean;
+  problem?: string;
+}
+
+export async function connectViaApi(
+  request: APIRequestContext,
+  sourceId: string,
+  email: string,
+): Promise<ConnectOutcome> {
+  const start = await getWithRetry(request, `${LINK_ORIGIN}/api/connect/start?source=${sourceId}`);
+
+  const authorize = locationOf(start, `starting a connect to ${sourceId}`);
+  const authorized = await getWithRetry(request, authorize);
+  const provider = new URL(locationOf(authorized, `${sourceId}'s /oauth/authorize`));
+
+  if (!provider.pathname.endsWith("/oauth/fake-login")) {
+    throw new Error(
+      `${sourceId} sent the sign-in to ${provider.host} rather than its own fake login page. ` +
+        `This suite cannot drive a real identity provider — set IDENTITY_PROVIDER=fake in that ` +
+        `app's .env and restart its dev server.`,
+    );
+  }
+
+  // What the form's submit button does: a GET back to the portal's callback
+  // carrying the signed state and whatever address was typed.
+  const callback = new URL(`${provider.origin}/oauth/callback`);
+  callback.searchParams.set("state", provider.searchParams.get("state") ?? "");
+  callback.searchParams.set("email", email);
+
+  const decided = await getWithRetry(request, callback.href);
+  const backToLink = locationOf(decided, `${sourceId}'s /oauth/callback`);
+
+  const finished = await request.get(backToLink, { headers: { accept: "application/json" } });
+
+  return (await finished.json()) as ConnectOutcome;
+}
+
+/**
+ * A redirect-stopping GET, retried once on a transport failure.
+ *
+ * Same reasoning as `postReset`, one route further in: `/oauth/*` is compiled
+ * on first hit, and it is the first thing to pull in the signing and JWT code
+ * that `/__test/reset` never touches — so the reset fixture has not already
+ * absorbed that compile. Vite drops in-flight connections while it
+ * re-optimizes, and a dropped socket on the first connect of a run is not
+ * worth a red suite. A response of any status is returned as-is; only a throw
+ * is retried.
+ */
+async function getWithRetry(
+  request: APIRequestContext,
+  url: string,
+  attempts = 2,
+): Promise<APIResponse> {
+  try {
+    return await request.get(url, { maxRedirects: 0 });
+  } catch (cause) {
+    if (attempts <= 1) throw cause;
+
+    return getWithRetry(request, url, attempts - 1);
+  }
+}
+
+/** One redirect's target, failing with what came back instead when there is none. */
+function locationOf(response: APIResponse, what: string): string {
+  const location = response.headers()["location"];
+
+  if (!location) {
+    throw new Error(`${what} did not redirect: ${response.status()}`);
+  }
+
+  return location;
+}
+
+/**
+ * Connect one system in the browser, the way a person does.
+ *
+ * Waiting on `connected-{id}` rather than on the popup closing is what makes
+ * it safe to assert straight afterwards: the widget re-reads every system once
+ * a token lands, and that chip appears with the state that triggered the read.
+ */
+export async function connect(
+  page: Page,
+  sourceId: string,
+  email: string,
+  orgId: string,
+): Promise<void> {
+  await signIn(page, sourceId, email);
+  await chooseOrg(page, orgId);
+  await expect(page.getByTestId(`connected-${sourceId}`)).toBeVisible();
+}
+
+/**
+ * Connect expecting to be turned away.
+ *
+ * A separate helper rather than a flag, because these are different claims:
+ * one says a person got in, the other says a system correctly refused them.
+ */
+export async function connectExpectingDenial(
+  page: Page,
+  sourceId: string,
+  email: string,
+): Promise<void> {
+  await signIn(page, sourceId, email);
+
+  // The refusal is a step of the modal, not a badge on the page behind it:
+  // the person is mid-flow and this is the answer to what they just did.
+  await expect(page.getByTestId(`denied-${sourceId}`)).toBeVisible();
+  await page.getByTestId("close-denied").click();
+}
+
+/**
+ * Open the widget and wait for the browser to have taken it over.
+ *
+ * The page is server-rendered, so every button exists — and is clickable —
+ * before any handler is attached. `data-ready` is set on mount, so waiting for
+ * it is the difference between a click that selects a value and a click that
+ * quietly does nothing.
+ */
+export async function openWidget(page: Page): Promise<void> {
+  await page.goto("/");
+  await expect(page.getByTestId("widget")).toHaveAttribute("data-ready", "true");
+}
+
+/**
+ * Walk the picker: open it, choose a system, and sign in through its popup.
+ *
+ * The sign-in genuinely happens in a separate window — the widget opens one so
+ * the modal can stay up and so Google, which will not render inside another
+ * origin's page, has somewhere to go. `waitForEvent("popup")` has to be armed
+ * BEFORE the click that opens it, or the event fires while nobody is
+ * listening and the wait times out on a window that already exists.
+ */
+export async function signInVia(page: Page, sourceId: string, email: string): Promise<void> {
+  await signIn(page, sourceId, email);
+}
+
+async function signIn(page: Page, sourceId: string, email: string): Promise<void> {
+  if (!(await page.getByTestId("link-modal").isVisible())) {
+    await page.getByTestId("link-system").click();
+  }
+
+  await page.getByTestId(`pick-system-${sourceId}`).click();
+
+  const popupPromise = page.waitForEvent("popup");
+  await page.getByTestId("continue-with-google").click();
+  const popup = await popupPromise;
+
+  await popup.getByLabel("Email").fill(email);
+  await popup.getByRole("button", { name: "Submit" }).click();
+}
+
+/**
+ * Choose an organization and finish linking.
+ *
+ * Split from `signIn` because the two halves fail for different reasons: one
+ * is about whether a system let this person in, the other about which record
+ * they then picked. `orgId` names the system's own id for it, which is what
+ * the row's `data-testid` carries.
+ */
+async function chooseOrg(page: Page, orgId: string): Promise<void> {
+  const row = page.getByTestId(`org-${orgId}`);
+
+  await expect(row).toBeVisible();
+
+  // Clicking is a toggle, and on the second system the matching organization
+  // is already pre-selected — the lock leaves exactly one choice, so the
+  // widget makes it. Clicking anyway would unpick it and leave Continue
+  // disabled, which is a helper bug that reads exactly like a product one.
+  if ((await row.getAttribute("aria-pressed")) !== "true") {
+    await row.click();
+  }
+
+  await page.getByTestId("confirm-org").click();
 }

@@ -14,7 +14,7 @@ import {
   updateOrg,
   type OrgRoutesConfig,
 } from "./org-routes.js";
-import { MemoryOrgStore } from "./store.js";
+import { MemoryOrgStore, type OrgStore } from "./store.js";
 
 /** The lookup the widget makes when all it knows is an EIN. */
 const einQuery = (ein: string) =>
@@ -318,5 +318,25 @@ describe("updateOrg", () => {
     const response = await updateOrg(FUNDERHUB_ORG_ID, request, { store, source: "portal" });
 
     expect(response.status).toBe(404);
+  });
+
+  it("returns 404 when the store declines the write, rather than reporting a change it never made", async () => {
+    const backing = new MemoryOrgStore([PORTAL_SEED]);
+
+    // A store whose `read` answers but whose `write` declines. `scopedStore`
+    // never takes this shape — it scopes both against one grant, so the `read`
+    // above already 404s first — but a store that scoped them apart would, and
+    // the revision this handler returns claims a change was stored.
+    const store: OrgStore = {
+      list: () => backing.list(),
+      read: (orgId) => backing.read(orgId),
+      write: async () => undefined,
+    };
+    const request = patchRequest(PORTAL_ORG_ID, { mission: "Declined by the store" });
+
+    const response = await updateOrg(PORTAL_ORG_ID, request, { store, source: "portal" });
+
+    expect(response.status).toBe(404);
+    expect(await backing.read(PORTAL_ORG_ID)).toEqual(PORTAL_SEED);
   });
 });

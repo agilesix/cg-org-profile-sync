@@ -1,4 +1,5 @@
 import type { Organization } from "../schemas/index.js";
+import type { Principal } from "./tokens.js";
 
 /**
  * Where a system keeps its organization profiles.
@@ -21,8 +22,12 @@ export interface OrgStore {
    * survive a patch instead of being stripped by it. An implementation must
    * round-trip the whole object: a store that projects onto known columns
    * would quietly re-introduce the data loss that decision exists to prevent.
+   *
+   * `undefined` means the store declined the write and stored nothing, which is
+   * how `scopedStore` refuses an org outside the caller's grant. A store that
+   * accepts every write it is handed — `MemoryOrgStore` — never returns it.
    */
-  write(org: Organization): Promise<Organization>;
+  write(org: Organization): Promise<Organization | undefined>;
 }
 
 /**
@@ -88,4 +93,44 @@ export class MemoryOrgStore implements ResettableOrgStore {
  */
 function loadSeed(seed: readonly Organization[]): Map<string, Organization> {
   return new Map(seed.map((org) => [org.id, structuredClone(org)]));
+}
+
+/**
+ * Narrow a store to the organizations a principal may touch.
+ *
+ * `list` is filtered; `read` and `write` answer `undefined` outside the grant,
+ * so `readOrg` and `updateOrg` 404 on an org the principal cannot see without
+ * either handler learning what a principal is. 404 rather than 403 is
+ * deliberate: to someone with no grant, an org they cannot touch and an org
+ * that does not exist should be the same answer.
+ *
+ * An absent principal is granted nothing, so a route mounted outside the guard
+ * fails closed rather than open. That is the whole reason this takes
+ * `Principal | undefined` instead of making the caller assert one.
+ */
+export function scopedStore(store: OrgStore, principal: Principal | undefined): OrgStore {
+  // `"*"` is the service credential, which is scoped to nothing. Handing the
+  // store back unwrapped keeps that path free of a set lookup per record.
+  if (principal?.orgs === "*") {
+    return store;
+  }
+
+  const granted = new Set(principal?.orgs ?? []);
+
+  return {
+    async list() {
+      return (await store.list()).filter((org) => granted.has(org.id));
+    },
+
+    async read(orgId) {
+      return granted.has(orgId) ? await store.read(orgId) : undefined;
+    },
+
+    async write(org) {
+      // Checked before `store.write`, not after: "404 without storing
+      // anything" is the acceptance criterion, and a wrapper that wrote first
+      // and hid the result would satisfy only the half of it anyone can see.
+      return granted.has(org.id) ? await store.write(org) : undefined;
+    },
+  };
 }

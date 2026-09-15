@@ -15,12 +15,24 @@ export type {
   CompareResult,
   FieldComparison,
   JsonValue,
+  OrgListResult,
+  OrgSummary,
+  SelectableOrg,
   SourceResolution,
   SyncResult,
   SyncTargetResult,
 } from "@cg-link/org-sync/types";
 
 export type { SyncChange } from "@cg-link/org-sync/client";
+
+export type { OrgLock } from "@cg-link/org-sync/utils";
+
+/**
+ * Re-exported as a value, not a type: the modal renders this string and the
+ * e2e specs assert on it, and two copies of it would drift the first time
+ * anyone reworded the picker.
+ */
+export { DIFFERENT_ORG_REASON } from "@cg-link/org-sync/utils";
 
 /** What both routes answer with when they reject a request. */
 export interface ApiError {

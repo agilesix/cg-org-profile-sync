@@ -12,9 +12,16 @@
  * the seed even though none of them ask for `api`.
  */
 
-import { AGILE_SIX_EIN, FUNDERHUB_SEED, PORTAL_SEED } from "@cg-link/seed";
+import {
+  AGILE_SIX_EIN,
+  FUNDERHUB_ORG_ID,
+  FUNDERHUB_SEED,
+  PORTAL_ORG_ID,
+  PORTAL_SEED,
+} from "@cg-link/seed";
 import type { Page } from "@playwright/test";
-import { expect, test } from "../fixtures.js";
+import { connect, expect, openWidget, test } from "../fixtures.js";
+import { ADMIN_EMAIL } from "../env.js";
 
 /**
  * A seed value the assertions below are meaningless without.
@@ -41,24 +48,29 @@ const FUNDERHUB_STREET2 = required(
 );
 
 /**
- * Open the widget and wait for the browser to have taken it over.
+ * Open the widget and sign in to both systems as the admin.
  *
- * The page is server-rendered, so every button exists — and is clickable —
- * before any handler is attached. `data-ready` is set on mount, so waiting for
- * it is the difference between a click that selects a value and a click that
- * quietly does nothing.
+ * Every test below is about the grid, and there is no grid until something is
+ * connected — Link holds no credentials of its own. The tokens are obtained
+ * through each portal's real flow rather than injected, so what these specs go
+ * on to prove about reading and writing is something the systems allowed, not
+ * something the fixture arranged.
  */
-async function openWidget(page: Page): Promise<void> {
-  await page.goto("/");
-  await expect(page.getByTestId("widget")).toHaveAttribute("data-ready", "true");
+async function openConnected(page: Page): Promise<void> {
+  await openWidget(page);
+  await connect(page, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
+  await connect(page, "funderhub", ADMIN_EMAIL, FUNDERHUB_ORG_ID);
 }
 
 test("the grid opens on the seeded org, with the address row marked as the disagreement", async ({
   page,
 }) => {
-  await openWidget(page);
+  await openConnected(page);
 
-  await expect(page.getByTestId("ein")).toHaveValue(AGILE_SIX_EIN);
+  // The organization is named in the header now, not typed into a field: it
+  // was chosen in the modal, and one organization is linked at a time.
+  await expect(page.getByTestId("linked-org")).toContainText(PORTAL_SEED.name);
+  await expect(page.getByTestId("linked-org")).toContainText(AGILE_SIX_EIN);
 
   // One column per configured system, named as the registry names it.
   await expect(page.getByTestId("source-portal")).toContainText("GrantPortal");
@@ -101,7 +113,7 @@ test("the grid opens on the seeded org, with the address row marked as the disag
 test("choosing portal's address and syncing turns the row from differs to agree", async ({
   page,
 }) => {
-  await openWidget(page);
+  await openConnected(page);
 
   const row = page.getByTestId("row-addresses.primary");
   await expect(row).toHaveAttribute("data-status", "differs");
@@ -138,7 +150,7 @@ test("choosing portal's address and syncing turns the row from differs to agree"
 test("pushing portal's website reports what funderhub declined, and the row is unchanged", async ({
   page,
 }) => {
-  await openWidget(page);
+  await openConnected(page);
 
   await page.getByTestId("pick-socials.website-portal").click();
   await page.getByTestId("sync").click();
@@ -165,21 +177,18 @@ test("pushing portal's website reports what funderhub declined, and the row is u
   await expect(page.getByTestId("row-socials.website")).toHaveAttribute("data-status", "agree");
 });
 
-test("looking up a different EIN drops the pick rather than carrying it over", async ({ page }) => {
-  await openWidget(page);
+test("the linked organization and both systems survive a reload", async ({ page }) => {
+  await openConnected(page);
 
-  await page.getByTestId("pick-addresses.primary-portal").click();
-  await expect(page.getByTestId("selection")).toBeVisible();
+  await page.reload();
+  await expect(page.getByTestId("widget")).toHaveAttribute("data-ready", "true");
 
-  await page.getByTestId("ein").fill("000000000");
-  await page.getByTestId("look-up").click();
-
-  // Neither system holds this org, so every column says so and the grid still
-  // renders — and the value picked for the *previous* org is gone, because
-  // syncing it now would write one organization's address onto another.
-  await expect(page.getByTestId("source-note-portal")).toBeVisible();
-  await expect(page.getByTestId("source-note-funderhub")).toBeVisible();
-  await expect(page.getByTestId("grid")).toBeVisible();
-  await expect(page.getByTestId("selection")).toHaveCount(0);
-  await expect(page.getByTestId("prompt")).toBeVisible();
+  // Tokens and the linked organization both live in `sessionStorage`, so a
+  // reload is not a fresh start — and it must not reopen the modal, which
+  // would read as the link having come undone.
+  await expect(page.getByTestId("linked-org")).toContainText(AGILE_SIX_EIN);
+  await expect(page.getByTestId("connected-portal")).toBeVisible();
+  await expect(page.getByTestId("connected-funderhub")).toBeVisible();
+  await expect(page.getByTestId("link-modal")).toBeHidden();
+  await expect(page.getByTestId("grid")).toContainText(PORTAL_SEED.name);
 });

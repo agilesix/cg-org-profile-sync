@@ -12,12 +12,16 @@ import type { JsonValue } from "$lib/api-types.js";
 export { EIN_REGISTRY, formatFieldValue } from "@cg-link/org-sync/utils";
 
 /**
- * The EIN the page opens on.
+ * The EIN a deep link falls back to.
+ *
+ * No longer what the page opens on — nothing is linked until someone picks an
+ * organization in the modal. It survives as the default for `?id=`, so
+ * `docs/demo-script.md` can still put the presenter straight on Agile Six.
  *
  * Agile Six's, as seeded into both systems. Hardcoded rather than read from
  * `@cg-link/seed`: the widget is meant to work against systems whose contents
  * it knows nothing about, so a dependency on their fixtures would be a lie
- * about how it finds an org. It is a demo default, and the field is editable.
+ * about how it finds an org.
  */
 export const DEFAULT_EIN = "123456789";
 
@@ -34,4 +38,36 @@ export interface Selection {
 
   /** The value itself, passed through untouched — `null` included. */
   value: JsonValue;
+}
+
+/**
+ * One system as the picker shows it.
+ *
+ * What `+page.server.ts` sends the browser, and nothing more: a system's
+ * address is the server's business, since every flow goes through Link's own
+ * `/api/connect/start`.
+ */
+export interface SystemView {
+  id: string;
+  label: string;
+
+  /** The system's own site, shown under its name. `null` when none is configured. */
+  website: string | null;
+
+  capabilities: { read: boolean; write: boolean };
+
+  /** False for a system the picker names but this demo cannot connect. */
+  connectable: boolean;
+}
+
+/** How one system's sign-in attempt ended, as the page reports it to the modal. */
+export interface ConnectOutcome {
+  sourceId: string;
+
+  /**
+   * `abandoned` is its own outcome, not a failure. Someone who closes the
+   * popup has not been refused and has no error to read — the modal should
+   * simply offer them the button again.
+   */
+  result: "token" | "denied" | "abandoned";
 }

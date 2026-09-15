@@ -8,4 +8,8 @@ export {
   getAtPath,
 } from "./compare.js";
 export { formatFieldValue } from "./format.js";
+export { DIFFERENT_ORG_REASON, selectableOrgs, summarizeOrg } from "./orgs.js";
+export type { OrgLock } from "./orgs.js";
 export type { FieldSpec } from "./compare.js";
+export { capabilitiesOf, isConnectable } from "./sources.js";
+export { sameOriginPath } from "./urls.js";

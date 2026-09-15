@@ -1,29 +1,48 @@
-import { compareAcrossSources } from "@cg-link/org-sync/client";
+import { capabilitiesOf, isConnectable } from "@cg-link/org-sync/utils";
 import { DEFAULT_EIN, EIN_REGISTRY } from "$lib/demo.js";
-import { SOURCES, tokenProvider } from "$lib/server/sources.js";
+import { catalogSources } from "$lib/server/sources.js";
 import type { PageServerLoad } from "./$types.js";
 
 /**
- * Read every system before the page is sent, so the grid paints filled in.
+ * What the page needs before anyone has linked anything.
  *
- * Calls `compareAcrossSources` directly rather than fetching Link's own
- * `/api/compare`: the route is a thin wrapper over this same function, and a
- * server asking itself over HTTP would only add a hop. The browser does use
- * the route — that is what a refresh after a sync goes through — so both paths
- * stay exercised.
+ * Not a comparison, and no longer even a connect list. The widget opens on a
+ * title and one button, because Link holds no credentials of its own — until
+ * the person has signed in with a system there is nothing to read and nobody
+ * to read it as. Everything after that button happens in the modal.
  *
- * `?registry=` and `?id=` are honoured so a demo can be deep-linked at a
- * particular org, and the resolved pair is handed back for the page to echo
- * into its lookup field.
+ * The catalog still comes from the server, because the modal has to render the
+ * whole list the moment it opens. It is the picker's contents, not a secret:
+ * names, sites, and whether each can be connected yet.
+ *
+ * `?registry=` and `?id=` are still honoured so a demo can be deep-linked at a
+ * particular org, and they survive the sign-in round trip because the connect
+ * flow carries them back.
  */
-export const load: PageServerLoad = async ({ url }) => {
-  const registry = url.searchParams.get("registry") || EIN_REGISTRY;
-  const id = url.searchParams.get("id") || DEFAULT_EIN;
+export const load: PageServerLoad = ({ url }) => {
+  // Only when `?id=` was actually given. The page needs to tell a deep link
+  // apart from an ordinary visit — one replaces whatever the tab had linked,
+  // the other leaves it alone — and a default applied here would erase that
+  // difference before the browser ever saw it.
+  const requested = url.searchParams.get("id");
+  const deepLink =
+    requested === null
+      ? null
+      : {
+          registry: url.searchParams.get("registry") || EIN_REGISTRY,
+          id: requested || DEFAULT_EIN,
+        };
 
-  const comparison = await compareAcrossSources(registry, id, {
-    sources: SOURCES,
-    tokens: tokenProvider(),
-  });
+  // Only what the browser has any use for. `baseUrl`, `authorizeUrl` and
+  // `tokenUrl` stay on the server: the Connect control goes through Link's own
+  // `/api/connect/start`, so the page never needs a system's address.
+  const sources = catalogSources().map((source) => ({
+    id: source.id,
+    label: source.label,
+    website: source.website ?? null,
+    capabilities: capabilitiesOf(source),
+    connectable: isConnectable(source),
+  }));
 
-  return { registry, id, comparison };
+  return { deepLink, sources };
 };
