@@ -176,29 +176,94 @@ export class FakeIdentityProvider implements IdentityProvider {
   }
 }
 
+/** What the stand-in sign-in page should say and prefill. */
+export interface FakeLoginPageOptions {
+  /** Pre-fills the email field, so a second system is one click rather than retyping. */
+  loginHint?: string;
+
+  /** The system being signed in to, so the person can see whose page this is. */
+  systemLabel?: string;
+}
+
 /**
  * The dev-only sign-in form.
  *
  * Submits straight back to the callback, so the fake flow and the Google flow
  * converge on the same handler rather than the fake one having its own path
  * through the portal.
+ *
+ * Dressed as a credentials screen — the system's name, an email, a password,
+ * a Submit button — because this is what the demo's audience actually sees
+ * when the popup opens, and a debug form there would undercut the point being
+ * made about signing in to each system separately.
+ *
+ * **The password field carries no `name`,** so the form submits no password at
+ * all. It is there to make the screen read as a sign-in and nothing else. A
+ * stand-in that collected a real credential would be the one part of this demo
+ * worth being uneasy about, so the value never leaves the input — and the page
+ * says out loud, above the form, that it stands in for Google.
  */
-export function fakeLoginPage(state: string, loginHint?: string): Response {
+export function fakeLoginPage(state: string, options: FakeLoginPageOptions = {}): Response {
+  const { loginHint, systemLabel } = options;
+  const signingInTo = systemLabel ? `Sign in to ${escapeHtml(systemLabel)}` : "Sign in";
+
   const body = `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Sign in</title>
+    <title>${signingInTo}</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        margin: 0; min-height: 100vh; display: grid; place-items: center;
+        background: #f5f7f6; color: #14201f; line-height: 1.6;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      main {
+        width: min(24rem, calc(100vw - 2rem)); padding: 2rem 1.75rem;
+        background: #ffffff; border: 1px solid #d9e0dd; border-radius: 0.75rem;
+      }
+      h1 { margin: 0 0 0.25rem; font-size: 1.35rem; letter-spacing: -0.01em; }
+      .stand-in {
+        margin: 0 0 1.5rem; font-size: 0.8rem; color: #6b7a77;
+      }
+      label {
+        display: block; margin: 0 0 0.3rem; font-size: 0.72rem; letter-spacing: 0.08em;
+        text-transform: uppercase; color: #6b7a77;
+      }
+      input {
+        font: inherit; width: 100%; box-sizing: border-box; padding: 0.5rem 0.65rem;
+        margin: 0 0 1rem; border: 1px solid #b7c4c1; border-radius: 0.35rem;
+        background: transparent; color: inherit;
+      }
+      button {
+        font: inherit; width: 100%; padding: 0.55rem 1rem; cursor: pointer;
+        color: #ffffff; background: #14201f; border: 1px solid #14201f; border-radius: 0.35rem;
+      }
+      @media (prefers-color-scheme: dark) {
+        body { background: #0f1615; color: #e7edeb; }
+        main { background: #131d1c; border-color: #2a3736; }
+        .stand-in, label { color: #8a9895; }
+        input { border-color: #3f5250; }
+        button { color: #0f1615; background: #e7edeb; border-color: #e7edeb; }
+      }
+    </style>
   </head>
   <body>
     <main>
-      <h1>Sign in</h1>
-      <p>Stand-in for Google. Any address works; what you are granted depends on who you say you are.</p>
+      <h1>${signingInTo}</h1>
+      <p class="stand-in">
+        A stand-in for Google, so the demo runs offline. Any address works, and what you are
+        granted depends on who you say you are. The password is not sent anywhere.
+      </p>
       <form method="GET" action="callback">
         <input type="hidden" name="state" value="${escapeHtml(state)}" />
         <label for="email">Email</label>
         <input id="email" type="email" name="email" value="${escapeHtml(loginHint ?? "")}" required />
-        <button type="submit">Continue</button>
+        <label for="password">Password</label>
+        <!-- Deliberately unnamed: a form control with no \`name\` is not submitted. -->
+        <input id="password" type="password" autocomplete="off" />
+        <button type="submit">Submit</button>
       </form>
     </main>
   </body>

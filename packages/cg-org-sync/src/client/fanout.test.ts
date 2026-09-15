@@ -26,6 +26,15 @@ const FUNDERHUB_SOURCE: SourceConfig = {
   enabled: true,
 };
 
+/** A system named in the picker but not yet wired up — never contacted. */
+const COMING_SOON_SOURCE: SourceConfig = {
+  ...PORTAL_SOURCE,
+  id: "temelio",
+  label: "Temelio",
+  baseUrl: "https://temelio.example.com",
+  status: "coming-soon",
+};
+
 /** The paginated envelope `GET /common-grants/orgs` responds with. */
 function listEnvelope(items: readonly Organization[]): Response {
   return new Response(
@@ -304,6 +313,17 @@ describe("listOrgsAt", () => {
     expect(result.connection).toBe("connected");
     expect(calls).toHaveLength(0);
   });
+
+  it("reports a coming-soon source's id as unconfigured, without sending it anything", async () => {
+    const { fetch, calls } = captureFetch(stubFetchByOrigin({}));
+    const tokens = new StaticTokenProvider({ temelio: "temelio-token" });
+
+    const result = await listOrgsAt("temelio", { sources: [COMING_SOON_SOURCE], tokens, fetch });
+
+    expect(result.orgs).toEqual([]);
+    expect(result.error).toBe("No enabled source is configured with the id temelio.");
+    expect(calls).toHaveLength(0);
+  });
 });
 
 describe("compareAcrossSources", () => {
@@ -552,6 +572,34 @@ describe("compareAcrossSources", () => {
       false,
     );
   });
+
+  it("never contacts a coming-soon source, and excludes it from the result", async () => {
+    const { fetch, calls } = captureFetch(
+      stubFetchByOrigin({
+        "https://portal.example.com": listEnvelope([PORTAL_SEED]),
+      }),
+    );
+    const tokens = new StaticTokenProvider({ portal: "portal-token", temelio: "temelio-token" });
+
+    const result = await compareAcrossSources("org:us:ein", AGILE_SIX_EIN, {
+      sources: [PORTAL_SOURCE, COMING_SOON_SOURCE],
+      tokens,
+      fetch,
+    });
+
+    expect(result.sources).toEqual([
+      {
+        id: "portal",
+        label: "GrantPortal",
+        orgId: PORTAL_ORG_ID,
+        connection: "connected",
+        capabilities: { read: true, write: true },
+      },
+    ]);
+    expect(calls.some((request) => request.url.startsWith("https://temelio.example.com"))).toBe(
+      false,
+    );
+  });
 });
 
 describe("syncToTargets", () => {
@@ -705,6 +753,32 @@ describe("syncToTargets", () => {
     expect(result.results).toEqual([
       { id: "portal", ok: true, status: 200, message: "Change applied" },
     ]);
+  });
+
+  it("reports a coming-soon target as an unconfigured source, without sending it anything", async () => {
+    const { fetch, calls } = captureFetch(stubFetchByOrigin({}));
+    const tokens = new StaticTokenProvider({ temelio: "temelio-token" });
+
+    const result = await syncToTargets(
+      {
+        registry: "org:us:ein",
+        id: AGILE_SIX_EIN,
+        path: "socials.website",
+        value: "https://agile6.com",
+        targets: ["temelio"],
+      },
+      { sources: [COMING_SOON_SOURCE], tokens, fetch },
+    );
+
+    expect(result.results).toEqual([
+      {
+        id: "temelio",
+        ok: false,
+        status: null,
+        message: "No enabled source is configured with the id temelio.",
+      },
+    ]);
+    expect(calls).toHaveLength(0);
   });
 
   it("sends a null value through to the wire, since null is how RFC 7396 spells clearing a field", async () => {

@@ -683,7 +683,7 @@ OrgSummary { id, name, ein: string | null }` reading `identifiers["org:us:ein"].
   agree across systems on purpose: the demo's drift story stays Agile Six's, and the others exist
   to be greyed out.
 
-### #1188-T6: Empty state, system picker modal, and the Google sign-in step in a popup
+### #1188-T6: [✓] Empty state, system picker modal, and the Google sign-in step in a popup
 
 Depends on: #1188-T3 (connect routes). Parallel with #1188-T5.
 
@@ -750,7 +750,7 @@ Depends on: #1188-T3 (connect routes). Parallel with #1188-T5.
   decorative password field is a lie the demo tells on purpose, and it is labelled. Real vendor
   names on a "coming soon" row carry a small reputational risk, accepted on 2026-09-14.
 
-### #1188-T7: Organization step, EIN lock-in on the second connect, and the success banner
+### #1188-T7: [✓] Organization step, EIN lock-in on the second connect, and the success banner
 
 Depends on: #1188-T5, #1188-T6
 
@@ -797,7 +797,7 @@ Depends on: #1188-T5, #1188-T6
   several; "you may link one at a time" is enforced only in Link's UI, since the contract has no
   notion of a linked org. Storage of the linked org is per tab, like the tokens.
 
-### #1188-T8: End-to-end specs for the Plaid flow, and docs
+### #1188-T8: [✓] End-to-end specs for the Plaid flow, and docs
 
 Depends on: #1188-T7
 

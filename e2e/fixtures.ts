@@ -12,6 +12,7 @@ import {
   expect,
   type APIRequestContext,
   type APIResponse,
+  type FrameLocator,
   type Page,
 } from "@playwright/test";
 import type {
@@ -351,15 +352,65 @@ function locationOf(response: APIResponse, what: string): string {
 /**
  * Connect one system in the browser, the way a person does.
  *
- * Standalone, the flow happens in the tab itself, so this is three clicks and
- * a wait rather than any window juggling. Waiting on `connected-{id}` rather
- * than on the navigation is what makes it safe to assert straight afterwards:
- * the widget re-reads every system once a token lands, and that badge appears
- * with the state that triggered the read.
+ * Waiting on `connected-{id}` rather than on the popup closing is what makes
+ * it safe to assert straight afterwards: the widget re-reads every system once
+ * a token lands, and that chip appears with the state that triggered the read.
  */
-export async function connect(page: Page, sourceId: string, email: string): Promise<void> {
+export async function connect(
+  page: Page,
+  sourceId: string,
+  email: string,
+  orgId: string,
+): Promise<void> {
   await signIn(page, sourceId, email);
+  await chooseOrg(page, orgId);
   await expect(page.getByTestId(`connected-${sourceId}`)).toBeVisible();
+}
+
+/**
+ * Connect one system from inside the embedded overlay.
+ *
+ * The same walk as `connect`, driven against the widget's frame rather than
+ * the tab: the controls are inside the iframe, but the popup each sign-in runs
+ * in belongs to the page, so both are needed. Separate from `connect` rather
+ * than a root parameter threaded through it, because the standalone helpers
+ * are what every other browser spec depends on and this is the only caller
+ * that is not on the page itself.
+ */
+export async function connectInFrame(
+  page: Page,
+  widget: FrameLocator,
+  sourceId: string,
+  email: string,
+  orgId: string,
+): Promise<void> {
+  if (!(await widget.getByTestId("link-modal").isVisible())) {
+    await widget.getByTestId("link-system").click();
+  }
+
+  await widget.getByTestId(`pick-system-${sourceId}`).click();
+
+  // Armed before the click, or the event fires while nobody is listening.
+  const popupPromise = page.waitForEvent("popup");
+  await widget.getByTestId("continue-with-google").click();
+  const popup = await popupPromise;
+
+  await popup.getByLabel("Email").fill(email);
+  await popup.getByRole("button", { name: "Submit" }).click();
+
+  // Embedded, the organization arrives with the frame URL, so the lock leaves
+  // one choice and the widget has already made it. Clicking a pre-selected row
+  // would unpick it and disable Continue.
+  const row = widget.getByTestId(`org-${orgId}`);
+
+  await expect(row).toBeVisible();
+
+  if ((await row.getAttribute("aria-pressed")) !== "true") {
+    await row.click();
+  }
+
+  await widget.getByTestId("confirm-org").click();
+  await expect(widget.getByTestId(`connected-${sourceId}`)).toBeVisible();
 }
 
 /**
@@ -374,7 +425,11 @@ export async function connectExpectingDenial(
   email: string,
 ): Promise<void> {
   await signIn(page, sourceId, email);
+
+  // The refusal is a step of the modal, not a badge on the page behind it:
+  // the person is mid-flow and this is the answer to what they just did.
   await expect(page.getByTestId(`denied-${sourceId}`)).toBeVisible();
+  await page.getByTestId("close-denied").click();
 }
 
 /**
@@ -390,9 +445,54 @@ export async function openWidget(page: Page): Promise<void> {
   await expect(page.getByTestId("widget")).toHaveAttribute("data-ready", "true");
 }
 
-/** Click Connect, fill the stand-in sign-in form, and submit it. */
+/**
+ * Walk the picker: open it, choose a system, and sign in through its popup.
+ *
+ * The sign-in genuinely happens in a separate window — the widget opens one so
+ * the modal can stay up and so Google, which will not render inside another
+ * origin's page, has somewhere to go. `waitForEvent("popup")` has to be armed
+ * BEFORE the click that opens it, or the event fires while nobody is
+ * listening and the wait times out on a window that already exists.
+ */
+export async function signInVia(page: Page, sourceId: string, email: string): Promise<void> {
+  await signIn(page, sourceId, email);
+}
+
 async function signIn(page: Page, sourceId: string, email: string): Promise<void> {
-  await page.getByTestId(`connect-${sourceId}`).click();
-  await page.getByLabel("Email").fill(email);
-  await page.getByRole("button", { name: "Continue" }).click();
+  if (!(await page.getByTestId("link-modal").isVisible())) {
+    await page.getByTestId("link-system").click();
+  }
+
+  await page.getByTestId(`pick-system-${sourceId}`).click();
+
+  const popupPromise = page.waitForEvent("popup");
+  await page.getByTestId("continue-with-google").click();
+  const popup = await popupPromise;
+
+  await popup.getByLabel("Email").fill(email);
+  await popup.getByRole("button", { name: "Submit" }).click();
+}
+
+/**
+ * Choose an organization and finish linking.
+ *
+ * Split from `signIn` because the two halves fail for different reasons: one
+ * is about whether a system let this person in, the other about which record
+ * they then picked. `orgId` names the system's own id for it, which is what
+ * the row's `data-testid` carries.
+ */
+async function chooseOrg(page: Page, orgId: string): Promise<void> {
+  const row = page.getByTestId(`org-${orgId}`);
+
+  await expect(row).toBeVisible();
+
+  // Clicking is a toggle, and on the second system the matching organization
+  // is already pre-selected — the lock leaves exactly one choice, so the
+  // widget makes it. Clicking anyway would unpick it and leave Continue
+  // disabled, which is a helper bug that reads exactly like a product one.
+  if ((await row.getAttribute("aria-pressed")) !== "true") {
+    await row.click();
+  }
+
+  await page.getByTestId("confirm-org").click();
 }

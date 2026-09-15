@@ -20,43 +20,55 @@ back. The whole exchange is covered by browser tests.
 
 ## What you can do with it
 
-**See where systems disagree.** Look an organization up by EIN and get one row per field, one
-column per system. Rows that differ are flagged. A field one system simply does not have shows as a
-gap, not a conflict.
+**Link the systems that hold your profile.** The widget opens on one button. Behind it is a list of
+grant management systems — the two this demo runs, and others named but not wired up — the way you
+would pick a bank in Plaid.
 
-![The comparison grid: two systems, four fields, the address row flagged as differing](docs/screenshots/1-compare.png)
+![The system picker: GrantPortal and FunderHub selectable, five more marked coming soon](docs/screenshots/1-picker.png)
+
+**Sign in to each system, on its own terms.** Every system runs its own sign-in and then tells the
+widget which organizations you may act for. You pick one, and that is what the widget works on.
+
+![The organization step: three organizations with their EINs, and Continue waiting for a pick](docs/screenshots/2-organization.png)
+
+**See where systems disagree.** One row per field, one column per system. Rows that differ are
+flagged. A field one system simply does not have shows as a gap, not a conflict. Link a second
+system and it is held to the organization you already chose — matched by EIN, since no two systems
+agree on ids.
+
+![The comparison grid: two systems, four fields, the address row flagged as differing](docs/screenshots/3-compare.png)
+
+**Fix a field everywhere in one click.** Click the value that is right, pick which systems should
+receive it, and push. Each system gets a JSON Merge Patch that changes only that field.
+
+![After syncing GrantPortal's address to FunderHub, the row agrees and FunderHub reports the change was applied](docs/screenshots/5-synced.png)
+
+**Find out what a system could not store.** A system that does not model a field accepts the
+change, drops the field, and says so.
+
+![Pushing the website to FunderHub: accepted, with the message that this system does not store socials](docs/screenshots/6-declined.png)
 
 **Open it where the data already lives.** Each system has its own profile page, and one button
 puts the widget in an overlay on top of it — no new tab, no second login. The widget knows whose
-page it is on.
+page it is on, and tells it when something changes.
 
-![The widget open in an overlay over GrantPortal's profile page, comparing GrantPortal and FunderHub](docs/screenshots/6-embedded-push.png)
+![The widget open in an overlay over GrantPortal's profile page, comparing GrantPortal and FunderHub](docs/screenshots/7-embedded.png)
 
 **Know which way a value is moving.** Nothing is ever just "synced". Taking the page's own value
 outward is a push; taking another system's value into it is a pull, and a pull can only land on the
 page you are on.
 
-![Choosing FunderHub's address reads "Pull Primary address from FunderHub into GrantPortal", with GrantPortal the only target offered](docs/screenshots/7-embedded-pull.png)
-
-**Fix a field everywhere in one click.** Click the value that is right, pick which systems should
-receive it, and push. Each system gets a JSON Merge Patch that changes only that field.
-
-![After syncing GrantPortal's address to FunderHub, the row agrees and FunderHub reports the change was applied](docs/screenshots/3-synced.png)
-
-**Find out what a system could not store.** A system that does not model a field accepts the
-change, drops the field, and says so.
-
-![Pushing the website to FunderHub: accepted, with the message that this system does not store socials](docs/screenshots/4-declined.png)
+![Choosing FunderHub's address reads "Pull Primary address from FunderHub into GrantPortal", with GrantPortal the only target offered](docs/screenshots/8-pull.png)
 
 **Edit a profile on the system that holds it.** Every system serves its own editable page, saving
 through exactly the rules its `PATCH` route enforces — so an edit typed there and one pushed by the
 widget are the same edit.
 
-![GrantPortal's organization profile page, with the four compared fields editable](docs/screenshots/5-profile.png)
+![GrantPortal's organization profile page, with the four compared fields editable](docs/screenshots/9-profile.png)
 
 **Connect another system without new code.** Every system exposes the same routes, so a third one
-is a config entry and an access token, not a feature. A system configured read-only is labelled as
-such and is never offered as a target.
+is a config entry, not a feature. One configured read-only is labelled as such and is never offered
+as a target.
 
 ```
 GET   /common-grants/orgs             find an org by identifier, e.g. ?registry=org:us:ein&id=
@@ -118,6 +130,11 @@ private keys sitting in git. Generate your own for anything that is not localhos
 
 ### Signing in with Google instead
 
+**The demo runs on the stand-in form, not Google.** Both portals ship set to `IDENTITY_PROVIDER=fake`,
+which is also what `pnpm e2e` drives, so nothing here needs a Google account. The Google provider is
+written and unit-tested against a local key set but has not been exercised against Google itself;
+standing it up is the last ticket in the plan. What follows is what that will take.
+
 The stand-in form is enough to run and demo everything. To use real Google sign-in, make one
 project in the Google Cloud console with one **Web application** OAuth client:
 
@@ -159,15 +176,15 @@ Storage is in memory, so restarting `pnpm dev` puts every system back to its see
 with an interface behind it, chosen so the demo shows the data exchange rather than
 infrastructure. Each system signs its own access tokens and publishes the public half, and every
 read and write is scoped to the organizations the caller may touch. Each is also its own sign-in: the
-widget opens on the list of systems it can talk to and you connect them one at a time, each with
-its own sign-in. A system you have not connected simply says so in its column; the rest still
-answer.
+widget opens on a button, you pick systems from a list and link them one at a time, and each runs
+its own sign-in. A system you have not linked simply says so in its column; the rest still answer.
 
 ## Status and what's next
 
 The two-system exchange works end to end and is pinned by tests, and so is per-organization
 access: each system runs its own sign-in flow and issues tokens scoped to what you may touch there.
-Not built yet: embedding the widget inside a host system, the Temelio adapter, and durable
+Sign-in currently goes through a stand-in form rather than Google — see above. Not built yet: real
+Google sign-in, embedding the widget inside a host system, the Temelio adapter, and durable
 storage. The build plan lives outside this repo. Ask Billy for a copy.
 
 ## License

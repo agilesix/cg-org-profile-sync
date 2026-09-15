@@ -29,6 +29,7 @@ import {
   buildMergePatch,
   capabilitiesOf,
   compareProfiles,
+  isConnectable,
   summarizeOrg,
 } from "../utils/index.js";
 import { NotConnectedError, OrgClient, OrgClientError } from "./org-client.js";
@@ -187,11 +188,14 @@ export async function listOrgsAt(sourceId: string, options: FanoutOptions): Prom
 /**
  * The sources a fan-out talks to.
  *
- * `enabled: false` keeps a source in the registry but out of the demo, so a
- * third system can be committed as configuration before it is ready to answer.
+ * `isConnectable` rather than a local check on `enabled`, so a source the
+ * widget only *names* — a `coming-soon` entry in the picker — is never
+ * contacted here either. That rule belongs on this side rather than in the
+ * caller: a route that forgot to filter would otherwise send a real request to
+ * a system nobody has integrated.
  */
 function enabledSources(sources: readonly SourceConfig[]): readonly SourceConfig[] {
-  return sources.filter((source) => source.enabled !== false);
+  return sources.filter(isConnectable);
 }
 
 /** One client per source, all sharing the injected transport and token provider. */

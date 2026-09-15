@@ -2,10 +2,14 @@
   The widget: read every connected system's copy of one org, show where they
   disagree, and push a chosen value back to the systems the person picks.
 
-  Server-rendered from `+page.server.ts` so the grid paints filled in, then
-  driven from the browser through Link's own `/api/compare` and `/api/sync`.
-  Both fan-outs live in `@cg-link/org-sync/client`; nothing here knows how many
-  systems there are, which is the point — a third source is an entry in
+  It opens on nothing — a title and one button — because Link holds no
+  credentials of its own. Everything up to the first token happens in
+  `LinkModal`: pick a system, sign in to it in that system's own window, come
+  back linked. That is the Plaid shape, and it is also the honest one here,
+  since each system decides for itself who may touch what.
+
+  The fan-outs both live in `@cg-link/org-sync/client`; nothing here knows how
+  many systems there are, which is the point — a third source is an entry in
   `$lib/server/sources.ts` and this file does not change.
 -->
 
@@ -16,43 +20,54 @@
     ApiError,
     CompareResult,
     JsonValue,
+    OrgListResult,
+    OrgLock,
+    OrgSummary,
     SyncResult,
     SyncTargetResult,
   } from "$lib/api-types.js";
   import ComparisonGrid from "$lib/components/ComparisonGrid.svelte";
+  import LinkModal from "$lib/components/LinkModal.svelte";
   import SyncResults from "$lib/components/SyncResults.svelte";
   import {
+    EIN_REGISTRY,
     directionOf,
     formatFieldValue,
     syncTargets,
+    type ConnectOutcome,
     type Selection,
     type SyncDirection,
+    type SystemView,
   } from "$lib/demo.js";
   import {
     forget,
     listenForConnect,
     readDenied,
+    readLinkedOrg,
+    readLinkedSources,
     readTokens,
     rememberDenied,
+    rememberLinkedOrg,
+    rememberLinkedSource,
     rememberToken,
+    type LinkedOrg,
   } from "$lib/tokens.js";
   import type { PageData } from "./$types.js";
 
   let { data }: { data: PageData } = $props();
 
   /**
-   * Everything below seeds from the server load and is then owned by the page.
+   * The organization this tab is working on, or null until one is picked.
    *
-   * `untrack` says that out loud: the load runs once per navigation, and every
-   * update after it comes from `/api/compare`, so re-reading `data` would only
-   * ever put the first paint back. Without it Svelte warns, rightly, that a
-   * prop read here is not reactive.
+   * Everything downstream reads from here: which org the grid compares, which
+   * id a sync writes under, and what later systems are locked to. It is the
+   * one piece of state the widget cannot proceed without, which is why the
+   * page shows nothing but a button until it is set.
    */
-  let registry = $state(untrack(() => data.registry));
-  let id = $state(untrack(() => data.id));
+  let linkedOrg = $state<LinkedOrg | null>(null);
 
-  /** What the lookup field holds, which is not the same as what is loaded. */
-  let einInput = $state(untrack(() => data.id));
+  /** The last system linked, so the banner can name it. */
+  let banner = $state<string | null>(null);
 
   /**
    * One access token per system this tab has signed in with.
@@ -65,6 +80,16 @@
 
   /** Systems that signed us in and then said we have no organization there. */
   let denied = $state<string[]>([]);
+
+  /**
+   * Systems that finished the whole flow, organization and all.
+   *
+   * Separate from holding a token, because the two came apart when the
+   * organization step landed: someone can sign in and close the modal before
+   * choosing, and a chip that said "Linked" for that would be claiming
+   * something the widget cannot act on.
+   */
+  let linkedSources = $state<string[]>([]);
 
   /** Null until at least one system is connected — there is nothing to read before that. */
   let comparison = $state.raw<CompareResult | null>(null);
@@ -87,6 +112,29 @@
 
   /** Something Link itself refused or could not do. Per-target failures are not this. */
   let problem = $state<string | null>(null);
+
+  /** Whether the picker is up, and how the attempt it is watching ended. */
+  let modalOpen = $state(false);
+  let outcome = $state<ConnectOutcome | null>(null);
+
+  /** Set from `?resume=` so a same-tab round trip reopens where it left off. */
+  let resume = $state<{ sourceId: string; step: "sign-in" | "orgs" } | null>(null);
+
+  /**
+   * What the grid is reading, derived from the linked organization.
+   *
+   * Derived rather than stored: there is exactly one organization in play, and
+   * a second copy of its identifier is a second thing to keep in step. A
+   * mismatch here would have the grid showing one record and a sync writing
+   * another.
+   */
+  const registry = $derived(linkedOrg?.registry ?? EIN_REGISTRY);
+  const id = $derived(linkedOrg?.id ?? "");
+
+  /** What later systems may be linked to. Null while nothing is linked. */
+  const lock = $derived<OrgLock | null>(
+    linkedOrg === null ? null : { ein: linkedOrg.id || null, name: linkedOrg.name },
+  );
 
   /**
    * Whether the browser has taken the page over.
@@ -111,25 +159,40 @@
 
   const embedded = $derived(framed && data.parentOrigin !== null);
 
+  /**
+   * The popup being waited on, so closing it by hand is not silence.
+   *
+   * A window someone shut is not a refusal and not an error; without this the
+   * modal would spin on a window that is gone.
+   */
+  let watching: { sourceId: string; timer: ReturnType<typeof setInterval> } | null = null;
+
   onMount(() => {
     tokens = readTokens();
     denied = readDenied();
     framed = window.self !== window.top;
+    linkedSources = readLinkedSources();
+    linkedOrg = adoptLinkedOrg();
+    resumeFromUrl();
     ready = true;
 
-    // A popup reporting back, which is how the flow finishes when Link is
-    // embedded. `listenForConnect` checks the origin; anything else is ignored.
+    // A window reporting back. `listenForConnect` checks the origin; anything
+    // else is ignored.
     const stop = listenForConnect((message) => {
+      stopWatching();
+
       if (message.denied) {
         rememberDenied(message.sourceId);
         denied = [...new Set([...denied, message.sourceId])];
         tokens = Object.fromEntries(
           Object.entries(tokens).filter(([sourceId]) => sourceId !== message.sourceId),
         );
+        outcome = { sourceId: message.sourceId, result: "denied" };
       } else if (message.token) {
         rememberToken(message.sourceId, message.token);
         tokens = { ...tokens, [message.sourceId]: message.token };
         denied = denied.filter((sourceId) => sourceId !== message.sourceId);
+        outcome = { sourceId: message.sourceId, result: "token" };
       }
 
       void reload();
@@ -137,24 +200,36 @@
 
     void reload();
 
-    return stop;
+    return () => {
+      stopWatching();
+      stop();
+    };
   });
 
   /** Systems Link can talk to, each with what it allows and where it stands. */
   const sourceStates = $derived(
-    data.sources.map((source) => {
-      const row = comparison?.sources.find((candidate) => candidate.id === source.id);
-      const connection = denied.includes(source.id)
-        ? "denied"
-        : row?.connection === "expired"
-          ? "expired"
-          : tokens[source.id]
-            ? "connected"
-            : "not-connected";
+    data.sources
+      .filter((source) => source.connectable)
+      .map((source) => {
+        const row = comparison?.sources.find((candidate) => candidate.id === source.id);
+        const connection = denied.includes(source.id)
+          ? "denied"
+          : row?.connection === "expired"
+            ? "expired"
+            : tokens[source.id]
+              ? // Signed in, but the organization step may still be
+                // outstanding — closing the modal on it leaves exactly that.
+                linkedSources.includes(source.id)
+                ? "connected"
+                : "pending-org"
+              : "not-connected";
 
-      return { ...source, connection, error: row?.error };
-    }),
+        return { ...source, connection };
+      }),
   );
+
+  /** Only the systems worth a chip: one nothing has happened with says nothing. */
+  const chips = $derived(sourceStates.filter((source) => source.connection !== "not-connected"));
 
   const connectedCount = $derived(Object.keys(tokens).length);
 
@@ -212,37 +287,213 @@
     return { [SOURCE_TOKENS_HEADER]: sourceTokensHeader(tokens) };
   }
 
-  /** Where the sign-in round trip should come back to, org and all. */
-  function returnPath(): string {
-    return `/?${new URLSearchParams({ registry, id })}`;
+  /**
+   * Where the sign-in round trip should come back to.
+   *
+   * Carries only `resume`. The linked organization is in `sessionStorage`,
+   * which survives a same-tab navigation, so putting it in the query as well
+   * was both redundant and wrong: with nothing linked yet the parameter went
+   * out empty, and the server read a present-but-empty `?id=` as a deep link
+   * and defaulted it — inventing a lock before anyone had chosen anything.
+   */
+  function returnPath(sourceId: string): string {
+    return `/?${new URLSearchParams({ resume: sourceId })}`;
   }
 
   /**
-   * Send the person through one system's sign-in.
+   * Which organization this tab is working on, when it opens.
    *
-   * Embedded, the flow has to leave the frame — Google will not render its
-   * sign-in page in an iframe — so it runs in a popup that posts the token
-   * back. Standalone, the tab goes itself and comes back to `returnPath`.
-   * A blocked popup falls back to navigating, with a note, rather than
-   * silently doing nothing.
+   * A deep link wins over what is stored, because `?id=` is what the presenter
+   * typed and the stored value is only what this tab happened to do last. It
+   * also replaces the stored one, so the rest of the session agrees with the
+   * address bar rather than quietly disagreeing with it.
+   *
+   * A deep link carries no name — only the demo script knows it — so the
+   * header shows the identifier until the first comparison fills the name in.
    */
-  function connect(sourceId: string): void {
-    const start = `/api/connect/start?${new URLSearchParams({
-      source: sourceId,
-      return: returnPath(),
-    })}`;
+  function adoptLinkedOrg(): LinkedOrg | null {
+    const deepLink = untrack(() => data.deepLink);
 
-    if (window.self !== window.top) {
-      const popup = window.open(start, "cg-link-connect", "width=520,height=680");
+    if (deepLink) {
+      const linked: LinkedOrg = { ...deepLink, name: "" };
 
-      if (popup) {
-        return;
-      }
+      rememberLinkedOrg(linked);
 
-      problem = "Your browser blocked the sign-in window, so this frame will navigate instead.";
+      return linked;
     }
 
-    window.location.href = start;
+    return readLinkedOrg() ?? null;
+  }
+
+  /** Ask one system which organizations this person may touch there. */
+  async function loadOrgs(sourceId: string): Promise<OrgListResult> {
+    const response = await fetch(`/api/orgs?source=${encodeURIComponent(sourceId)}`, {
+      headers: authHeaders(),
+    });
+
+    // 401 is how the route spells "not connected", and it carries the same
+    // body as every other answer — so it is read rather than thrown on.
+    return (await response.json()) as OrgListResult;
+  }
+
+  /**
+   * Adopt the organization someone picked, and read it everywhere.
+   *
+   * The first system to be linked decides the organization; every later one is
+   * locked to it, which is what `lock` above hands back to the modal.
+   */
+  function onLinked(source: SystemView, org: OrgSummary): void {
+    const linked: LinkedOrg = {
+      registry: EIN_REGISTRY,
+      id: org.ein ?? "",
+      name: org.name,
+    };
+
+    linkedOrg = linked;
+    rememberLinkedOrg(linked);
+
+    linkedSources = [...new Set([...linkedSources, source.id])];
+    rememberLinkedSource(source.id);
+
+    banner = `${source.label} linked`;
+    problem = null;
+
+    void reload();
+  }
+
+  /**
+   * Pick the flow back up after a round trip that navigated this tab.
+   *
+   * Only the blocked-popup path gets here, and by the time it does the answer
+   * is already in `sessionStorage` — the callback wrote it before sending us
+   * back. So what reopens is decided by what we came back holding, not by the
+   * step we left on: a token means the sign-in finished and there is nothing
+   * left to ask, a refusal means the modal should say so, and neither means
+   * they never got that far and should see the button again.
+   *
+   * Reopening on "sign in to GrantPortal" after GrantPortal had just signed
+   * them in is the bug this exists to prevent.
+   *
+   * The parameter is then stripped, so a reload is an ordinary page load
+   * rather than a replay of a round trip that already happened.
+   */
+  function resumeFromUrl(): void {
+    const url = new URL(window.location.href);
+    const requested = url.searchParams.get("resume");
+
+    if (!requested) return;
+
+    url.searchParams.delete("resume");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+
+    if (denied.includes(requested)) {
+      resume = { sourceId: requested, step: "sign-in" };
+      outcome = { sourceId: requested, result: "denied" };
+      modalOpen = true;
+    } else if (tokens[requested]) {
+      // Signed in, but a token is not the end of the flow: which organization
+      // is still outstanding, and closing here would leave the system linked
+      // to nothing. `?resume=` is only ever present immediately after a round
+      // trip, so this cannot re-ask someone who already answered.
+      resume = { sourceId: requested, step: "orgs" };
+      modalOpen = true;
+    } else {
+      // They never got as far as signing in. Honoured only if it names a
+      // system we could actually connect; the modal ignores anything else
+      // rather than opening an empty step.
+      resume = { sourceId: requested, step: "sign-in" };
+      modalOpen = true;
+    }
+  }
+
+  function stopWatching(): void {
+    if (watching) {
+      clearInterval(watching.timer);
+      watching = null;
+    }
+  }
+
+  /**
+   * Notice a popup that was closed without finishing.
+   *
+   * A successful flow also closes the window, so the message listener clears
+   * this first — and the short delay covers the ordering, since a popup that
+   * posts and closes in the same tick can be seen as `closed` a moment before
+   * the message is delivered.
+   */
+  function watchPopup(sourceId: string, popup: Window): void {
+    stopWatching();
+
+    const timer = setInterval(() => {
+      if (!popup.closed) return;
+
+      stopWatching();
+
+      setTimeout(() => {
+        if (outcome?.sourceId === sourceId) return;
+
+        outcome = { sourceId, result: "abandoned" };
+      }, 400);
+    }, 500);
+
+    watching = { sourceId, timer };
+  }
+
+  /**
+   * Send the person through one system's sign-in, in that system's own window.
+   *
+   * A popup rather than this tab, always: the modal has to stay up to show
+   * what is happening and to receive the token, and Google will not render its
+   * sign-in inside anyone else's page. A browser that blocks the popup falls
+   * back to navigating, which is why this answers whether the window opened.
+   */
+  function startConnect(source: SystemView): boolean {
+    const start = `/api/connect/start?${new URLSearchParams({
+      source: source.id,
+      return: returnPath(source.id),
+    })}`;
+
+    // A fixed window name, so clicking twice reuses the one window rather than
+    // leaving an orphan nobody will finish signing in to.
+    const popup = window.open(start, "cg-link-connect", "width=520,height=680");
+
+    if (!popup) {
+      problem = "Your browser blocked the sign-in window, so this tab will go there instead.";
+      window.location.href = start;
+
+      return false;
+    }
+
+    outcome = null;
+    watchPopup(source.id, popup);
+
+    return true;
+  }
+
+  function openPicker(): void {
+    problem = null;
+    outcome = null;
+    resume = null;
+    modalOpen = true;
+  }
+
+  function closePicker(): void {
+    stopWatching();
+    modalOpen = false;
+    resume = null;
+  }
+
+  /**
+   * Reopen the organization step for a system already signed in.
+   *
+   * No second OAuth round trip: the token is still good, and the only thing
+   * outstanding is which organization. Making someone sign in again to answer
+   * a question they closed a modal on would be punishing them for it.
+   */
+  function finishLinking(sourceId: string): void {
+    outcome = null;
+    resume = { sourceId, step: "orgs" };
+    modalOpen = true;
   }
 
   /** Drop what we knew about a system and start its sign-in again. */
@@ -252,7 +503,9 @@
       Object.entries(tokens).filter(([candidate]) => candidate !== sourceId),
     );
     denied = denied.filter((candidate) => candidate !== sourceId);
-    connect(sourceId);
+    resume = { sourceId, step: "sign-in" };
+    outcome = null;
+    modalOpen = true;
   }
 
   /**
@@ -289,11 +542,10 @@
   /**
    * Read one org through Link's own route, and adopt it only if that worked.
    *
-   * `registry`/`id` name the org the grid is showing, so they move together
-   * with `comparison` and only on success. Setting them first would leave a
-   * failed lookup claiming to be showing an org it is not — and a value picked
-   * off that stale grid would then be pushed under the new id, writing one
-   * organization's address onto another.
+   * `registry`/`id` derive from the linked organization now, so there is no
+   * second copy to keep in step: the grid and a later sync cannot disagree
+   * about which record they are on, which is what writing one organization's
+   * address onto another would take.
    *
    * Reports its own failures rather than throwing, because both callers would
    * otherwise repeat the same handling, and a `fetch` that rejects (Link
@@ -315,8 +567,21 @@
       }
 
       comparison = (await response.json()) as CompareResult;
-      registry = nextRegistry;
-      id = nextId;
+
+      // A deep link arrives with no name — only an EIN — so the header would
+      // otherwise show an identifier where an organization belongs. The grid
+      // has just told us what the systems call it.
+      if (linkedOrg !== null && linkedOrg.name === "") {
+        const named = comparison.fields.find((field) => field.path === "name");
+        const name = Object.values(named?.values ?? {}).find(
+          (value): value is string => typeof value === "string" && value !== "",
+        );
+
+        if (name !== undefined) {
+          linkedOrg = { ...linkedOrg, name };
+          rememberLinkedOrg(linkedOrg);
+        }
+      }
 
       return true;
     } catch (cause) {
@@ -326,14 +591,14 @@
   }
 
   /**
-   * Read the org on screen, if there is anyone to read it as.
+   * Read the linked org, if there is one and anyone to read it as.
    *
-   * With nothing connected there is no request worth making: every column
-   * would come back "not connected", which the connect list above already
-   * says more plainly.
+   * Both halves are required now. Without a token every column would come back
+   * "not connected"; without a linked organization there is no record to ask
+   * about at all, since the widget no longer guesses at a default EIN.
    */
   async function reload(): Promise<boolean> {
-    if (connectedCount === 0) {
+    if (connectedCount === 0 || linkedOrg === null || id === "") {
       comparison = null;
       return false;
     }
@@ -344,32 +609,6 @@
   /** Re-read the org already on screen. */
   function refresh(): Promise<boolean> {
     return load(registry, id);
-  }
-
-  /**
-   * Look the org up by whatever EIN is in the field.
-   *
-   * The selection is dropped rather than carried across: it names a value held
-   * by a source for *this* org, and after the lookup the same cell may hold
-   * something else entirely. Syncing a stale pick would write one org's
-   * address onto another.
-   */
-  async function lookUp(event: SubmitEvent): Promise<void> {
-    event.preventDefault();
-    if (busy) return;
-
-    selection = null;
-    targets = [];
-    results = null;
-    syncedDirection = null;
-    problem = null;
-    busy = true;
-
-    try {
-      await load(registry, einInput.trim());
-    } finally {
-      busy = false;
-    }
   }
 
   /**
@@ -500,118 +739,151 @@
   <p class="role">Widget</p>
   <h1>CommonGrants Link</h1>
   <p class="tagline">
-    Reads the org profile from every connected system, shows where they disagree, and pushes the
-    corrections back out.
+    Link the systems that hold your organization's profile, see where their copies disagree, and
+    push the corrections back out.
   </p>
 
-  <section class="connect" data-testid="connect-panel">
-    <h2>Systems</h2>
-    <ul class="sources">
-      {#each sourceStates as source (source.id)}
+  <button type="button" class="link-system" data-testid="link-system" onclick={openPicker}>
+    Link Grant Management System
+  </button>
+
+  {#if banner}
+    <p class="banner" role="status" data-testid="linked-banner">
+      {banner}
+      <button
+        type="button"
+        class="dismiss-banner"
+        data-testid="dismiss-banner"
+        onclick={() => (banner = null)}>Dismiss</button
+      >
+    </p>
+  {/if}
+
+  {#if linkedOrg}
+    <p class="linked-org" data-testid="linked-org">
+      <span class="linked-org-name">{linkedOrg.name || "Linked organization"}</span>
+      <span class="linked-org-ein">{linkedOrg.id ? `EIN ${linkedOrg.id}` : "No EIN on file"}</span>
+    </p>
+  {/if}
+
+  {#if chips.length > 0}
+    <ul class="chips" data-testid="linked-systems">
+      {#each chips as source (source.id)}
         <li data-testid="system-{source.id}">
-          <span class="source-name">{source.label}</span>
-          <span class="source-caps">{capabilityWords(source.capabilities)}</span>
+          <span class="chip-name">{source.label}</span>
+          <span class="chip-caps">{capabilityWords(source.capabilities)}</span>
 
           {#if source.connection === "connected"}
-            <span class="source-ok" data-testid="connected-{source.id}">Connected</span>
+            <span class="chip-ok" data-testid="connected-{source.id}">Linked</span>
+          {:else if source.connection === "pending-org"}
+            <button
+              type="button"
+              class="chip-button"
+              data-testid="finish-{source.id}"
+              onclick={() => finishLinking(source.id)}>Choose an organization</button
+            >
+            <span class="chip-note">Signed in, but no organization chosen yet.</span>
           {:else if source.connection === "expired"}
             <button
               type="button"
-              class="connect-button"
+              class="chip-button"
               data-testid="reconnect-{source.id}"
               onclick={() => reconnect(source.id)}>Reconnect</button
             >
-            <span class="source-note">This connection expired.</span>
-          {:else if source.connection === "denied"}
-            <span class="source-note" data-testid="denied-{source.id}"
-              >No access on this system</span
-            >
-            <button
-              type="button"
-              class="connect-button"
-              data-testid="connect-{source.id}"
-              onclick={() => connect(source.id)}>Try another account</button
-            >
+            <span class="chip-note">This connection expired.</span>
           {:else}
+            <span class="chip-note" data-testid="chip-denied-{source.id}">
+              No organization here for that account
+            </span>
             <button
               type="button"
-              class="connect-button"
-              data-testid="connect-{source.id}"
-              onclick={() => connect(source.id)}>Connect</button
+              class="chip-button"
+              data-testid="retry-{source.id}"
+              onclick={() => reconnect(source.id)}>Try another account</button
             >
           {/if}
         </li>
       {/each}
     </ul>
-  </section>
-
-  {#if comparison === null}
-    <p class="prompt" data-testid="nothing-connected">
-      Connect at least one system to see how the copies of a profile compare.
-    </p>
-  {:else}
-    <form onsubmit={lookUp}>
-      <label for="ein">EIN</label>
-      <input id="ein" data-testid="ein" name="ein" bind:value={einInput} spellcheck="false" />
-      <button type="submit" data-testid="look-up" disabled={busy}>Look up</button>
-    </form>
-
-    <ComparisonGrid {comparison} {selection} onpick={pick} />
   {/if}
 
-  <section class="panel" data-testid="panel">
-    {#if comparison === null}
-      <p class="prompt">Nothing is connected yet.</p>
-    {:else if selection === null}
-      <p class="prompt" data-testid="prompt">
-        Click the value a system holds to choose it as the correct one.
-      </p>
-    {:else}
-      <p class="chosen" data-testid="selection">
-        <span class="chosen-field">{selection.label}</span>
-        <span class="chosen-value">{formatFieldValue(selection.value) || "(empty)"}</span>
-        <span class="chosen-from">from {labels[selection.sourceId] ?? selection.sourceId}</span>
-      </p>
+  {#if linkedOrg !== null && id === ""}
+    <p class="prompt" data-testid="no-ein">
+      {linkedOrg.name || "That organization"} publishes no EIN, and the EIN is what matches one organization
+      across systems. There is nothing to compare it against — link an organization that has one.
+    </p>
+  {:else if comparison === null}
+    <p class="prompt" data-testid="nothing-linked">
+      Nothing is linked yet. Link a grant management system to see how the copies of your profile
+      compare.
+    </p>
+  {:else}
+    <ComparisonGrid {comparison} {selection} onpick={pick} />
 
-      <p class="direction" data-testid="direction" data-direction={direction}>{action}</p>
-
-      {#if candidates.length === 0}
-        <p class="prompt" data-testid="no-targets">
-          {direction === "pull"
-            ? `${data.host?.label ?? "This page"} cannot accept this change, so there is nowhere to pull it into.`
-            : "No other system can accept this change, so there is nowhere to send it."}
+    <section class="panel" data-testid="panel">
+      {#if selection === null}
+        <p class="prompt" data-testid="prompt">
+          Click the value a system holds to choose it as the correct one.
         </p>
       {:else}
-        <fieldset>
-          <legend>{direction === "pull" ? "Pull it into" : "Push it to"}</legend>
-          {#each candidates as source (source.id)}
-            <label>
-              <input
-                type="checkbox"
-                data-testid="target-{source.id}"
-                checked={targets.includes(source.id)}
-                onchange={() => toggleTarget(source.id)}
-              />
-              {source.label}
-            </label>
-          {/each}
-        </fieldset>
+        <p class="chosen" data-testid="selection">
+          <span class="chosen-field">{selection.label}</span>
+          <span class="chosen-value">{formatFieldValue(selection.value) || "(empty)"}</span>
+          <span class="chosen-from">from {labels[selection.sourceId] ?? selection.sourceId}</span>
+        </p>
+
+        <p class="direction" data-testid="direction" data-direction={direction}>{action}</p>
+
+        {#if candidates.length === 0}
+          <p class="prompt" data-testid="no-targets">
+            {direction === "pull"
+              ? `${data.host?.label ?? "This page"} cannot accept this change, so there is nowhere to pull it into.`
+              : "No other system can accept this change, so there is nowhere to send it."}
+          </p>
+        {:else}
+          <fieldset>
+            <legend>{direction === "pull" ? "Pull it into" : "Push it to"}</legend>
+            {#each candidates as source (source.id)}
+              <label>
+                <input
+                  type="checkbox"
+                  data-testid="target-{source.id}"
+                  checked={targets.includes(source.id)}
+                  onchange={() => toggleTarget(source.id)}
+                />
+                {source.label}
+              </label>
+            {/each}
+          </fieldset>
+        {/if}
+
+        <button type="button" class="sync" data-testid="sync" disabled={!canSync} onclick={sync}>
+          {busy ? "Sending…" : direction === "pull" ? "Pull" : "Push"}
+        </button>
       {/if}
 
-      <button type="button" class="sync" data-testid="sync" disabled={!canSync} onclick={sync}>
-        {busy ? "Sending…" : direction === "pull" ? "Pull" : "Push"}
-      </button>
-    {/if}
+      {#if results && syncedDirection}
+        <SyncResults {results} {labels} direction={syncedDirection} />
+      {/if}
+    </section>
+  {/if}
 
-    {#if problem}
-      <p class="problem" role="status" data-testid="problem">{problem}</p>
-    {/if}
-
-    {#if results && syncedDirection}
-      <SyncResults {results} {labels} direction={syncedDirection} />
-    {/if}
-  </section>
+  {#if problem}
+    <p class="problem" role="status" data-testid="problem">{problem}</p>
+  {/if}
 </main>
+
+<LinkModal
+  open={modalOpen}
+  sources={data.sources}
+  onstart={startConnect}
+  {outcome}
+  {loadOrgs}
+  {lock}
+  onlinked={onLinked}
+  {resume}
+  onclose={closePicker}
+/>
 
 <style>
   .host-bar {
@@ -639,52 +911,47 @@
     background: transparent;
     border-color: #b7c4c1;
   }
-  .connect {
-    margin: 0 0 2rem;
-    padding: 1rem 1.2rem;
-    border: 1px solid #d9e0dd;
-    border-radius: 0.4rem;
-    background: #ffffff;
+  .link-system {
+    font: inherit;
+    font-size: 0.95rem;
+    padding: 0.6rem 1.25rem;
+    color: #ffffff;
+    background: #0d6e63;
+    border: 1px solid #0d6e63;
+    border-radius: 0.35rem;
+    cursor: pointer;
   }
-  .connect h2 {
-    margin: 0 0 0.6rem;
-    font-size: 0.72rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: #6b7a77;
-  }
-  .sources {
-    margin: 0;
+  .chips {
+    margin: 1.75rem 0 2rem;
     padding: 0;
     list-style: none;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
   }
-  .sources li {
+  .chips li {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
     gap: 0.3rem 0.75rem;
   }
-  .source-name {
+  .chip-name {
     font-weight: 600;
   }
-  .source-caps {
+  .chip-caps {
     font-size: 0.8rem;
     color: #6b7a77;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
-  .source-ok {
+  .chip-ok {
     font-size: 0.8rem;
     color: #0d6e63;
   }
-  .source-note {
+  .chip-note {
     font-size: 0.8rem;
     color: #8a5a1e;
   }
-  .connect-button {
+  .chip-button {
     font: inherit;
     font-size: 0.85rem;
     padding: 0.15rem 0.7rem;
@@ -730,29 +997,45 @@
     color: #3b4a48;
     max-width: 34rem;
   }
-  form {
+  .banner {
+    margin: 1.5rem 0 0;
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.6rem;
-    margin: 0 0 1.5rem;
+    gap: 0.75rem;
+    padding: 0.6rem 0.9rem;
+    font-size: 0.9rem;
+    color: #0b5c53;
+    background: #e6f3f1;
+    border: 1px solid #b9dcd7;
+    border-radius: 0.4rem;
   }
-  form label {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.72rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: #6b7a77;
-  }
-  #ein {
+  .dismiss-banner {
     font: inherit;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.85rem;
-    padding: 0.3rem 0.5rem;
-    width: 9rem;
+    font-size: 0.8rem;
+    margin-left: auto;
+    padding: 0;
     color: inherit;
     background: transparent;
-    border: 1px solid #b7c4c1;
-    border-radius: 0.3rem;
+    border: 0;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .linked-org {
+    margin: 1.75rem 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.3rem 0.75rem;
+  }
+  .linked-org-name {
+    font-size: 1.15rem;
+    font-weight: 600;
+  }
+  .linked-org-ein {
+    font-size: 0.8rem;
+    color: #6b7a77;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   .panel {
     margin-top: 2rem;
@@ -764,9 +1047,12 @@
     gap: 1rem;
   }
   .prompt {
-    margin: 0;
+    margin: 1.75rem 0 0;
     font-size: 0.85rem;
     color: #6b7a77;
+  }
+  .panel .prompt {
+    margin: 0;
   }
   .chosen {
     margin: 0;
@@ -816,7 +1102,7 @@
     gap: 0.35rem;
     font-size: 0.9rem;
   }
-  button {
+  .sync {
     font: inherit;
     font-size: 0.85rem;
     padding: 0.35rem 0.9rem;
@@ -831,18 +1117,13 @@
     cursor: not-allowed;
   }
   .problem {
-    margin: 0;
+    margin: 1.5rem 0 0;
     font-size: 0.85rem;
     color: #a1291f;
   }
 
   @media (prefers-color-scheme: dark) {
-    .connect {
-      background: #131d1c;
-      border-color: #2a3736;
-    }
-    .connect h2,
-    .source-caps,
+    .chip-caps,
     .host {
       color: #8a9895;
     }
@@ -854,10 +1135,10 @@
       background: transparent;
       border-color: #3f5250;
     }
-    .source-ok {
+    .chip-ok {
       color: #56b7a9;
     }
-    .source-note {
+    .chip-note {
       color: #d7a55c;
     }
     :global(body) {
@@ -870,20 +1151,24 @@
     .tagline {
       color: #bac6c3;
     }
-    form label,
     legend,
     .prompt,
     .chosen-field,
-    .chosen-from {
+    .chosen-from,
+    .linked-org-ein {
       color: #8a9895;
     }
-    #ein {
-      border-color: #3f5250;
+    .banner {
+      color: #a8ddd5;
+      background: #12302c;
+      border-color: #2a4a45;
     }
     .panel {
       border-color: #2a3736;
     }
-    button {
+    .link-system,
+    .chip-button,
+    .sync {
       color: #0f1615;
       background: #56b7a9;
       border-color: #56b7a9;

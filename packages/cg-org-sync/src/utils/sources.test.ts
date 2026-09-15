@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SourceCapabilities, SourceConfig } from "../types.js";
-import { capabilitiesOf } from "./sources.js";
+import { capabilitiesOf, isConnectable } from "./sources.js";
 
 const PORTAL_SOURCE: SourceConfig = {
   id: "portal",
@@ -45,5 +45,35 @@ describe("capabilitiesOf", () => {
     result.write = true;
 
     expect(source.capabilities).toEqual({ read: true, write: false });
+  });
+});
+
+describe("isConnectable", () => {
+  it("is connectable when a source declares neither status nor enabled", () => {
+    expect(isConnectable(PORTAL_SOURCE)).toBe(true);
+  });
+
+  it("is connectable when status is explicitly available", () => {
+    const source: SourceConfig = { ...PORTAL_SOURCE, status: "available" };
+
+    expect(isConnectable(source)).toBe(true);
+  });
+
+  it("is not connectable when status is coming-soon", () => {
+    const source: SourceConfig = { ...PORTAL_SOURCE, status: "coming-soon" };
+
+    expect(isConnectable(source)).toBe(false);
+  });
+
+  it("is not connectable when enabled is false, even with status available", () => {
+    const source: SourceConfig = { ...PORTAL_SOURCE, status: "available", enabled: false };
+
+    expect(isConnectable(source)).toBe(false);
+  });
+
+  it("is not connectable when status is coming-soon, even with enabled true", () => {
+    const source: SourceConfig = { ...PORTAL_SOURCE, status: "coming-soon", enabled: true };
+
+    expect(isConnectable(source)).toBe(false);
   });
 });

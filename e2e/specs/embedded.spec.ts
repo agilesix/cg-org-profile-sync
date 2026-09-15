@@ -13,10 +13,10 @@
  * FunderHub's own screen.
  */
 
-import { expect, type FrameLocator, type Page } from "@playwright/test";
+import type { FrameLocator, Page } from "@playwright/test";
 import { FUNDERHUB_ORG_ID, FUNDERHUB_SEED, PORTAL_ORG_ID, PORTAL_SEED } from "@cg-link/seed";
 import { ADMIN_EMAIL, FUNDERHUB_ORIGIN, LINK_ORIGIN, PORTAL_ORIGIN } from "../env.js";
-import { openWidget, test } from "../fixtures.js";
+import { connectInFrame, expect, openWidget, test } from "../fixtures.js";
 
 /** The suite number typed on a portal's own page, before Link is opened. */
 const NEW_SUITE = "Suite 450";
@@ -51,35 +51,6 @@ async function openLinkOver(page: Page): Promise<FrameLocator> {
   await expect(widget.getByTestId("widget")).toHaveAttribute("data-ready", "true");
 
   return widget;
-}
-
-/**
- * Connect one system from inside the frame, through the popup.
- *
- * Embedded, the sign-in cannot happen in the frame — Google will not render
- * its page in one — so the widget opens a popup that posts the token back to
- * its opener. Driving that is the one place these specs have to hold two
- * windows at once, and it is worth doing rather than injecting a token: the
- * popup path only exists for the embedded case, so nothing else covers it.
- */
-async function connectInFrame(
-  page: Page,
-  widget: FrameLocator,
-  sourceId: string,
-  email: string,
-): Promise<void> {
-  const [popup] = await Promise.all([
-    page.waitForEvent("popup"),
-    widget.getByTestId(`connect-${sourceId}`).click(),
-  ]);
-
-  await popup.getByLabel("Email").fill(email);
-  await popup.getByRole("button", { name: "Continue" }).click();
-
-  // The callback page posts to its opener and closes itself, so the popup
-  // closing is the signal that the token has been handed over.
-  await popup.waitForEvent("close");
-  await expect(widget.getByTestId(`connected-${sourceId}`)).toBeVisible();
 }
 
 test("Link is framed by a host on the allow-list and refused by one outside it", async ({
@@ -146,8 +117,8 @@ test("a sync inside the frame updates the host page without reloading it", async
 
   await expect(widget.getByTestId("host-system")).toContainText("FunderHub");
 
-  await connectInFrame(page, widget, "portal", ADMIN_EMAIL);
-  await connectInFrame(page, widget, "funderhub", ADMIN_EMAIL);
+  await connectInFrame(page, widget, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
+  await connectInFrame(page, widget, "funderhub", ADMIN_EMAIL, FUNDERHUB_ORG_ID);
 
   // A mark on the host window that only a document load would clear. Without
   // it "the values changed" would pass for a full reload too, which is the
@@ -186,13 +157,13 @@ test("an edit on GrantPortal, pushed from the frame, lands on FunderHub's own pa
 
   await expect(widget.getByTestId("host-system")).toContainText("GrantPortal");
 
-  await connectInFrame(page, widget, "portal", ADMIN_EMAIL);
-  await connectInFrame(page, widget, "funderhub", ADMIN_EMAIL);
+  await connectInFrame(page, widget, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
+  await connectInFrame(page, widget, "funderhub", ADMIN_EMAIL, FUNDERHUB_ORG_ID);
 
   // The org the loader passed in the frame URL, which is this page's own EIN
-  // rather than the widget's default. The field only exists once something is
-  // connected — before that there is no grid to look anything up for.
-  await expect(widget.getByTestId("ein")).toHaveValue(
+  // rather than anything the person typed — the widget is deep-linked at it,
+  // which is why the organization step had nothing left to choose.
+  await expect(widget.getByTestId("linked-org")).toContainText(
     String(PORTAL_SEED.identifiers?.["org:us:ein"]?.id),
   );
 
@@ -235,8 +206,8 @@ test("pulling FunderHub's value into GrantPortal lands on GrantPortal's own page
 
   const widget = await openLinkOver(page);
 
-  await connectInFrame(page, widget, "portal", ADMIN_EMAIL);
-  await connectInFrame(page, widget, "funderhub", ADMIN_EMAIL);
+  await connectInFrame(page, widget, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
+  await connectInFrame(page, widget, "funderhub", ADMIN_EMAIL, FUNDERHUB_ORG_ID);
 
   await widget.getByTestId("pick-addresses.primary-funderhub").click();
 
