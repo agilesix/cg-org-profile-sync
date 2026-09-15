@@ -797,7 +797,7 @@ Depends on: #1188-T5, #1188-T6
   several; "you may link one at a time" is enforced only in Link's UI, since the contract has no
   notion of a linked org. Storage of the linked org is per tab, like the tokens.
 
-### #1188-T8: End-to-end specs for the Plaid flow, and docs
+### #1188-T8: [✓] End-to-end specs for the Plaid flow, and docs
 
 Depends on: #1188-T7
 
