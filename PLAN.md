@@ -927,7 +927,7 @@ pull from a named portal, and only portals whose configuration allows writes are
 - Whether a pull may target more than the host. Plan says no: pull is "into the host" only.
 - Whether the portals' profile pages should sit behind the #1188 login too. Not for Sept 18.
 
-### #1189-T1: Add an editable org profile page to GrantPortal and FunderHub
+### #1189-T1: [✓] Add an editable org profile page to GrantPortal and FunderHub
 
 - **Acceptance criteria**:
   - When `/orgs/{orgId}` loads in either app, then it renders that system's copy of the org:
