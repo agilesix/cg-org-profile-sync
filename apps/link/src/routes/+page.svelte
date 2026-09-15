@@ -21,7 +21,13 @@
   } from "$lib/api-types.js";
   import ComparisonGrid from "$lib/components/ComparisonGrid.svelte";
   import SyncResults from "$lib/components/SyncResults.svelte";
-  import { formatFieldValue, type Selection } from "$lib/demo.js";
+  import {
+    directionOf,
+    formatFieldValue,
+    syncTargets,
+    type Selection,
+    type SyncDirection,
+  } from "$lib/demo.js";
   import {
     forget,
     listenForConnect,
@@ -65,6 +71,16 @@
   let selection = $state<Selection | null>(null);
   let targets = $state<string[]>([]);
   let results = $state.raw<SyncTargetResult[] | null>(null);
+
+  /**
+   * The direction the published results describe.
+   *
+   * Captured when the change is sent rather than read off the current pick:
+   * the grid re-reads afterwards and a pick can change under the result lines,
+   * and a line that said "pulled into" about a push would be worse than one
+   * that said nothing.
+   */
+  let syncedDirection = $state<SyncDirection | null>(null);
 
   /** One flag for both requests: neither should overlap itself or the other. */
   let busy = $state(false);
@@ -143,6 +159,17 @@
   const connectedCount = $derived(Object.keys(tokens).length);
 
   /**
+   * The system whose page we are embedded in, or `null` standalone.
+   *
+   * Already validated server-side against the registry, so an unrecognised
+   * `?host=` arrives as `null` and everything below reads as standalone.
+   */
+  const host = $derived(data.host?.id ?? null);
+
+  /** Which way the current pick travels: out of the host, or into it. */
+  const direction = $derived(selection === null ? null : directionOf(selection.sourceId, host));
+
+  /**
    * Labels come from the registry, not the comparison.
    *
    * The comparison is null until something is connected, and a source that is
@@ -153,11 +180,16 @@
     Object.fromEntries(data.sources.map((source) => [source.id, source.label])),
   );
 
-  /** The systems a change could actually reach, given what is picked. */
+  /**
+   * The systems a change could actually reach, given what is picked.
+   *
+   * `syncTargets` holds the rules — not the source it came from, nothing with
+   * an error or no record, nothing that declares `write: false`, and on a pull
+   * only the host. They live in the library because they decide where a change
+   * is sent, which is not a thing to leave untested in a template.
+   */
   const candidates = $derived(
-    (comparison?.sources ?? []).filter(
-      (source) => source.id !== selection?.sourceId && source.orgId !== null && !source.error,
-    ),
+    selection === null ? [] : syncTargets(comparison?.sources ?? [], selection.sourceId, host),
   );
 
   /**
@@ -239,6 +271,7 @@
     // recomputed on read, so this already reflects the line above.
     targets = candidates.map((source) => source.id);
     results = null;
+    syncedDirection = null;
     problem = null;
   }
 
@@ -328,6 +361,7 @@
     selection = null;
     targets = [];
     results = null;
+    syncedDirection = null;
     problem = null;
     busy = true;
 
@@ -371,6 +405,7 @@
 
     busy = true;
     results = null;
+    syncedDirection = null;
     problem = null;
 
     try {
@@ -396,6 +431,7 @@
       const refreshed = await refresh();
 
       results = (body as SyncResult).results;
+      syncedDirection = direction;
 
       // After the refresh, so a host that re-reads on this message sees the
       // post-change values rather than racing Link's own re-read. Sent even
@@ -420,14 +456,34 @@
     }
   }
 
+  /**
+   * What the Sync button is about to do, said in full.
+   *
+   * Named rather than left as "Sync": the one thing someone has to get right
+   * before clicking is which copy is about to be overwritten, and a verb that
+   * hides it is the whole reason this ticket exists.
+   */
+  const action = $derived.by(() => {
+    if (selection === null || direction === null) return null;
+
+    const from = labels[selection.sourceId] ?? selection.sourceId;
+    const into = chosen.map((id) => labels[id] ?? id).join(" and ");
+
+    // Both branches name a target only when there is one. Naming the host on a
+    // pull regardless would describe a change that unchecking it had already
+    // called off — the exact implication this ticket exists to remove.
+    return direction === "push"
+      ? `Push ${selection.label} from ${from}${into ? ` to ${into}` : ""}`
+      : `Pull ${selection.label} from ${from}${into ? ` into ${into}` : ""}`;
+  });
+
   /** What a source allows, in the words the widget uses for it. */
   function capabilityWords(capabilities: { read: boolean; write: boolean }): string {
-    const allowed = [
-      capabilities.read ? "pull" : undefined,
-      capabilities.write ? "push" : undefined,
-    ].filter((word): word is string => word !== undefined);
+    if (capabilities.read && capabilities.write) return "read and write";
+    if (capabilities.read) return "read only";
+    if (capabilities.write) return "write only";
 
-    return allowed.length === 0 ? "no access" : allowed.join(" and ");
+    return "no access";
   }
 </script>
 
@@ -517,13 +573,17 @@
         <span class="chosen-from">from {labels[selection.sourceId] ?? selection.sourceId}</span>
       </p>
 
+      <p class="direction" data-testid="direction" data-direction={direction}>{action}</p>
+
       {#if candidates.length === 0}
         <p class="prompt" data-testid="no-targets">
-          No other system holds a record of this organization, so there is nowhere to send this.
+          {direction === "pull"
+            ? `${data.host?.label ?? "This page"} cannot accept this change, so there is nowhere to pull it into.`
+            : "No other system can accept this change, so there is nowhere to send it."}
         </p>
       {:else}
         <fieldset>
-          <legend>Send it to</legend>
+          <legend>{direction === "pull" ? "Pull it into" : "Push it to"}</legend>
           {#each candidates as source (source.id)}
             <label>
               <input
@@ -539,7 +599,7 @@
       {/if}
 
       <button type="button" class="sync" data-testid="sync" disabled={!canSync} onclick={sync}>
-        {busy ? "Syncing…" : "Sync"}
+        {busy ? "Sending…" : direction === "pull" ? "Pull" : "Push"}
       </button>
     {/if}
 
@@ -547,8 +607,8 @@
       <p class="problem" role="status" data-testid="problem">{problem}</p>
     {/if}
 
-    {#if results}
-      <SyncResults {results} {labels} />
+    {#if results && syncedDirection}
+      <SyncResults {results} {labels} direction={syncedDirection} />
     {/if}
   </section>
 </main>
@@ -715,6 +775,11 @@
     align-items: baseline;
     gap: 0.3rem 0.75rem;
     font-size: 0.9rem;
+  }
+  .direction {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
   }
   .chosen-field {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

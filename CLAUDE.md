@@ -41,8 +41,12 @@ widget in an overlay iframe over the profile page, pointed at that org; a sync i
 posts `synced` to the host, which re-reads without a reload, and Close posts `close`. Link names
 the origins allowed to frame it in `EMBED_ALLOWED_ORIGINS` and enforces it both ways — a
 `frame-ancestors` policy the browser applies, and the same list deciding which `?parent=` origin it
-will post to. `e2e/specs/embedded.spec.ts` drives the whole of it, popup sign-in included. Not
-started: `temelio-adapter`. `README.md` is the short overview for someone new —
+will post to. `e2e/specs/embedded.spec.ts` drives the whole of it, popup sign-in included. Direction is
+explicit: the widget names every action — **Push** a value out of the page you are on, **Pull**
+another system's value into it — carries `push`/`pull` on a `data-testid="direction"` element, and
+confines a pull to the host, so a value can never land somewhere nobody asked for. A source
+declaring `write: false` is never offered as a target and is refused by `syncToTargets` without a
+request. Not started: `temelio-adapter`. `README.md` is the short overview for someone new —
 why the project exists, what the widget does with screenshots, and setup. `docs/demo-script.md`
 is the presenter's runbook: the click path, the `curl` block per system, and what to check when
 something is off. Keep both in step with the code.
@@ -243,7 +247,13 @@ the value each source holds. A source that lacks a field, holds `null`, or holds
 absent from the row rather than counted as a disagreement, so a missing field never reads as a
 conflict. Values compare by canonical JSON with keys sorted, so two systems that serialize the same
 address in a different key order still agree. Adding a field to the demo is one entry in
-`DEMO_FIELDS`. `EIN_REGISTRY` names the registry the demo matches an org by, and
+`DEMO_FIELDS`. `utils/direction.ts` holds the other half of what the widget does with a comparison:
+`directionOf(pickedSourceId, hostId)` is `push` when the value came from the host or there is no
+host and `pull` otherwise, and `syncTargets(sources, pickedSourceId, hostId)` is the four rules
+deciding where a change may go — never the source it came from, never one with an error or no
+record, never one declaring `write: false`, and on a pull only the host. Both live here rather than
+in the widget because they decide _where a change is sent_; an unknown `hostId` reads as standalone
+in both, so an unrecognised `?host=` cannot redirect a write. `EIN_REGISTRY` names the registry the demo matches an org by, and
 `utils/format.ts`'s `formatFieldValue` turns one held value into the line the grid shows — an
 address collapses to one line, anything unrecognised falls back to JSON, and a value with nothing
 to say renders as `""` for the caller to label. Both live in the library rather than in the widget
@@ -272,7 +282,9 @@ demo's token source: a map of source id to bearer token.
 `compareAcrossSources` and `syncToTargets`, the two things Link actually does, plus `listOrgsAt` —
 which is not a fan-out at all, but asks one source which orgs a person may touch there, because the
 picker asks one system at a time and two systems' lists are two questions rather than rows of one
-table. It maps each answer through `utils/orgs.ts`'s `summarizeOrg`, so what reaches a picker is a
+table. Every resolution also carries the source's `capabilities`, with the default applied, because a
+read-only system has to read as read-only in the browser rather than only in the server-side
+registry. It maps each answer through `utils/orgs.ts`'s `summarizeOrg`, so what reaches a picker is a
 name and an EIN rather than everyone's full profile, and an org with no EIN comes back with
 `ein: null` rather than being dropped. A source that is unknown, disabled or declares `read: false`
 is refused without a request and reports `connection: "connected"` — `connection` says which control

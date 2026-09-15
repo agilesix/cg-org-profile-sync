@@ -323,9 +323,26 @@ describe("compareAcrossSources", () => {
       fetch,
     });
 
+    // Both demo sources declare no `capabilities`, so both rows carry the
+    // permissive default — asserted as part of the whole row rather than
+    // separately, since this is the one test that pins a resolution's shape.
+    const both = { read: true, write: true };
+
     expect(result.sources).toEqual([
-      { id: "portal", label: "GrantPortal", orgId: PORTAL_ORG_ID, connection: "connected" },
-      { id: "funderhub", label: "FunderHub", orgId: FUNDERHUB_ORG_ID, connection: "connected" },
+      {
+        id: "portal",
+        label: "GrantPortal",
+        orgId: PORTAL_ORG_ID,
+        connection: "connected",
+        capabilities: both,
+      },
+      {
+        id: "funderhub",
+        label: "FunderHub",
+        orgId: FUNDERHUB_ORG_ID,
+        connection: "connected",
+        capabilities: both,
+      },
     ]);
 
     expect(result.fields).toHaveLength(DEMO_FIELDS.length);
@@ -828,5 +845,68 @@ describe("syncToTargets and capabilities", () => {
     );
 
     expect(results[0]).toMatchObject({ id: "funderhub", ok: true });
+  });
+});
+
+describe("compareAcrossSources and capabilities", () => {
+  it("carries each source's declared capabilities onto its resolution", async () => {
+    const readOnly: SourceConfig = { ...PORTAL_SOURCE, capabilities: { read: true, write: false } };
+    const readWrite: SourceConfig = {
+      ...FUNDERHUB_SOURCE,
+      capabilities: { read: true, write: true },
+    };
+    const fetch = stubFetchByOrigin({
+      "https://portal.example.com": listEnvelope([PORTAL_SEED]),
+      "https://funderhub.example.com": listEnvelope([FUNDERHUB_SEED]),
+    });
+    const tokens = new StaticTokenProvider({
+      portal: "portal-token",
+      funderhub: "funderhub-token",
+    });
+
+    const result = await compareAcrossSources("org:us:ein", AGILE_SIX_EIN, {
+      sources: [readOnly, readWrite],
+      tokens,
+      fetch,
+    });
+
+    const portal = result.sources.find((source) => source.id === "portal");
+    expect(portal?.capabilities).toEqual({ read: true, write: false });
+
+    const funderhub = result.sources.find((source) => source.id === "funderhub");
+    expect(funderhub?.capabilities).toEqual({ read: true, write: true });
+  });
+
+  it("defaults an undeclared capability to read and write", async () => {
+    const fetch = stubFetchByOrigin({
+      "https://portal.example.com": listEnvelope([PORTAL_SEED]),
+    });
+    const tokens = new StaticTokenProvider({ portal: "portal-token" });
+
+    const result = await compareAcrossSources("org:us:ein", AGILE_SIX_EIN, {
+      sources: [PORTAL_SOURCE],
+      tokens,
+      fetch,
+    });
+
+    const portal = result.sources.find((source) => source.id === "portal");
+    expect(portal?.capabilities).toEqual({ read: true, write: true });
+  });
+
+  it("reports capabilities even for a source that contributed nothing", async () => {
+    const fetch = stubFetchByOrigin({
+      "https://portal.example.com": errorEnvelope(401, "GrantPortal rejected the request."),
+    });
+    const tokens = new StaticTokenProvider({ portal: "portal-token" });
+
+    const result = await compareAcrossSources("org:us:ein", AGILE_SIX_EIN, {
+      sources: [PORTAL_SOURCE],
+      tokens,
+      fetch,
+    });
+
+    const portal = result.sources.find((source) => source.id === "portal");
+    expect(typeof portal?.error).toBe("string");
+    expect(portal?.capabilities).toEqual({ read: true, write: true });
   });
 });

@@ -14,7 +14,7 @@
  */
 
 import { expect, type FrameLocator, type Page } from "@playwright/test";
-import { FUNDERHUB_ORG_ID, PORTAL_ORG_ID, PORTAL_SEED } from "@cg-link/seed";
+import { FUNDERHUB_ORG_ID, FUNDERHUB_SEED, PORTAL_ORG_ID, PORTAL_SEED } from "@cg-link/seed";
 import { ADMIN_EMAIL, FUNDERHUB_ORIGIN, LINK_ORIGIN, PORTAL_ORIGIN } from "../env.js";
 import { openWidget, test } from "../fixtures.js";
 
@@ -203,8 +203,14 @@ test("an edit on GrantPortal, pushed from the frame, lands on FunderHub's own pa
   );
   await expect(widget.getByTestId("cell-addresses.primary-portal")).toContainText(NEW_SUITE);
 
-  // 4. Push GrantPortal's address to FunderHub.
+  // 4. Push GrantPortal's address to FunderHub. The host's own value going
+  //    outward is a push, and the panel says so before anything is sent.
   await widget.getByTestId("pick-addresses.primary-portal").click();
+  await expect(widget.getByTestId("direction")).toHaveAttribute("data-direction", "push");
+  await expect(widget.getByTestId("direction")).toContainText(
+    "Push Primary address from GrantPortal to FunderHub",
+  );
+
   await widget.getByTestId("sync").click();
   await expect(widget.getByTestId("sync-result-funderhub")).toHaveAttribute("data-ok", "true");
   await expect(widget.getByTestId("row-addresses.primary")).toHaveAttribute("data-status", "agree");
@@ -216,4 +222,46 @@ test("an edit on GrantPortal, pushed from the frame, lands on FunderHub's own pa
   // 6. And the value is on FunderHub's own screen, typed by nobody there.
   await page.goto(PROFILE.funderhub);
   await expect(page.getByTestId("input-street2")).toHaveValue(NEW_SUITE);
+});
+
+test("pulling FunderHub's value into GrantPortal lands on GrantPortal's own page", async ({
+  page,
+}) => {
+  // The mirror of the spec above, and the second beat of the demo: standing on
+  // GrantPortal, the presenter takes the value FunderHub holds. Same request
+  // over the protocol — a PATCH to one system — and the opposite direction on
+  // screen, which is the whole point of naming it.
+  await page.goto(PROFILE.portal);
+
+  const widget = await openLinkOver(page);
+
+  await connectInFrame(page, widget, "portal", ADMIN_EMAIL);
+  await connectInFrame(page, widget, "funderhub", ADMIN_EMAIL);
+
+  await widget.getByTestId("pick-addresses.primary-funderhub").click();
+
+  await expect(widget.getByTestId("direction")).toHaveAttribute("data-direction", "pull");
+  await expect(widget.getByTestId("direction")).toContainText(
+    "Pull Primary address from FunderHub into GrantPortal",
+  );
+
+  // A pull goes into the page you are on and nowhere else, so the host is the
+  // only target offered — and it is offered, rather than the pick leaving a
+  // disabled button with nothing to explain it.
+  await expect(widget.getByTestId("target-portal")).toBeChecked();
+  await expect(widget.getByTestId("target-funderhub")).toHaveCount(0);
+
+  await widget.getByTestId("sync").click();
+
+  const result = widget.getByTestId("sync-result-portal");
+
+  await expect(result).toHaveAttribute("data-ok", "true");
+  await expect(result).toContainText("pulled into");
+  await expect(widget.getByTestId("row-addresses.primary")).toHaveAttribute("data-status", "agree");
+
+  // And the host page behind the overlay has caught up on its own: the suite
+  // number GrantPortal now holds is the one FunderHub had.
+  const funderhubStreet2 = FUNDERHUB_SEED.addresses?.primary?.street2;
+
+  await expect(page.getByTestId("input-street2")).toHaveValue(String(funderhubStreet2));
 });

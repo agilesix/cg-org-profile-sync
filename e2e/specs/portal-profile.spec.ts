@@ -76,7 +76,15 @@ test("a reset puts the page back to the seed", async ({ page, request }) => {
   await expect(page.getByTestId("save-message")).toContainText("Change applied");
 
   await request.post(`${PORTAL_ORIGIN}/__test/reset`);
-  await page.reload();
+
+  // Loaded afresh rather than reloaded. A reload is a history navigation, and
+  // Chromium restores what was typed into a form across one — deliberately, so
+  // a refresh does not lose your work — which would put "Suite 400" back into
+  // the box over the seed value the server just rendered. Intermittently: it
+  // depends on whether restoration or hydration lands last. Going away and
+  // back is a new document, with nothing to restore.
+  await page.goto(PORTAL_ORIGIN);
+  await openProfile(page, PORTAL_PROFILE);
 
   await expect(page.getByTestId("input-street2")).toHaveValue("Suite 300");
 });

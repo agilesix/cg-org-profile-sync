@@ -30,27 +30,36 @@ About two minutes. It starts on GrantPortal at `http://localhost:5173` and moves
    The **Primary address** row is marked as differing: GrantPortal says Suite 300, FunderHub says
    Suite 210. The **Website** row shows a value under GrantPortal and nothing under FunderHub. That
    is a gap, not a conflict, so the row is not flagged.
-5. **Fix the address.** Click GrantPortal's address to choose it. The panel echoes the pick, and
-   FunderHub is pre-selected as the target (the system a value came from is never offered, since it
-   already holds it). Click **Sync**. FunderHub answers "accepted", the grid re-reads both systems,
-   and the address row now agrees on Suite 300. Link tells the page underneath, which re-reads
-   itself — so GrantPortal's own values are current behind the overlay, with no reload.
-6. **Push the website.** Click GrantPortal's website, then **Sync**. FunderHub still answers
-   "accepted", but its message reads "This system does not store socials." The patch was applied,
+5. **Push the address out.** Click GrantPortal's address to choose it. The panel does not say
+   "sync" — it says **Push Primary address from GrantPortal to FunderHub**, because you are
+   standing on GrantPortal and this value is leaving it. FunderHub is pre-selected as the target
+   (the system a value came from is never offered, since it already holds it). Click **Push**.
+   FunderHub answers "pushed to", the grid re-reads both systems, and the address row now agrees
+   on Suite 300. Link tells the page underneath, which re-reads itself — so GrantPortal's own
+   values are current behind the overlay, with no reload.
+6. **Push the website.** Click GrantPortal's website, then **Push**. FunderHub is still "pushed
+   to", but its message reads "This system does not store socials." The patch was applied,
    the field was dropped, and the sender was told so. The grid re-reads and the website row is
    unchanged: FunderHub still holds nothing.
-7. **Close, and go and look.** Click **Close**: the widget asks GrantPortal's page to take the
+7. **Now pull one in.** Reset FunderHub (`curl -X POST http://localhost:5174/__test/reset`) and
+   look it up again so the address disagrees once more, then click **FunderHub's** address instead.
+   The panel flips: **Pull Primary address from FunderHub into GrantPortal**, and GrantPortal is
+   the only target offered — a pull goes into the page you are on and nowhere else. Click **Pull**.
+   GrantPortal answers "pulled into", and the page behind the overlay is now showing Suite 210.
+   Over the protocol this was the identical request to step 5, a `PATCH` to one system; what
+   changed is which copy was authoritative, and the widget says which before you commit to it.
+8. **Close, and go and look.** Click **Close**: the widget asks GrantPortal's page to take the
    frame away, and it does. Then open FunderHub's profile page at
    `http://localhost:5174/orgs/018f2e77-1a2b-7c3d-8e4f-000000000002`. Suite 300, typed by nobody
    there. That is the whole demo in one screen.
-8. **The beat worth ending on.** Open a new tab at `http://localhost:5176` — tokens live for the
+9. **The beat worth ending on.** Open a new tab at `http://localhost:5176` — tokens live for the
    tab, so this one starts disconnected — and connect as `portal-only@example.org`. GrantPortal
    signs them in. FunderHub signs them in too, and then says **No access on this system**: that
    person has no organization there. Same widget, same person, two answers, because each system
    decides for itself. Nothing is broken, and the comparison still shows what GrantPortal holds.
-9. **Optional: an org nobody knows.** Type `000000000` in the EIN field and click **Look up**. Each
-   column reports that the system has no record of the org, the grid still renders, and the value
-   picked for the previous org is dropped so it cannot be written onto the wrong organization.
+10. **Optional: an org nobody knows.** Type `000000000` in the EIN field and click **Look up**. Each
+    column reports that the system has no record of the org, the grid still renders, and the value
+    picked for the previous org is dropped so it cannot be written onto the wrong organization.
 
 Restart `pnpm dev`, or `POST /__test/reset` on FunderHub, to run it again from the seed. The
 profile pages read the same store, so a reset shows up there too — and editing a field on
@@ -70,6 +79,11 @@ Talking points, one per step:
   system through its own sign-in, and the browser keeps that system's token for the session.
 - Ids are assigned per system, so every operation starts from the EIN lookup. No two systems agree
   on ids and the contract does not ask them to.
+- Direction is the thing a person has to get right, so it is never implied. Every action names
+  which system a value leaves and which it lands on, and a system configured `write: false` is
+  never offered as a target at all — the fan-out refuses one without sending a request, so the
+  declaration is enforced rather than decorative. That is what lets a read-only source like
+  Temelio join the demo as a pull-only column.
 - The write is a JSON Merge Patch that sets exactly one field. A system that cannot store the
   field accepts the patch, drops the field, and says so in its message. The sender learns the
   value went no further without the whole change failing.
