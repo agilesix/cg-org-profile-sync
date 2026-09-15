@@ -12,7 +12,13 @@
  * the seed even though none of them ask for `api`.
  */
 
-import { AGILE_SIX_EIN, FUNDERHUB_SEED, PORTAL_SEED } from "@cg-link/seed";
+import {
+  AGILE_SIX_EIN,
+  FUNDERHUB_ORG_ID,
+  FUNDERHUB_SEED,
+  PORTAL_ORG_ID,
+  PORTAL_SEED,
+} from "@cg-link/seed";
 import type { Page } from "@playwright/test";
 import { connect, expect, openWidget, test } from "../fixtures.js";
 import { ADMIN_EMAIL } from "../env.js";
@@ -52,8 +58,8 @@ const FUNDERHUB_STREET2 = required(
  */
 async function openConnected(page: Page): Promise<void> {
   await openWidget(page);
-  await connect(page, "portal", ADMIN_EMAIL);
-  await connect(page, "funderhub", ADMIN_EMAIL);
+  await connect(page, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
+  await connect(page, "funderhub", ADMIN_EMAIL, FUNDERHUB_ORG_ID);
 }
 
 test("the grid opens on the seeded org, with the address row marked as the disagreement", async ({
@@ -61,7 +67,10 @@ test("the grid opens on the seeded org, with the address row marked as the disag
 }) => {
   await openConnected(page);
 
-  await expect(page.getByTestId("ein")).toHaveValue(AGILE_SIX_EIN);
+  // The organization is named in the header now, not typed into a field: it
+  // was chosen in the modal, and one organization is linked at a time.
+  await expect(page.getByTestId("linked-org")).toContainText(PORTAL_SEED.name);
+  await expect(page.getByTestId("linked-org")).toContainText(AGILE_SIX_EIN);
 
   // One column per configured system, named as the registry names it.
   await expect(page.getByTestId("source-portal")).toContainText("GrantPortal");
@@ -168,21 +177,18 @@ test("pushing portal's website reports what funderhub declined, and the row is u
   await expect(page.getByTestId("row-socials.website")).toHaveAttribute("data-status", "agree");
 });
 
-test("looking up a different EIN drops the pick rather than carrying it over", async ({ page }) => {
+test("the linked organization and both systems survive a reload", async ({ page }) => {
   await openConnected(page);
 
-  await page.getByTestId("pick-addresses.primary-portal").click();
-  await expect(page.getByTestId("selection")).toBeVisible();
+  await page.reload();
+  await expect(page.getByTestId("widget")).toHaveAttribute("data-ready", "true");
 
-  await page.getByTestId("ein").fill("000000000");
-  await page.getByTestId("look-up").click();
-
-  // Neither system holds this org, so every column says so and the grid still
-  // renders — and the value picked for the *previous* org is gone, because
-  // syncing it now would write one organization's address onto another.
-  await expect(page.getByTestId("source-note-portal")).toBeVisible();
-  await expect(page.getByTestId("source-note-funderhub")).toBeVisible();
-  await expect(page.getByTestId("grid")).toBeVisible();
-  await expect(page.getByTestId("selection")).toHaveCount(0);
-  await expect(page.getByTestId("prompt")).toBeVisible();
+  // Tokens and the linked organization both live in `sessionStorage`, so a
+  // reload is not a fresh start — and it must not reopen the modal, which
+  // would read as the link having come undone.
+  await expect(page.getByTestId("linked-org")).toContainText(AGILE_SIX_EIN);
+  await expect(page.getByTestId("connected-portal")).toBeVisible();
+  await expect(page.getByTestId("connected-funderhub")).toBeVisible();
+  await expect(page.getByTestId("link-modal")).toBeHidden();
+  await expect(page.getByTestId("grid")).toContainText(PORTAL_SEED.name);
 });

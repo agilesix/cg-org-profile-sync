@@ -8,33 +8,45 @@ the `curl` block, and what to say while it runs. Everything assumes `pnpm dev` i
 
 About two minutes. Everything is at `http://localhost:5176`.
 
-1. **Open Link.** It opens on the systems it can talk to, not on data: GrantPortal and FunderHub,
-   each labelled with what it allows and each offering **Connect**. Link holds no credentials of
-   its own, so there is nothing for it to read until you sign in with one.
-2. **Connect GrantPortal** as `admin@example.org`. The tab goes to GrantPortal's own sign-in, comes
-   back, and GrantPortal's column fills in. FunderHub's column says it is not connected — a state,
-   not an error: the grid still renders everything GrantPortal holds.
-3. **Connect FunderHub** as the same person. Now the EIN field holds the demo org (`123456789`) and
-   the grid shows one column per system, with one row per compared field. Three rows agree.
-   The **Primary address** row is marked as differing: GrantPortal says Suite 300, FunderHub says
-   Suite 210. The **Website** row shows a value under GrantPortal and nothing under FunderHub. That
-   is a gap, not a conflict, so the row is not flagged.
-4. **Fix the address.** Click GrantPortal's address to choose it. The panel echoes the pick, and
+1. **Open Link.** It opens on a title and one button: **Link Grant Management System**. No data,
+   no systems, no fields. Link holds no credentials of its own, so there is nothing for it to read
+   until you have linked something — which is the honest version of the Plaid screen everyone
+   already recognises.
+2. **Open the picker.** Click the button. The modal lists seven grant management systems, each with
+   its name and site: GrantPortal and FunderHub, then Temelio, SimplerGrants, Fluxx, Submittable
+   and Foundant GLM marked **Coming soon**. Worth saying out loud that the list is configuration —
+   the five stubs are entries in a registry, not code — and that clicking one does nothing on
+   purpose. There is a search box if you want to show it.
+3. **Link GrantPortal** as `admin@example.org`. Picking it opens a sign-in step; **Continue with
+   Google** opens GrantPortal's own window. Sign in, and the modal comes back with **Select your
+   organization** — three of them, because that is what GrantPortal says this person may act for.
+   Pick **Agile Six Applications, Inc.** and click **Continue**. The modal closes, a banner says
+   GrantPortal is linked, and the organization's name and EIN sit above the grid.
+4. **Link FunderHub** as the same person. Same flow, with one difference worth pausing on: at the
+   organization step, only Agile Six can be chosen and it is already selected. The other two are
+   greyed and say **Different organization**. You link one organization at a time, so the second
+   system is held to the first system's answer — and FunderHub's own ids are different, which is
+   exactly why the match is on the EIN rather than an id.
+5. **Read the grid.** One column per system, one row per compared field. Three rows agree. The
+   **Primary address** row is marked as differing: GrantPortal says Suite 300, FunderHub says Suite 210. The **Website** row shows a value under GrantPortal and nothing under FunderHub. That is a
+   gap, not a conflict, so the row is not flagged.
+6. **Fix the address.** Click GrantPortal's address to choose it. The panel echoes the pick, and
    FunderHub is pre-selected as the target (the system a value came from is never offered, since it
    already holds it). Click **Sync**. FunderHub answers "accepted", the grid re-reads both systems,
    and the address row now agrees on Suite 300.
-5. **Push the website.** Click GrantPortal's website, then **Sync**. FunderHub still answers
+7. **Push the website.** Click GrantPortal's website, then **Sync**. FunderHub still answers
    "accepted", but its message reads "This system does not store socials." The patch was applied,
    the field was dropped, and the sender was told so. The grid re-reads and the website row is
    unchanged: FunderHub still holds nothing.
-6. **The beat worth ending on.** Open a new tab at `http://localhost:5176` — tokens live for the
-   tab, so this one starts disconnected — and connect as `portal-only@example.org`. GrantPortal
-   signs them in. FunderHub signs them in too, and then says **No access on this system**: that
-   person has no organization there. Same widget, same person, two answers, because each system
-   decides for itself. Nothing is broken, and the comparison still shows what GrantPortal holds.
-7. **Optional: an org nobody knows.** Type `000000000` in the EIN field and click **Look up**. Each
-   column reports that the system has no record of the org, the grid still renders, and the value
-   picked for the previous org is dropped so it cannot be written onto the wrong organization.
+8. **The beat worth ending on.** Open a new tab at `http://localhost:5176` — tokens and the linked
+   organization live for the tab, so this one starts empty — and link as `portal-only@example.org`.
+   GrantPortal signs them in and offers them one organization, which is what a real applicant looks
+   like. Then link FunderHub as the same person: it signs them in and answers **No organization on
+   FunderHub for that account**. Same widget, same person, two answers, because each system decides
+   for itself. Nothing is broken, and the comparison still shows what GrantPortal holds.
+
+If a browser blocks the sign-in window, the flow falls back to this tab and comes back to the step
+it was on — worth knowing, not worth demonstrating. Allow popups for `localhost:5176` beforehand.
 
 Restart `pnpm dev`, or `POST /__test/reset` on FunderHub, to run it again from the seed.
 
@@ -43,8 +55,10 @@ Talking points, one per step:
 - The widget knows nothing about how many systems there are. A third one is an entry in
   `apps/link/src/lib/server/sources.ts`. Link holds no credentials of its own: you connect each
   system through its own sign-in, and the browser keeps that system's token for the session.
-- Ids are assigned per system, so every operation starts from the EIN lookup. No two systems agree
-  on ids and the contract does not ask them to.
+- Ids are assigned per system, so every operation matches on the EIN instead. No two systems agree
+  on ids and the contract does not ask them to — which is also why the second system's organization
+  step can lock to the first system's answer without either of them sharing an identifier for the
+  record itself.
 - The write is a JSON Merge Patch that sets exactly one field. A system that cannot store the
   field accepts the patch, drops the field, and says so in its message. The sender learns the
   value went no further without the whole change failing.

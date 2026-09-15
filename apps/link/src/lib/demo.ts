@@ -12,12 +12,16 @@ import type { JsonValue } from "$lib/api-types.js";
 export { EIN_REGISTRY, formatFieldValue } from "@cg-link/org-sync/utils";
 
 /**
- * The EIN the page opens on.
+ * The EIN a deep link falls back to.
+ *
+ * No longer what the page opens on — nothing is linked until someone picks an
+ * organization in the modal. It survives as the default for `?id=`, so
+ * `docs/demo-script.md` can still put the presenter straight on Agile Six.
  *
  * Agile Six's, as seeded into both systems. Hardcoded rather than read from
  * `@cg-link/seed`: the widget is meant to work against systems whose contents
  * it knows nothing about, so a dependency on their fixtures would be a lie
- * about how it finds an org. It is a demo default, and the field is editable.
+ * about how it finds an org.
  */
 export const DEFAULT_EIN = "123456789";
 

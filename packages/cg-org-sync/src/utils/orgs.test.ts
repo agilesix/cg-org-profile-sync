@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { Organization } from "../schemas/index.js";
 import { OrganizationBaseSchema } from "../schemas/index.js";
-import { summarizeOrg } from "./orgs.js";
+import type { OrgSummary } from "../types.js";
+import { DIFFERENT_ORG_REASON, selectableOrgs, summarizeOrg } from "./orgs.js";
+import type { OrgLock } from "./orgs.js";
 
 /**
  * Build a minimal, valid `Organization` by parsing a literal through the
@@ -68,5 +70,90 @@ describe("summarizeOrg", () => {
     );
 
     expect(summary.ein).toBe("987654321");
+  });
+});
+
+describe("selectableOrgs", () => {
+  const orgs: OrgSummary[] = [
+    { id: "org-1", name: "Agile Six Applications, Inc.", ein: "123456789" },
+    { id: "org-2", name: "Example Nonprofit", ein: "987654321" },
+    { id: "org-3", name: "No EIN Org", ein: null },
+  ];
+
+  it("marks every row selectable with no reason when nothing is linked yet", () => {
+    const rows = selectableOrgs(orgs, null);
+
+    expect(rows).toEqual([
+      { id: "org-1", name: "Agile Six Applications, Inc.", ein: "123456789", selectable: true },
+      { id: "org-2", name: "Example Nonprofit", ein: "987654321", selectable: true },
+      { id: "org-3", name: "No EIN Org", ein: null, selectable: true },
+    ]);
+  });
+
+  it("selects only the row carrying the locked EIN", () => {
+    const lock: OrgLock = { ein: "987654321", name: "Example Nonprofit" };
+
+    const rows = selectableOrgs(orgs, lock);
+
+    expect(rows.find((row) => row.id === "org-2")?.selectable).toBe(true);
+    expect(rows.find((row) => row.id === "org-1")).toMatchObject({
+      selectable: false,
+      reason: DIFFERENT_ORG_REASON,
+    });
+  });
+
+  it("does not select a row with no EIN of its own against an EIN lock", () => {
+    const lock: OrgLock = { ein: "987654321", name: "Example Nonprofit" };
+
+    const rows = selectableOrgs(orgs, lock);
+
+    expect(rows.find((row) => row.id === "org-3")).toMatchObject({
+      selectable: false,
+      reason: DIFFERENT_ORG_REASON,
+    });
+  });
+
+  it("marks every row unselectable when the locked EIN matches nothing", () => {
+    const lock: OrgLock = { ein: "000000000", name: "Nobody Here" };
+
+    const rows = selectableOrgs(orgs, lock);
+
+    expect(rows.every((row) => !row.selectable)).toBe(true);
+  });
+
+  it("falls back to matching by name when the lock carries no EIN", () => {
+    const lock: OrgLock = { ein: null, name: "Example Nonprofit" };
+
+    const rows = selectableOrgs(orgs, lock);
+
+    expect(rows.find((row) => row.id === "org-2")?.selectable).toBe(true);
+    expect(rows.find((row) => row.id === "org-1")).toMatchObject({
+      selectable: false,
+      reason: DIFFERENT_ORG_REASON,
+    });
+  });
+
+  it("matches by name case-insensitively when the lock carries no EIN", () => {
+    const lock: OrgLock = { ein: null, name: "Agile Six Applications, Inc." };
+    const rows = selectableOrgs(
+      [{ id: "org-1", name: "AGILE SIX APPLICATIONS, INC.", ein: null }],
+      lock,
+    );
+
+    expect(rows[0]?.selectable).toBe(true);
+  });
+
+  it("preserves order and length for a locked list", () => {
+    const lock: OrgLock = { ein: "987654321", name: "Example Nonprofit" };
+
+    const rows = selectableOrgs(orgs, lock);
+
+    expect(rows.map((row) => row.id)).toEqual(["org-1", "org-2", "org-3"]);
+  });
+
+  it("returns an empty array for an empty input list rather than throwing", () => {
+    const rows = selectableOrgs([], null);
+
+    expect(rows).toEqual([]);
   });
 });

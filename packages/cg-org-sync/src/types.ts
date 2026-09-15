@@ -169,6 +169,14 @@ export interface OrgSummary {
   ein: string | null;
 }
 
+/** One row of the organization picker, with whether it may be chosen. */
+export interface SelectableOrg extends OrgSummary {
+  selectable: boolean;
+
+  /** Why not, when it cannot be chosen. Absent when it can. */
+  reason?: string;
+}
+
 /** What one source answered when asked which organizations a person may touch. */
 export interface OrgListResult {
   /** The `SourceConfig.id` this list is about. */

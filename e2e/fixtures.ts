@@ -355,8 +355,14 @@ function locationOf(response: APIResponse, what: string): string {
  * it safe to assert straight afterwards: the widget re-reads every system once
  * a token lands, and that chip appears with the state that triggered the read.
  */
-export async function connect(page: Page, sourceId: string, email: string): Promise<void> {
+export async function connect(
+  page: Page,
+  sourceId: string,
+  email: string,
+  orgId: string,
+): Promise<void> {
   await signIn(page, sourceId, email);
+  await chooseOrg(page, orgId);
   await expect(page.getByTestId(`connected-${sourceId}`)).toBeVisible();
 }
 
@@ -401,6 +407,10 @@ export async function openWidget(page: Page): Promise<void> {
  * BEFORE the click that opens it, or the event fires while nobody is
  * listening and the wait times out on a window that already exists.
  */
+export async function signInVia(page: Page, sourceId: string, email: string): Promise<void> {
+  await signIn(page, sourceId, email);
+}
+
 async function signIn(page: Page, sourceId: string, email: string): Promise<void> {
   if (!(await page.getByTestId("link-modal").isVisible())) {
     await page.getByTestId("link-system").click();
@@ -414,4 +424,28 @@ async function signIn(page: Page, sourceId: string, email: string): Promise<void
 
   await popup.getByLabel("Email").fill(email);
   await popup.getByRole("button", { name: "Submit" }).click();
+}
+
+/**
+ * Choose an organization and finish linking.
+ *
+ * Split from `signIn` because the two halves fail for different reasons: one
+ * is about whether a system let this person in, the other about which record
+ * they then picked. `orgId` names the system's own id for it, which is what
+ * the row's `data-testid` carries.
+ */
+async function chooseOrg(page: Page, orgId: string): Promise<void> {
+  const row = page.getByTestId(`org-${orgId}`);
+
+  await expect(row).toBeVisible();
+
+  // Clicking is a toggle, and on the second system the matching organization
+  // is already pre-selected — the lock leaves exactly one choice, so the
+  // widget makes it. Clicking anyway would unpick it and leave Continue
+  // disabled, which is a helper bug that reads exactly like a product one.
+  if ((await row.getAttribute("aria-pressed")) !== "true") {
+    await row.click();
+  }
+
+  await page.getByTestId("confirm-org").click();
 }

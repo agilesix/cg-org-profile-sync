@@ -20,8 +20,18 @@ import type { PageServerLoad } from "./$types.js";
  * flow carries them back.
  */
 export const load: PageServerLoad = ({ url }) => {
-  const registry = url.searchParams.get("registry") || EIN_REGISTRY;
-  const id = url.searchParams.get("id") || DEFAULT_EIN;
+  // Only when `?id=` was actually given. The page needs to tell a deep link
+  // apart from an ordinary visit — one replaces whatever the tab had linked,
+  // the other leaves it alone — and a default applied here would erase that
+  // difference before the browser ever saw it.
+  const requested = url.searchParams.get("id");
+  const deepLink =
+    requested === null
+      ? null
+      : {
+          registry: url.searchParams.get("registry") || EIN_REGISTRY,
+          id: requested || DEFAULT_EIN,
+        };
 
   // Only what the browser has any use for. `baseUrl`, `authorizeUrl` and
   // `tokenUrl` stay on the server: the Connect control goes through Link's own
@@ -34,5 +44,5 @@ export const load: PageServerLoad = ({ url }) => {
     connectable: isConnectable(source),
   }));
 
-  return { registry, id, sources };
+  return { deepLink, sources };
 };

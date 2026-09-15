@@ -12,9 +12,23 @@
  * end.
  */
 
-import { PORTAL_SEED } from "@cg-link/seed";
+import {
+  AGILE_SIX_EIN,
+  FUNDERHUB_ORG_ID,
+  FUNDERHUB_SEEDS,
+  PORTAL_ORG_ID,
+  PORTAL_SEED,
+  PORTAL_SEEDS,
+} from "@cg-link/seed";
 import { ADMIN_EMAIL, PORTAL_ONLY_EMAIL } from "../env.js";
-import { connect, connectExpectingDenial, expect, openWidget, test } from "../fixtures.js";
+import {
+  connect,
+  connectExpectingDenial,
+  expect,
+  openWidget,
+  signInVia,
+  test,
+} from "../fixtures.js";
 
 test("the widget opens on one button, with nothing linked", async ({ page }) => {
   await openWidget(page);
@@ -44,7 +58,7 @@ test("connecting one system shows its values and says the other is not connected
   page,
 }) => {
   await openWidget(page);
-  await connect(page, "portal", ADMIN_EMAIL);
+  await connect(page, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
 
   // GrantPortal's column fills in; FunderHub's says why it is empty rather
   // than looking like a system that agrees.
@@ -59,7 +73,7 @@ test("a person with no grant on a system is refused by that system alone", async
 
   // The same person, two systems, two answers. GrantPortal knows them and
   // FunderHub does not, and FunderHub is the one that decides that.
-  await connect(page, "portal", PORTAL_ONLY_EMAIL);
+  await connect(page, "portal", PORTAL_ONLY_EMAIL, PORTAL_ORG_ID);
   await connectExpectingDenial(page, "funderhub", PORTAL_ONLY_EMAIL);
 
   await expect(page.getByTestId("connected-portal")).toBeVisible();
@@ -70,7 +84,7 @@ test("a person with no grant on a system is refused by that system alone", async
 
 test("a refusal leaves the comparison showing the system that did answer", async ({ page }) => {
   await openWidget(page);
-  await connect(page, "portal", PORTAL_ONLY_EMAIL);
+  await connect(page, "portal", PORTAL_ONLY_EMAIL, PORTAL_ORG_ID);
   await connectExpectingDenial(page, "funderhub", PORTAL_ONLY_EMAIL);
 
   const grid = page.getByTestId("grid");
@@ -136,8 +150,15 @@ test("a blocked popup signs in through this tab instead, and comes back linked",
   await page.getByLabel("Email").fill(ADMIN_EMAIL);
   await page.getByRole("button", { name: "Submit" }).click();
 
-  // Back on the widget, linked — and the modal does NOT reopen asking them to
-  // sign in to a system that has just signed them in.
+  // Back on the widget, and the modal reopens on the step that is actually
+  // outstanding: which organization. It does NOT ask them to sign in again to
+  // a system that has just signed them in.
+  await expect(page.getByTestId(`org-${PORTAL_ORG_ID}`)).toBeVisible();
+  await expect(page.getByTestId("continue-with-google")).toHaveCount(0);
+
+  await page.getByTestId(`org-${PORTAL_ORG_ID}`).click();
+  await page.getByTestId("confirm-org").click();
+
   await expect(page.getByTestId("connected-portal")).toBeVisible();
   await expect(page.getByTestId("link-modal")).toBeHidden();
   await expect(page.getByTestId("grid")).toContainText(PORTAL_SEED.name);
@@ -162,4 +183,103 @@ test("a blocked popup that ends in a refusal reopens the modal on the refusal", 
   // holding it — otherwise being turned down looks like nothing happening.
   await expect(page.getByTestId("link-modal")).toBeVisible();
   await expect(page.getByTestId("denied-funderhub")).toBeVisible();
+});
+
+/**
+ * Choosing an organization, and being held to it afterwards.
+ *
+ * The lock is the rule that decides which record a later `PATCH` lands on, so
+ * it is worth driving in a browser and not only in `selectableOrgs`' unit
+ * tests: those prove the rule, these prove the widget actually applies it to
+ * the list a real system returned.
+ */
+
+test("the organization step waits for a pick, and a second click takes it back", async ({
+  page,
+}) => {
+  await openWidget(page);
+  await signInVia(page, "portal", ADMIN_EMAIL);
+
+  // Every organization GrantPortal grants the admin, and nothing chosen yet.
+  await expect(page.getByTestId("confirm-org")).toBeDisabled();
+  for (const seed of PORTAL_SEEDS) {
+    await expect(page.getByTestId(`org-${seed.id}`)).toBeVisible();
+  }
+
+  await page.getByTestId(`org-${PORTAL_ORG_ID}`).click();
+  await expect(page.getByTestId("confirm-org")).toBeEnabled();
+
+  // Clicking the same row again unpicks it — one organization at a time, and
+  // changing your mind should not need the modal closed and reopened.
+  await page.getByTestId(`org-${PORTAL_ORG_ID}`).click();
+  await expect(page.getByTestId("confirm-org")).toBeDisabled();
+});
+
+test("linking shows the banner and names the organization in the header", async ({ page }) => {
+  await openWidget(page);
+  await connect(page, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
+
+  await expect(page.getByTestId("linked-banner")).toContainText("GrantPortal linked");
+  await expect(page.getByTestId("linked-org")).toContainText(PORTAL_SEED.name);
+  await expect(page.getByTestId("linked-org")).toContainText(AGILE_SIX_EIN);
+
+  // Dismissible, because it is an acknowledgement and not a state.
+  await page.getByTestId("dismiss-banner").click();
+  await expect(page.getByTestId("linked-banner")).toHaveCount(0);
+});
+
+test("the second system is locked to the organization already linked", async ({ page }) => {
+  await openWidget(page);
+  await connect(page, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
+
+  await signInVia(page, "funderhub", ADMIN_EMAIL);
+
+  // FunderHub holds all three organizations under its own ids, but only the
+  // one sharing an EIN with what is already linked may be chosen — and since
+  // that leaves exactly one choice, the widget has made it.
+  const matching = page.getByTestId(`org-${FUNDERHUB_ORG_ID}`);
+  await expect(matching).toHaveAttribute("aria-pressed", "true");
+  await expect(matching).toBeEnabled();
+  await expect(page.getByTestId("confirm-org")).toBeEnabled();
+
+  const others = FUNDERHUB_SEEDS.filter((seed) => seed.id !== FUNDERHUB_ORG_ID);
+  expect(others).toHaveLength(2);
+
+  for (const seed of others) {
+    const row = page.getByTestId(`org-${seed.id}`);
+
+    // Disabled, and still on screen saying why: a row that vanished would
+    // leave someone hunting for an organization the system really does hold.
+    await expect(row).toBeDisabled();
+    await expect(row).toContainText("Different organization");
+  }
+});
+
+test("closing the modal before choosing leaves the system signed in, not linked", async ({
+  page,
+}) => {
+  await openWidget(page);
+  await signInVia(page, "portal", ADMIN_EMAIL);
+
+  // Signed in, org step open, nothing chosen — then they close it.
+  await expect(page.getByTestId("confirm-org")).toBeVisible();
+  await page.getByTestId("close-modal").click();
+
+  // A token is not a link. Claiming "Linked" here would promise an
+  // organization the widget has not got, so the chip says what is actually
+  // outstanding and the grid stays away.
+  await expect(page.getByTestId("connected-portal")).toHaveCount(0);
+  await expect(page.getByTestId("finish-portal")).toBeVisible();
+  await expect(page.getByTestId("nothing-linked")).toBeVisible();
+
+  // And there is a way back that does not make them sign in again.
+  await page.getByTestId("finish-portal").click();
+  await expect(page.getByTestId(`org-${PORTAL_ORG_ID}`)).toBeVisible();
+  await expect(page.getByTestId("continue-with-google")).toHaveCount(0);
+
+  await page.getByTestId(`org-${PORTAL_ORG_ID}`).click();
+  await page.getByTestId("confirm-org").click();
+
+  await expect(page.getByTestId("connected-portal")).toBeVisible();
+  await expect(page.getByTestId("linked-org")).toContainText(AGILE_SIX_EIN);
 });
