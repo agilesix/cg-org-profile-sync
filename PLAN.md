@@ -1020,7 +1020,7 @@ host, onSynced, onClose })` builds the overlay and iframe (`data-testid="cg-link
   `link-initialize.js` is included from their origin. Enough for the demo; packaging is a later
   concern. Dev-only `http://` origins in the allow-list.
 
-### #1189-T3: Make direction explicit: push to, pull from, driven by capabilities
+### #1189-T3: [✓] Make direction explicit: push to, pull from, driven by capabilities
 
 Depends on: #1189-T2, #1188-T1 (for `SourceConfig.capabilities`)
 
