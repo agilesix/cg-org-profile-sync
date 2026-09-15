@@ -26,8 +26,20 @@ gap, not a conflict.
 
 ![The comparison grid: two systems, four fields, the address row flagged as differing](docs/screenshots/1-compare.png)
 
+**Open it where the data already lives.** Each system has its own profile page, and one button
+puts the widget in an overlay on top of it — no new tab, no second login. The widget knows whose
+page it is on.
+
+![The widget open in an overlay over GrantPortal's profile page, comparing GrantPortal and FunderHub](docs/screenshots/6-embedded-push.png)
+
+**Know which way a value is moving.** Nothing is ever just "synced". Taking the page's own value
+outward is a push; taking another system's value into it is a pull, and a pull can only land on the
+page you are on.
+
+![Choosing FunderHub's address reads "Pull Primary address from FunderHub into GrantPortal", with GrantPortal the only target offered](docs/screenshots/7-embedded-pull.png)
+
 **Fix a field everywhere in one click.** Click the value that is right, pick which systems should
-receive it, and sync. Each system gets a JSON Merge Patch that changes only that field.
+receive it, and push. Each system gets a JSON Merge Patch that changes only that field.
 
 ![After syncing GrantPortal's address to FunderHub, the row agrees and FunderHub reports the change was applied](docs/screenshots/3-synced.png)
 
@@ -36,8 +48,15 @@ change, drops the field, and says so.
 
 ![Pushing the website to FunderHub: accepted, with the message that this system does not store socials](docs/screenshots/4-declined.png)
 
+**Edit a profile on the system that holds it.** Every system serves its own editable page, saving
+through exactly the rules its `PATCH` route enforces — so an edit typed there and one pushed by the
+widget are the same edit.
+
+![GrantPortal's organization profile page, with the four compared fields editable](docs/screenshots/5-profile.png)
+
 **Connect another system without new code.** Every system exposes the same routes, so a third one
-is a config entry and an access token, not a feature.
+is a config entry and an access token, not a feature. A system configured read-only is labelled as
+such and is never offered as a target.
 
 ```
 GET   /common-grants/orgs             find an org by identifier, e.g. ?registry=org:us:ein&id=
