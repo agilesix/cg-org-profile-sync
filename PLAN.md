@@ -972,7 +972,7 @@ pull from a named portal, and only portals whose configuration allows writes are
   which the apps cannot unit-test. Kept to that mapping; every rule stays in the library. Two
   copies of the page, one per app, on purpose.
 
-### #1189-T2: Embed Link in the portals as an iframe with a postMessage bridge
+### #1189-T2: [✓] Embed Link in the portals as an iframe with a postMessage bridge
 
 Depends on: #1189-T1
 
