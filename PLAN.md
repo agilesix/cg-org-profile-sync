@@ -683,7 +683,7 @@ OrgSummary { id, name, ein: string | null }` reading `identifiers["org:us:ein"].
   agree across systems on purpose: the demo's drift story stays Agile Six's, and the others exist
   to be greyed out.
 
-### #1188-T6: Empty state, system picker modal, and the Google sign-in step in a popup
+### #1188-T6: [✓] Empty state, system picker modal, and the Google sign-in step in a popup
 
 Depends on: #1188-T3 (connect routes). Parallel with #1188-T5.
 
