@@ -7,8 +7,10 @@ import {
   PORTAL_SEED,
 } from "@cg-link/seed";
 import { describe, expect, it } from "vitest";
+import type { JsonObject } from "../types.js";
 import {
   MERGE_PATCH_CONTENT_TYPE,
+  applyOrgPatch,
   listOrgs,
   readOrg,
   updateOrg,
@@ -338,5 +340,99 @@ describe("updateOrg", () => {
 
     expect(response.status).toBe(404);
     expect(await backing.read(PORTAL_ORG_ID)).toEqual(PORTAL_SEED);
+  });
+});
+
+describe("applyOrgPatch", () => {
+  it("applies a patch and reports nothing skipped", async () => {
+    const store = new MemoryOrgStore([PORTAL_SEED]);
+    const config: OrgRoutesConfig = { store, source: "portal" };
+    const patch = { mission: "A new mission statement." };
+
+    const outcome = await applyOrgPatch(PORTAL_ORG_ID, patch, config);
+
+    if (!outcome.ok) throw new Error("expected the patch to be applied");
+
+    expect(outcome.skipped).toEqual([]);
+    expect(outcome.message).toBe("Change applied");
+    expect(outcome.revision.source).toBe("portal");
+    expect(outcome.revision.status.value).toBe("accepted");
+    expect(outcome.revision.snapshot.mission).toBe(patch.mission);
+
+    const stored = await store.read(PORTAL_ORG_ID);
+
+    expect(stored?.mission).toBe(patch.mission);
+  });
+
+  it("drops an unwritable field, names it in the message, and reports it as skipped", async () => {
+    const store = new MemoryOrgStore([FUNDERHUB_SEED]);
+    const config: OrgRoutesConfig = {
+      store,
+      source: "funderhub",
+      unwritableFields: FUNDERHUB_UNWRITABLE_FIELDS,
+    };
+    const patch = {
+      socials: { website: "https://agile6.com" },
+      mission: "A new mission statement.",
+    };
+
+    const outcome = await applyOrgPatch(FUNDERHUB_ORG_ID, patch, config);
+
+    if (!outcome.ok) throw new Error("expected the patch to be applied");
+
+    expect(outcome.skipped).toContain("socials");
+    expect(outcome.message).toContain("socials");
+    expect(outcome.revision.patch.socials).toBeUndefined();
+
+    const stored = await store.read(FUNDERHUB_ORG_ID);
+
+    expect(stored?.mission).toBe(patch.mission);
+    expect(stored?.socials).toBeUndefined();
+  });
+
+  it("refuses a patch that would leave the profile invalid, and stores nothing", async () => {
+    const store = new MemoryOrgStore([PORTAL_SEED]);
+    const config: OrgRoutesConfig = { store, source: "portal" };
+
+    const outcome = await applyOrgPatch(PORTAL_ORG_ID, { name: null }, config);
+
+    if (outcome.ok) throw new Error("expected the patch to be refused");
+
+    expect(outcome.status).toBe(400);
+    expect(outcome.errors.length).toBeGreaterThan(0);
+
+    const stored = await store.read(PORTAL_ORG_ID);
+
+    expect(stored).toEqual(PORTAL_SEED);
+  });
+
+  it("never moves a record, whatever id the patch carries", async () => {
+    const store = new MemoryOrgStore([PORTAL_SEED]);
+    const config: OrgRoutesConfig = { store, source: "portal" };
+    const elsewhere = "018f2e77-1a2b-7c3d-8e4f-000000000099";
+    const patch = { name: "Renamed", id: elsewhere } as JsonObject;
+
+    const outcome = await applyOrgPatch(PORTAL_ORG_ID, patch, config);
+
+    if (!outcome.ok) throw new Error("expected the patch to be applied");
+
+    expect(outcome.revision.snapshot.id).toBe(PORTAL_ORG_ID);
+
+    const stored = await store.read(PORTAL_ORG_ID);
+
+    expect(stored?.id).toBe(PORTAL_ORG_ID);
+    expect(stored?.name).toBe("Renamed");
+    expect(await store.read(elsewhere)).toBeUndefined();
+  });
+
+  it("returns 404 for an org this system does not hold", async () => {
+    const store = new MemoryOrgStore([PORTAL_SEED]);
+    const config: OrgRoutesConfig = { store, source: "portal" };
+
+    const outcome = await applyOrgPatch(FUNDERHUB_ORG_ID, { mission: "Nobody to patch" }, config);
+
+    if (outcome.ok) throw new Error("expected the patch to be refused");
+
+    expect(outcome.status).toBe(404);
   });
 });

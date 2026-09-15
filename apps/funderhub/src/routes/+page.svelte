@@ -1,4 +1,9 @@
 <script lang="ts">
+  import { resolve } from "$app/paths";
+  import type { PageData } from "./$types.js";
+
+  let { data }: { data: PageData } = $props();
+
   const routes = [
     {
       verb: "GET",
@@ -25,6 +30,16 @@
     A second system speaking the same routes, so the comparison has more than two columns to work
     with.
   </p>
+
+  {#if data.profile}
+    <h2>Profile</h2>
+    <p class="profile">
+      <a href={resolve("/orgs/[orgId]", { orgId: data.profile.id })} data-testid="profile-link"
+        >{data.profile.name}</a
+      >
+      <span class="note">this system's copy, editable</span>
+    </p>
+  {/if}
 
   <h2>Routes</h2>
   <ul>
@@ -115,6 +130,18 @@
     color: #0d6e63;
     font-weight: 600;
   }
+  .profile {
+    margin: 0 0 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.9rem;
+    align-items: baseline;
+    border-top: 1px solid #d9e0dd;
+    padding-top: 0.9rem;
+  }
+  .profile a {
+    color: #0d6e63;
+  }
   .note {
     font-size: 0.85rem;
     color: #6b7a77;
@@ -143,7 +170,8 @@
       color: #e7edeb;
     }
     .role,
-    .verb {
+    .verb,
+    .profile a {
       color: #56b7a9;
     }
     .tagline {
@@ -156,6 +184,7 @@
       color: #8a9895;
     }
     ul,
+    .profile,
     .pending,
     .status {
       border-color: #2a3736;

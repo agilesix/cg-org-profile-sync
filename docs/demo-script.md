@@ -6,40 +6,52 @@ the `curl` block, and what to say while it runs. Everything assumes `pnpm dev` i
 
 ## The click path
 
-About two minutes. Everything is at `http://localhost:5176`.
+About two minutes. It starts on GrantPortal at `http://localhost:5173` and moves to Link at
+`http://localhost:5176`.
 
-1. **Open Link.** It opens on the systems it can talk to, not on data: GrantPortal and FunderHub,
+1. **Start where the profile lives.** Open GrantPortal and follow the organization link to
+   `/orgs/018f2e77-1a2b-7c3d-8e4f-000000000001`. This is the screen a nonprofit keeps their profile
+   on: the four fields the demo compares are editable, the rest is shown as GrantPortal stores it.
+   Note the address — Suite 300. FunderHub has the same page at `http://localhost:5174`, its copy
+   says Suite 210, and it has no website box at all, because it does not store `socials`. Two
+   systems, two screens, one organization, and nobody reconciling them. That is the problem.
+2. **Open Link.** It opens on the systems it can talk to, not on data: GrantPortal and FunderHub,
    each labelled with what it allows and each offering **Connect**. Link holds no credentials of
    its own, so there is nothing for it to read until you sign in with one.
-2. **Connect GrantPortal** as `admin@example.org`. The tab goes to GrantPortal's own sign-in, comes
+3. **Connect GrantPortal** as `admin@example.org`. The tab goes to GrantPortal's own sign-in, comes
    back, and GrantPortal's column fills in. FunderHub's column says it is not connected — a state,
    not an error: the grid still renders everything GrantPortal holds.
-3. **Connect FunderHub** as the same person. Now the EIN field holds the demo org (`123456789`) and
+4. **Connect FunderHub** as the same person. Now the EIN field holds the demo org (`123456789`) and
    the grid shows one column per system, with one row per compared field. Three rows agree.
    The **Primary address** row is marked as differing: GrantPortal says Suite 300, FunderHub says
    Suite 210. The **Website** row shows a value under GrantPortal and nothing under FunderHub. That
    is a gap, not a conflict, so the row is not flagged.
-4. **Fix the address.** Click GrantPortal's address to choose it. The panel echoes the pick, and
+5. **Fix the address.** Click GrantPortal's address to choose it. The panel echoes the pick, and
    FunderHub is pre-selected as the target (the system a value came from is never offered, since it
    already holds it). Click **Sync**. FunderHub answers "accepted", the grid re-reads both systems,
    and the address row now agrees on Suite 300.
-5. **Push the website.** Click GrantPortal's website, then **Sync**. FunderHub still answers
+6. **Push the website.** Click GrantPortal's website, then **Sync**. FunderHub still answers
    "accepted", but its message reads "This system does not store socials." The patch was applied,
    the field was dropped, and the sender was told so. The grid re-reads and the website row is
    unchanged: FunderHub still holds nothing.
-6. **The beat worth ending on.** Open a new tab at `http://localhost:5176` — tokens live for the
+7. **The beat worth ending on.** Open a new tab at `http://localhost:5176` — tokens live for the
    tab, so this one starts disconnected — and connect as `portal-only@example.org`. GrantPortal
    signs them in. FunderHub signs them in too, and then says **No access on this system**: that
    person has no organization there. Same widget, same person, two answers, because each system
    decides for itself. Nothing is broken, and the comparison still shows what GrantPortal holds.
-7. **Optional: an org nobody knows.** Type `000000000` in the EIN field and click **Look up**. Each
+8. **Optional: an org nobody knows.** Type `000000000` in the EIN field and click **Look up**. Each
    column reports that the system has no record of the org, the grid still renders, and the value
    picked for the previous org is dropped so it cannot be written onto the wrong organization.
 
-Restart `pnpm dev`, or `POST /__test/reset` on FunderHub, to run it again from the seed.
+Restart `pnpm dev`, or `POST /__test/reset` on FunderHub, to run it again from the seed. The
+profile pages read the same store, so a reset shows up there too — and editing a field on
+GrantPortal's page is the other way to create a disagreement to go and find.
 
 Talking points, one per step:
 
+- The profile pages are each system's own screen, not part of the protocol. They save through
+  exactly the function `PATCH /common-grants/orgs/{orgId}` goes through, so an edit typed here and
+  an edit pushed by the widget are the same edit, refused by the same rules.
 - The widget knows nothing about how many systems there are. A third one is an entry in
   `apps/link/src/lib/server/sources.ts`. Link holds no credentials of its own: you connect each
   system through its own sign-in, and the browser keeps that system's token for the session.
