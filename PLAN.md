@@ -632,7 +632,7 @@ Depends on: #1188-T2, #1188-T3
 - **Trade-offs**: The Google path is verified only by hand before the demo. The JSON exit on the
   callback exists solely for the API specs.
 
-### #1188-T5: Seed two more organizations per system and list a person's orgs
+### #1188-T5: [✓] Seed two more organizations per system and list a person's orgs
 
 Depends on: #1188-T1 (scoped store), #1188-T3 (token forwarding)
 
