@@ -10,5 +10,5 @@ export {
 export { formatFieldValue } from "./format.js";
 export { summarizeOrg } from "./orgs.js";
 export type { FieldSpec } from "./compare.js";
-export { capabilitiesOf } from "./sources.js";
+export { capabilitiesOf, isConnectable } from "./sources.js";
 export { sameOriginPath } from "./urls.js";

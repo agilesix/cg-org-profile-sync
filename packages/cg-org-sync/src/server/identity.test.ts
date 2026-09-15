@@ -264,7 +264,7 @@ describe("fakeLoginPage", () => {
   });
 
   it("puts loginHint in the email field's value when given", async () => {
-    const response = fakeLoginPage("state-123", "person@example.com");
+    const response = fakeLoginPage("state-123", { loginHint: "person@example.com" });
     const body = await response.text();
 
     expect(body).toContain('value="person@example.com"');
@@ -272,9 +272,55 @@ describe("fakeLoginPage", () => {
 
   it("escapes the state and hint into the HTML rather than interpolating them raw", async () => {
     const dangerous = `"><script>alert(1)</script>`;
-    const response = fakeLoginPage(dangerous, dangerous);
+    const response = fakeLoginPage(dangerous, { loginHint: dangerous });
     const body = await response.text();
 
     expect(body).not.toContain("<script>alert(1)</script>");
+  });
+
+  it("renders the systemLabel when given, so the person can see which system they are signing in to", async () => {
+    const response = fakeLoginPage("state-123", { systemLabel: "GrantPortal" });
+    const body = await response.text();
+
+    expect(body).toContain("GrantPortal");
+  });
+
+  it('renders with no literal "undefined" when systemLabel is omitted', async () => {
+    const response = fakeLoginPage("state-123");
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).not.toContain("undefined");
+  });
+
+  it("escapes systemLabel into the HTML rather than interpolating it raw", async () => {
+    const dangerous = `"><script>alert(1)</script>`;
+    const response = fakeLoginPage("state-123", { systemLabel: dangerous });
+    const body = await response.text();
+
+    expect(body).not.toContain("<script>alert(1)</script>");
+  });
+
+  it("renders a password input alongside the email input", async () => {
+    const response = fakeLoginPage("state-123");
+    const body = await response.text();
+
+    expect(body).toMatch(/<input[^>]*type="password"[^>]*>/);
+  });
+
+  it("gives the password input no name attribute, so the form submits no password value", async () => {
+    const response = fakeLoginPage("state-123");
+    const body = await response.text();
+    const passwordInput = body.match(/<input[^>]*type="password"[^>]*>/)?.[0];
+
+    expect(passwordInput).toBeDefined();
+    expect(passwordInput).not.toContain("name=");
+  });
+
+  it("tells the person this page stands in for Google", async () => {
+    const response = fakeLoginPage("state-123");
+    const body = await response.text();
+
+    expect(body).toMatch(/stand-in for Google/i);
   });
 });

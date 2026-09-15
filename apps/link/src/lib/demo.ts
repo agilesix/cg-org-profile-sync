@@ -35,3 +35,35 @@ export interface Selection {
   /** The value itself, passed through untouched — `null` included. */
   value: JsonValue;
 }
+
+/**
+ * One system as the picker shows it.
+ *
+ * What `+page.server.ts` sends the browser, and nothing more: a system's
+ * address is the server's business, since every flow goes through Link's own
+ * `/api/connect/start`.
+ */
+export interface SystemView {
+  id: string;
+  label: string;
+
+  /** The system's own site, shown under its name. `null` when none is configured. */
+  website: string | null;
+
+  capabilities: { read: boolean; write: boolean };
+
+  /** False for a system the picker names but this demo cannot connect. */
+  connectable: boolean;
+}
+
+/** How one system's sign-in attempt ended, as the page reports it to the modal. */
+export interface ConnectOutcome {
+  sourceId: string;
+
+  /**
+   * `abandoned` is its own outcome, not a failure. Someone who closes the
+   * popup has not been refused and has no error to read — the modal should
+   * simply offer them the button again.
+   */
+  result: "token" | "denied" | "abandoned";
+}

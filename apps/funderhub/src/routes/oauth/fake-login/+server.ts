@@ -16,8 +16,10 @@ export const GET: RequestHandler = ({ url }) => {
     error(404, "Not Found");
   }
 
-  return fakeLoginPage(
-    url.searchParams.get("state") ?? "",
-    url.searchParams.get("login_hint") ?? undefined,
-  );
+  // The label rather than `SYSTEM_ID`: this is a heading someone reads in a
+  // popup, and it has to say which system is asking.
+  return fakeLoginPage(url.searchParams.get("state") ?? "", {
+    loginHint: url.searchParams.get("login_hint") ?? undefined,
+    systemLabel: "FunderHub",
+  });
 };

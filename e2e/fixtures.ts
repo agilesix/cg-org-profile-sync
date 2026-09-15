@@ -351,11 +351,9 @@ function locationOf(response: APIResponse, what: string): string {
 /**
  * Connect one system in the browser, the way a person does.
  *
- * Standalone, the flow happens in the tab itself, so this is three clicks and
- * a wait rather than any window juggling. Waiting on `connected-{id}` rather
- * than on the navigation is what makes it safe to assert straight afterwards:
- * the widget re-reads every system once a token lands, and that badge appears
- * with the state that triggered the read.
+ * Waiting on `connected-{id}` rather than on the popup closing is what makes
+ * it safe to assert straight afterwards: the widget re-reads every system once
+ * a token lands, and that chip appears with the state that triggered the read.
  */
 export async function connect(page: Page, sourceId: string, email: string): Promise<void> {
   await signIn(page, sourceId, email);
@@ -374,7 +372,11 @@ export async function connectExpectingDenial(
   email: string,
 ): Promise<void> {
   await signIn(page, sourceId, email);
+
+  // The refusal is a step of the modal, not a badge on the page behind it:
+  // the person is mid-flow and this is the answer to what they just did.
   await expect(page.getByTestId(`denied-${sourceId}`)).toBeVisible();
+  await page.getByTestId("close-denied").click();
 }
 
 /**
@@ -390,9 +392,26 @@ export async function openWidget(page: Page): Promise<void> {
   await expect(page.getByTestId("widget")).toHaveAttribute("data-ready", "true");
 }
 
-/** Click Connect, fill the stand-in sign-in form, and submit it. */
+/**
+ * Walk the picker: open it, choose a system, and sign in through its popup.
+ *
+ * The sign-in genuinely happens in a separate window — the widget opens one so
+ * the modal can stay up and so Google, which will not render inside another
+ * origin's page, has somewhere to go. `waitForEvent("popup")` has to be armed
+ * BEFORE the click that opens it, or the event fires while nobody is
+ * listening and the wait times out on a window that already exists.
+ */
 async function signIn(page: Page, sourceId: string, email: string): Promise<void> {
-  await page.getByTestId(`connect-${sourceId}`).click();
-  await page.getByLabel("Email").fill(email);
-  await page.getByRole("button", { name: "Continue" }).click();
+  if (!(await page.getByTestId("link-modal").isVisible())) {
+    await page.getByTestId("link-system").click();
+  }
+
+  await page.getByTestId(`pick-system-${sourceId}`).click();
+
+  const popupPromise = page.waitForEvent("popup");
+  await page.getByTestId("continue-with-google").click();
+  const popup = await popupPromise;
+
+  await popup.getByLabel("Email").fill(email);
+  await popup.getByRole("button", { name: "Submit" }).click();
 }
