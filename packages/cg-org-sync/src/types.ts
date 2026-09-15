@@ -55,10 +55,12 @@ export interface SourceConfig {
    * What this source allows. Omitted means both.
    *
    * The permissive default is the compatible one: the demo's systems declare
-   * nothing and have to keep working. `write: false` is enforced —
-   * `syncToTargets` refuses such a target without sending it anything. `read`
-   * is so far only a label on the connect screen; #1189-T3 is where direction
-   * becomes something the comparison itself acts on.
+   * nothing and have to keep working. Both are enforced rather than advisory:
+   * `syncToTargets` refuses a `write: false` target without sending it
+   * anything, `listOrgsAt` refuses to read a `read: false` one, and
+   * `utils/direction.ts`'s `syncTargets` keeps an unwritable source out of the
+   * targets the widget offers in the first place. Every `SourceResolution`
+   * carries the resolved pair, so the browser knows it too.
    */
   capabilities?: SourceCapabilities;
 
@@ -148,6 +150,18 @@ export interface SourceResolution {
 
   /** Whether this source's token got us in, and so which control to offer. */
   connection: SourceConnection;
+
+  /**
+   * What this source allows, with the default already applied.
+   *
+   * Carried on the row rather than left in the registry because the registry
+   * is server-side and the widget is where it matters: a read-only system must
+   * never be offered as a sync target, and the direction a change travels —
+   * pushed out of the page you are on, or pulled into it — is decided from
+   * this. Present even on a row that contributed nothing, so a system that is
+   * merely down does not read as one that refuses writes.
+   */
+  capabilities: SourceCapabilities;
 }
 
 /**

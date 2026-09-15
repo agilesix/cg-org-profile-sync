@@ -12,6 +12,7 @@ import {
   expect,
   type APIRequestContext,
   type APIResponse,
+  type FrameLocator,
   type Page,
 } from "@playwright/test";
 import type {
@@ -364,6 +365,52 @@ export async function connect(
   await signIn(page, sourceId, email);
   await chooseOrg(page, orgId);
   await expect(page.getByTestId(`connected-${sourceId}`)).toBeVisible();
+}
+
+/**
+ * Connect one system from inside the embedded overlay.
+ *
+ * The same walk as `connect`, driven against the widget's frame rather than
+ * the tab: the controls are inside the iframe, but the popup each sign-in runs
+ * in belongs to the page, so both are needed. Separate from `connect` rather
+ * than a root parameter threaded through it, because the standalone helpers
+ * are what every other browser spec depends on and this is the only caller
+ * that is not on the page itself.
+ */
+export async function connectInFrame(
+  page: Page,
+  widget: FrameLocator,
+  sourceId: string,
+  email: string,
+  orgId: string,
+): Promise<void> {
+  if (!(await widget.getByTestId("link-modal").isVisible())) {
+    await widget.getByTestId("link-system").click();
+  }
+
+  await widget.getByTestId(`pick-system-${sourceId}`).click();
+
+  // Armed before the click, or the event fires while nobody is listening.
+  const popupPromise = page.waitForEvent("popup");
+  await widget.getByTestId("continue-with-google").click();
+  const popup = await popupPromise;
+
+  await popup.getByLabel("Email").fill(email);
+  await popup.getByRole("button", { name: "Submit" }).click();
+
+  // Embedded, the organization arrives with the frame URL, so the lock leaves
+  // one choice and the widget has already made it. Clicking a pre-selected row
+  // would unpick it and disable Continue.
+  const row = widget.getByTestId(`org-${orgId}`);
+
+  await expect(row).toBeVisible();
+
+  if ((await row.getAttribute("aria-pressed")) !== "true") {
+    await row.click();
+  }
+
+  await widget.getByTestId("confirm-org").click();
+  await expect(widget.getByTestId(`connected-${sourceId}`)).toBeVisible();
 }
 
 /**

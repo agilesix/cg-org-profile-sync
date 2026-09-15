@@ -130,6 +130,14 @@ test("choosing portal's address and syncing turns the row from differs to agree"
   await expect(page.getByTestId("selection")).toContainText("GrantPortal");
   await expect(page.getByTestId("target-funderhub")).toBeChecked();
 
+  // Standalone there is no page to pull anything into, so every pick is a push
+  // — and the panel says which copy is about to be overwritten rather than
+  // leaving it to the word "sync".
+  const direction = page.getByTestId("direction");
+
+  await expect(direction).toHaveAttribute("data-direction", "push");
+  await expect(direction).toContainText("Push Primary address from GrantPortal to FunderHub");
+
   // The source of the value is never a target — it already holds it.
   await expect(page.getByTestId("target-portal")).toHaveCount(0);
 
@@ -137,6 +145,7 @@ test("choosing portal's address and syncing turns the row from differs to agree"
 
   const result = page.getByTestId("sync-result-funderhub");
   await expect(result).toHaveAttribute("data-ok", "true");
+  await expect(result).toContainText("pushed to");
 
   // A result line is only published once the grid behind it has been re-read,
   // and a re-read that failed would say so here. Without this the next two
