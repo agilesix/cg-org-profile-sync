@@ -1346,7 +1346,7 @@ Depends on: #1190-T2.
   and its differences — mode, allowlist, projection — read more clearly next to a full copy than
   threaded through a shared app as flags.
 
-### #1190-T4: Push to Temelio: `PATCH` through the adapter, guarded by the allowlist
+### #1190-T4: [✓] Push to Temelio: `PATCH` through the adapter, guarded by the allowlist
 
 Depends on: #1190-T3, and T1's answer that the sandbox accepts writes. If it does not, mark this
 ticket cut, keep `write: false`, and the Temelio beat is a pull into GrantPortal via #1189-T3.
