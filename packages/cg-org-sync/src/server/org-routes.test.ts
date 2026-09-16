@@ -315,6 +315,47 @@ describe("updateOrg", () => {
     expect(stored?.socials).toBeUndefined();
   });
 
+  it("says a change was applied when part of the patch survived the drop", async () => {
+    const store = new MemoryOrgStore([FUNDERHUB_SEED]);
+    const config: OrgRoutesConfig = {
+      store,
+      source: "funderhub",
+      unwritableFields: FUNDERHUB_UNWRITABLE_FIELDS,
+    };
+    const patch = { socials: { website: "https://agile6.com" }, mission: "A new mission." };
+
+    const response = await updateOrg(
+      FUNDERHUB_ORG_ID,
+      patchRequest(FUNDERHUB_ORG_ID, patch),
+      config,
+    );
+    const body = await response.json();
+
+    expect(body.message).toBe("Change applied. This system does not store socials.");
+  });
+
+  it("says no change was applied when every field in the patch was dropped", async () => {
+    const store = new MemoryOrgStore([FUNDERHUB_SEED]);
+    const config: OrgRoutesConfig = {
+      store,
+      source: "funderhub",
+      unwritableFields: FUNDERHUB_UNWRITABLE_FIELDS,
+    };
+
+    const response = await updateOrg(
+      FUNDERHUB_ORG_ID,
+      patchRequest(FUNDERHUB_ORG_ID, { socials: { website: "https://agile6.com" } }),
+      config,
+    );
+    const body = await response.json();
+
+    // "Change applied" would be a lie: the only field sent was dropped, so
+    // this system holds none of it. A sender reading the old wording next to a
+    // green tick believes their website is stored here when it is not.
+    expect(body.message).toBe("Change not applied because this system does not store socials.");
+    expect(body.data.snapshot.socials).toBeUndefined();
+  });
+
   it("rejects a patch that nulls a required field and stores nothing", async () => {
     const store = new MemoryOrgStore([PORTAL_SEED]);
     const config: OrgRoutesConfig = { store, source: "portal" };

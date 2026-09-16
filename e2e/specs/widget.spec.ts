@@ -138,6 +138,8 @@ test("choosing portal's address and syncing turns the row from differs to agree"
 
   const result = page.getByTestId("sync-result-funderhub");
   await expect(result).toHaveAttribute("data-ok", "true");
+  await expect(result).toHaveAttribute("data-applied", "true");
+  await expect(result).toContainText("accepted");
 
   // A result line is only published once the grid behind it has been re-read,
   // and a re-read that failed would say so here. Without this the next two
@@ -183,12 +185,16 @@ test("pushing portal's website reports what funderhub declined, and the row is u
   await page.getByTestId("pick-socials.website-portal").click();
   await page.getByTestId("sync").click();
 
-  // Accepted, not rejected: FunderHub applied what it could and said what it
-  // dropped. That sentence is the only place the sender learns the value went
-  // no further, so it has to reach the screen verbatim.
+  // The request succeeded and the change went nowhere, which are different
+  // things and have to read differently. FunderHub answered 200 — this is the
+  // protocol working as designed, not a failure — but it stored none of what
+  // was sent, so the line says NOT ACCEPTED rather than showing a tick for a
+  // change that never happened.
   const result = page.getByTestId("sync-result-funderhub");
   await expect(result).toHaveAttribute("data-ok", "true");
-  await expect(result).toContainText("does not store");
+  await expect(result).toHaveAttribute("data-applied", "false");
+  await expect(result).toContainText("not accepted");
+  await expect(result).toContainText("Change not applied because this system does not store");
   await expect(result).toContainText("socials");
 
   // "The row is unchanged" is exactly what a failed re-read would also show,

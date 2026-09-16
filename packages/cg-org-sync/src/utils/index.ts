@@ -6,6 +6,7 @@ export {
   buildMergePatch,
   compareProfiles,
   getAtPath,
+  sameJsonValue,
 } from "./compare.js";
 export { formatFieldValue } from "./format.js";
 export { DIFFERENT_ORG_REASON, selectableOrgs, summarizeOrg } from "./orgs.js";

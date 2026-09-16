@@ -212,8 +212,24 @@ export interface SyncTargetResult {
   /** The `SourceConfig.id` this result is about. */
   id: string;
 
-  /** Whether the target accepted the change. */
+  /** Whether the target accepted the request. */
   ok: boolean;
+
+  /**
+   * Whether the chosen value is actually there now.
+   *
+   * Distinct from `ok`, and the distinction is the point. A system that cannot
+   * store a field does not fail — it applies what it can, drops the rest, and
+   * answers 200. So `ok: true, applied: false` is the ordinary way a change
+   * goes nowhere, and a caller that showed a tick for `ok` alone would report
+   * success for something that never happened.
+   *
+   * Established by reading the value back out of the post-change snapshot the
+   * target returned, not by parsing its message — a receiver is free to word
+   * that however it likes, and none of them should have to agree on a phrase
+   * for this to work.
+   */
+  applied: boolean;
 
   /** The status the target responded with; `null` if it never responded. */
   status: number | null;
@@ -221,9 +237,9 @@ export interface SyncTargetResult {
   /**
    * The target's own sentence about the change.
    *
-   * Passed through verbatim on success, because a system that declines to store
-   * a field says so here rather than failing — that sentence is the only place
-   * the sender learns the value went no further.
+   * Passed through verbatim, because a system that declines to store a field
+   * says so here rather than failing — that sentence is the only place the
+   * sender learns *why* the value went no further.
    */
   message: string;
 }

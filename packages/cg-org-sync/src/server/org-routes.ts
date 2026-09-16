@@ -166,9 +166,7 @@ async function applyPatch(
       createdAt: now,
       lastModifiedAt: now,
     },
-    skipped.length === 0
-      ? "Change applied"
-      : `Change applied. This system does not store ${skipped.join(", ")}.`,
+    changeMessage(patch, skipped),
   );
 }
 
@@ -203,6 +201,30 @@ function hasIdentifier(org: Organization, registry: string, id: string): boolean
   if (entry.id === id) return true;
 
   return (entry.allIds ?? []).some((value) => value.id === id && value.status === "active");
+}
+
+/**
+ * What to tell the sender about a change that was partly or wholly declined.
+ *
+ * "Change applied" is a lie when every field in the patch was dropped: nothing
+ * was applied, and a sender reading that sentence believes their value is
+ * stored here when this system holds none of it. A client that shows the
+ * message next to a green tick — which is the obvious thing to build — then
+ * reports success for a change that never happened.
+ *
+ * So the lead sentence follows what actually happened, and the explanation
+ * stays the same either way, because the reason is the same either way.
+ */
+function changeMessage(applied: JsonObject, skipped: readonly string[]): string {
+  if (skipped.length === 0) {
+    return "Change applied";
+  }
+
+  const fields = skipped.join(", ");
+
+  return Object.keys(applied).length === 0
+    ? `Change not applied because this system does not store ${fields}.`
+    : `Change applied. This system does not store ${fields}.`;
 }
 
 /** Remove fields this system declines to store, and report which were dropped. */
