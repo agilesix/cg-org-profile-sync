@@ -1136,7 +1136,7 @@ Temelio-specific ones; the rest are #1189 and #1191, listed so the dependencies 
 - Public repo versus internal detail also covers the findings file: it stays gitignored, and the
   memo entries move to Billy's doc in T5.
 
-### #1190-T1: Spike the Temelio sandbox and record what the adapter can rely on
+### #1190-T1: [✓] Spike the Temelio sandbox and record what the adapter can rely on
 
 Depends on: sandbox access from Ruthwick. Time-box: half a day, before any adapter code.
 
