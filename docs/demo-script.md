@@ -87,6 +87,7 @@ seeded ones.
 ```bash
 PORTAL_TOKEN=portal-local-placeholder-change-me
 FUNDERHUB_TOKEN=funderhub-local-placeholder-change-me
+TEMELIO_TOKEN=temelio-local-placeholder-change-me
 
 # Find the org by EIN on each system. Both hold it under a different id.
 curl -s "http://localhost:5173/common-grants/orgs?registry=org:us:ein&id=123456789" \
@@ -136,7 +137,39 @@ curl -s http://localhost:5174/.well-known/jwks.json
 
 # Put a system back to its seed. 204 with ENABLE_TEST_ROUTES=true, 404 without.
 curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:5174/__test/reset
+
+# The Temelio adapter answers the same three routes, over a vendor that has
+# never heard of CommonGrants. Its id for the org is Temelio's own.
+curl -s "http://localhost:5175/common-grants/orgs?registry=org:us:ein&id=123456789" \
+  -H "Authorization: Bearer $TEMELIO_TOKEN"
+
+# Its reset only exists against the in-memory stand-in. In sandbox mode it
+# answers 409: those records live in a system shared with other people.
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:5175/__test/reset
 ```
+
+### Putting Temelio back by hand
+
+Only needed when the adapter is in `sandbox` mode, where there is no reset route to call. After a
+demo has pushed a value to Temelio, this returns the record to the drift the demo starts from. The
+foundation id, the grantee id and the API key are in the adapter's `.env`; the vendor's own
+endpoint shape is in the internal spec, not here.
+
+```bash
+# From apps/temelio-adapter/.env
+set -a; source apps/temelio-adapter/.env; set +a
+
+curl -s -X POST \
+  "$TEMELIO_API_ORIGIN/api/foundation/$TEMELIO_FOUNDATION_ID/nonprofit/$TEMELIO_ORG_ALLOWLIST/metadata" \
+  -H "X-API-Key: $TEMELIO_API_TOKEN" -H 'content-type: application/json' \
+  -d '{"nonprofitId":"'"$TEMELIO_ORG_ALLOWLIST"'","website":"http://www.agile6.com",
+       "headquarters":{"address1":"600 B Street","address2":"Suite 210","city":"San Diego",
+                       "state":"CA","zipcode":"92101","country":"US"}}'
+```
+
+That assumes `TEMELIO_ORG_ALLOWLIST` names exactly one grantee, which it does for this demo. The
+write merges, so only the keys named here change — but an address is replaced whole, which is why
+all six of its lines are spelled out.
 
 ### Minting a token by hand
 
@@ -195,6 +228,16 @@ curl -s -X POST http://localhost:5176/api/sync \
 - **A port is taken**: every app sets `strictPort`, so the dev server fails instead of moving. To
   move one, change the port together in the app's `vite.config.ts`, Link's registry in
   `apps/link/src/lib/server/sources.ts`, and the Playwright origins in `e2e/env.ts`.
+- **Temelio's column is showing the wrong thing, or the demo is not proving what you think**:
+  check which mode the adapter is in. Its landing page at http://localhost:5175 says so, and so
+  does one line in its server log at start-up. `fixture` is an in-memory stand-in and never
+  contacts the vendor; `sandbox` is the real thing.
+- **Temelio answers 502**: the vendor refused or could not be reached, and the message carries what
+  it said. An expired `TEMELIO_API_TOKEN` is the usual cause — it is a foundation API key, and
+  revoking one on the vendor's own settings page takes effect immediately.
+- **A push to Temelio reports that `name` was not stored**: that is correct and not a fault. A
+  funder cannot rename a grantee through the vendor's API, so the adapter drops the field and says
+  so rather than reporting a change that did not happen.
 - **The grid shows something the code does not explain**: check what is actually listening on
   5173, 5174 and 5176. A `pnpm dev` from another checkout of this repo serves that branch's code
   on the same ports, and both `pnpm e2e` and your browser will happily talk to it.

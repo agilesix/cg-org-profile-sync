@@ -1,6 +1,7 @@
-import { TEMELIO_ORG_ID, TEMELIO_SEED } from "@cg-link/seed";
+import { AGILE_SIX_EIN, TEMELIO_ORG_ID, TEMELIO_SEED } from "@cg-link/seed";
 import { describe, expect, it } from "vitest";
 import type { Organization } from "@cg-link/org-sync/schemas";
+import { StoreError } from "@cg-link/org-sync/server";
 import { type TemelioApi, TemelioApiError } from "./api.js";
 import { AGILE_SIX_TEMELIO_RECORD, FakeTemelioApi } from "./fixture.js";
 import { TemelioRecordSchema, type TemelioRecord } from "./records.js";
@@ -76,7 +77,7 @@ describe("TemelioOrgStore", () => {
       expect(problems[0]).toContain(missingId);
     });
 
-    it("lets a TemelioApiError from read propagate, rather than reading as an empty list", async () => {
+    it("wraps a TemelioApiError from read as a StoreError, carrying the same status and message, rather than reading as an empty list", async () => {
       const error = new TemelioApiError("Temelio rejected the request.", { status: 401 });
       const api: TemelioApi = {
         searchByEin: async () => [],
@@ -88,7 +89,11 @@ describe("TemelioOrgStore", () => {
 
       const store = new TemelioOrgStore({ api, allowlist: [TEMELIO_ORG_ID] });
 
-      await expect(store.list()).rejects.toBe(error);
+      await expect(store.list()).rejects.toBeInstanceOf(StoreError);
+      await expect(store.list()).rejects.toMatchObject({
+        status: error.status,
+        message: error.message,
+      });
     });
   });
 
@@ -115,6 +120,24 @@ describe("TemelioOrgStore", () => {
 
       expect(result).toEqual(TEMELIO_SEED);
     });
+
+    it("wraps a TemelioApiError from the api's read as a StoreError, carrying the same status and message", async () => {
+      const error = new TemelioApiError("Temelio answered 500.", { status: 500 });
+      const api: TemelioApi = {
+        searchByEin: async () => [],
+        read: async () => {
+          throw error;
+        },
+        write: async () => undefined,
+      };
+      const store = new TemelioOrgStore({ api, allowlist: [TEMELIO_ORG_ID] });
+
+      await expect(store.read(TEMELIO_ORG_ID)).rejects.toBeInstanceOf(StoreError);
+      await expect(store.read(TEMELIO_ORG_ID)).rejects.toMatchObject({
+        status: error.status,
+        message: error.message,
+      });
+    });
   });
 
   describe("write", () => {
@@ -138,9 +161,84 @@ describe("TemelioOrgStore", () => {
       expect(calls.map(([method]) => method)).toEqual(["read", "write", "read"]);
 
       const writeCall = calls[1];
-      expect(writeCall?.[1]).toEqual([TEMELIO_ORG_ID, { website: "https://agile6.com" }]);
+      // The EIN rides along on every write; Temelio blanks it otherwise.
+      expect(writeCall?.[1]).toEqual([
+        TEMELIO_ORG_ID,
+        { website: "https://agile6.com", ein: AGILE_SIX_EIN },
+      ]);
 
       expect(result?.socials?.website).toBe("https://agile6.com");
+    });
+
+    it("sends one merge write carrying every field that changed, plus the ein", async () => {
+      const { api, calls } = trackCalls(new FakeTemelioApi());
+      const store = new TemelioOrgStore({ api, allowlist: [TEMELIO_ORG_ID] });
+
+      const current = await store.read(TEMELIO_ORG_ID);
+      calls.length = 0;
+
+      // Two mapped fields, both changed at once: `socials.website` is
+      // Temelio's `website`, and `mission` maps to itself.
+      const changed: Organization = {
+        ...(current as Organization),
+        socials: { website: "https://agile6.com" },
+        mission: "A different mission entirely.",
+      };
+
+      await store.write(changed);
+
+      // Both changes in one call, and nothing else the patch did not touch —
+      // except the EIN, which Temelio blanks on any write that omits it.
+      const writeCall = calls.find(([method]) => method === "write");
+      expect(writeCall?.[1]).toEqual([
+        TEMELIO_ORG_ID,
+        {
+          website: "https://agile6.com",
+          mission: "A different mission entirely.",
+          ein: AGILE_SIX_EIN,
+        },
+      ]);
+    });
+
+    it("keeps a field the patch didn't name on the record Temelio ends up holding", async () => {
+      const api = new FakeTemelioApi();
+      const store = new TemelioOrgStore({ api, allowlist: [TEMELIO_ORG_ID] });
+
+      const current = await store.read(TEMELIO_ORG_ID);
+      const changed: Organization = {
+        ...(current as Organization),
+        socials: { website: "https://agile6.com" },
+      };
+
+      await store.write(changed);
+
+      const stored = api.records.get(TEMELIO_ORG_ID);
+      expect(stored?.website).toBe("https://agile6.com");
+      expect(stored?.phoneNumber).toBe(AGILE_SIX_TEMELIO_RECORD["phoneNumber"]);
+      expect(stored?.orgEmail).toBe(AGILE_SIX_TEMELIO_RECORD["orgEmail"]);
+    });
+
+    it("wraps a TemelioApiError from the api's write as a StoreError, carrying the same status and message", async () => {
+      const error = new TemelioApiError("Temelio refused the write.", { status: 422 });
+      const api: TemelioApi = {
+        searchByEin: async () => [],
+        read: async () => AGILE_SIX_TEMELIO_RECORD as TemelioRecord,
+        write: async () => {
+          throw error;
+        },
+      };
+      const store = new TemelioOrgStore({ api, allowlist: [TEMELIO_ORG_ID] });
+      const current = await store.read(TEMELIO_ORG_ID);
+      const changed: Organization = {
+        ...(current as Organization),
+        socials: { website: "https://agile6.com" },
+      };
+
+      await expect(store.write(changed)).rejects.toBeInstanceOf(StoreError);
+      await expect(store.write(changed)).rejects.toMatchObject({
+        status: error.status,
+        message: error.message,
+      });
     });
 
     it("declines a write for an org outside the allowlist, without calling the api's write", async () => {

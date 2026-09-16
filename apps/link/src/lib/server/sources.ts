@@ -64,11 +64,12 @@ export const SOURCES: readonly SourceConfig[] = [
     authorizeUrl: "http://localhost:5175/oauth/authorize",
     tokenUrl: "http://localhost:5175/token",
 
-    // Read-only until #1190-T4 turns the adapter's `PATCH` on. `write: false`
-    // is enforced rather than decorative: `syncToTargets` refuses such a
-    // target without sending it anything, so Temelio is never offered as a
-    // destination while the route behind it answers 405.
-    capabilities: { read: true, write: false },
+    // Writable as of #1190-T4. A push lands as a merge write against the
+    // vendor's own API, which is the point the whole adapter is making: a
+    // system nobody built for this contract can still receive a change through
+    // it. Two fields come back declined — see the adapter's `unwritableFields`
+    // — and the sender is told so rather than left to assume.
+    capabilities: { read: true, write: true },
   },
 
   // Named, not wired up. Every one of these is a real product, listed the way

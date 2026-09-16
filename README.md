@@ -48,6 +48,15 @@ change, drops the field, and says so.
 
 ![Pushing the website to FunderHub: accepted, with the message that this system does not store socials](docs/screenshots/6-declined.png)
 
+**Reach a system that never implemented the protocol.** The third system in the picker is Temelio,
+a real grants platform with its own API and no knowledge of CommonGrants. An adapter sits in front
+of it and speaks the contract, so Link treats it as one more entry in a list. A push through the
+widget lands as a write against Temelio's own API, and shows up on the grantee's page there.
+
+Two fields come back declined, and the widget says which: Temelio has no field for an
+organization type, and a funder cannot rename its grantee. That is the honest shape of a vendor
+adapter, and saying so beats reporting a change that did not happen.
+
 **Connect another system without new code.** Every system exposes the same routes, so a third one
 is a config entry, not a feature.
 

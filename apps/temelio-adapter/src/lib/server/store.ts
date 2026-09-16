@@ -117,13 +117,37 @@ export function temelioMode(): TemelioMode {
 }
 
 /**
- * What the shared handlers need to know about this system.
+ * Fields this system accepts in a patch and cannot store.
  *
- * No `unwritableFields` yet because there is no `PATCH` yet — #1190-T4 adds
- * both, and `name` is the field it will name.
+ * Declared rather than discovered, so the shared handler drops them and names
+ * them in the response — the sender hears that the value went no further,
+ * instead of reading "accepted" about a change that did not happen.
+ *
+ * `name` because a funder cannot rename its grantee through Temelio's API: it
+ * accepts the field, answers 200, and stores nothing. That silent success is
+ * precisely what this list exists to convert into a sentence.
+ *
+ * `orgType` because Temelio has no field for it. Its own entity type is a
+ * two-value flag, and its legal status is free text — neither is a
+ * Philanthropy Classification System term, and inventing one to round-trip
+ * through would put a taxonomy code on a record nobody chose.
+ *
+ * Top-level keys only, which is all the protocol's own rule allows. So
+ * `socials` is absent from this list even though Temelio stores only five of
+ * its links: the alternative is blocking the website, which is the field the
+ * demo is about.
+ */
+const UNWRITABLE_FIELDS = ["name", "orgType"] as const;
+
+/**
+ * What the shared handlers need to know about this system.
  */
 export function routesFor(principal: Principal | undefined): OrgRoutesConfig {
-  return { store: scopedStore(current().store, principal), source: SYSTEM_ID };
+  return {
+    store: scopedStore(current().store, principal),
+    source: SYSTEM_ID,
+    unwritableFields: UNWRITABLE_FIELDS,
+  };
 }
 
 /**

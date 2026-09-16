@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { OrganizationBaseSchema } from "@cg-link/org-sync/schemas";
 import type { Organization } from "@cg-link/org-sync/schemas";
-import { TEMELIO_SEED } from "@cg-link/seed";
+import { AGILE_SIX_EIN, TEMELIO_SEED } from "@cg-link/seed";
 import { AGILE_SIX_TEMELIO_RECORD } from "./fixture.js";
 import {
   DROPPED_FIELDS,
@@ -210,10 +210,15 @@ function withEin(org: Organization, id: string): Organization {
 }
 
 describe("toMetadataPatch", () => {
-  it("reports only the field that changed", () => {
+  it("reports the field that changed, and restates the ein alongside it", () => {
     const after: Organization = { ...TEMELIO_SEED, socials: { website: "https://agile6.com" } };
 
-    expect(toMetadataPatch(TEMELIO_SEED, after)).toEqual({ website: "https://agile6.com" });
+    // One changed field, plus the EIN — which Temelio blanks on any write that
+    // does not name it. See the `ein` test below for why that is not optional.
+    expect(toMetadataPatch(TEMELIO_SEED, after)).toEqual({
+      website: "https://agile6.com",
+      ein: AGILE_SIX_EIN,
+    });
   });
 
   it("sends the whole headquarters object when only the suite number changes", () => {
@@ -245,7 +250,7 @@ describe("toMetadataPatch", () => {
     const after: Organization = { ...TEMELIO_SEED };
     delete after.mission;
 
-    expect(toMetadataPatch(TEMELIO_SEED, after)).toEqual({ mission: "" });
+    expect(toMetadataPatch(TEMELIO_SEED, after)).toEqual({ mission: "", ein: AGILE_SIX_EIN });
   });
 
   it("ignores a changed name, since a funder cannot rename its grantee", () => {
@@ -271,6 +276,21 @@ describe("toMetadataPatch", () => {
     const after = withEin(TEMELIO_SEED, "12-3456789");
 
     expect(toMetadataPatch(TEMELIO_SEED, after)).toEqual({});
+  });
+
+  it("restates the ein on every write, because Temelio drops it otherwise", () => {
+    // Verified against the vendor: a write naming any other field leaves that
+    // field alone and silently blanks `ein`. It is the one key on the record
+    // that does not merge, and losing it does not corrupt the profile — it
+    // makes the organization unfindable, since the EIN is what the widget
+    // matches it across systems by. So every write restates it.
+    const missionChanged: Organization = { ...TEMELIO_SEED, mission: "Something else." };
+
+    expect(toMetadataPatch(TEMELIO_SEED, missionChanged)["ein"]).toBe(AGILE_SIX_EIN);
+
+    // Except when there is nothing to write at all: an empty body is never
+    // sent, so it can clear nothing.
+    expect(toMetadataPatch(TEMELIO_SEED, TEMELIO_SEED)).toEqual({});
   });
 
   it("never clears the EIN, which is what the organization is matched by", () => {

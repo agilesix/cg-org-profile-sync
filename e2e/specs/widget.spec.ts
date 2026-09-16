@@ -1,5 +1,5 @@
 /**
- * The widget itself, driven in a browser against the two running systems.
+ * The widget itself, driven in a browser against the running systems.
  *
  * The API specs already prove the data moves; these prove a person can make it
  * move. That is a different claim, and it is the one the demo is judged on:
@@ -18,6 +18,7 @@ import {
   FUNDERHUB_SEED,
   PORTAL_ORG_ID,
   PORTAL_SEED,
+  TEMELIO_ORG_ID,
 } from "@cg-link/seed";
 import type { Page } from "@playwright/test";
 import { connect, expect, openWidget, test } from "../fixtures.js";
@@ -145,6 +146,33 @@ test("choosing portal's address and syncing turns the row from differs to agree"
 
   await expect(row).toHaveAttribute("data-status", "agree");
   await expect(page.getByTestId("cell-addresses.primary-funderhub")).toContainText(PORTAL_STREET2);
+});
+
+test("a vendor behind an adapter is offered as a target, and takes the push", async ({ page }) => {
+  await openWidget(page);
+  await connect(page, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
+  await connect(page, "funderhub", ADMIN_EMAIL, FUNDERHUB_ORG_ID);
+  await connect(page, "temelio", ADMIN_EMAIL, TEMELIO_ORG_ID);
+
+  const row = page.getByTestId("row-addresses.primary");
+  await expect(row).toHaveAttribute("data-status", "differs");
+
+  await page.getByTestId("pick-addresses.primary-portal").click();
+
+  // Temelio is a checkbox like any other. Nothing on this screen says it is a
+  // proxy over a vendor's own API rather than a system that speaks the
+  // protocol, and nothing should.
+  await expect(page.getByTestId("target-funderhub")).toBeChecked();
+  await expect(page.getByTestId("target-temelio")).toBeChecked();
+
+  await page.getByTestId("sync").click();
+
+  await expect(page.getByTestId("sync-result-temelio")).toHaveAttribute("data-ok", "true");
+  await expect(page.getByTestId("problem")).toHaveCount(0);
+
+  // All three now hold the address the person chose.
+  await expect(row).toHaveAttribute("data-status", "agree");
+  await expect(page.getByTestId("cell-addresses.primary-temelio")).toContainText(PORTAL_STREET2);
 });
 
 test("pushing portal's website reports what funderhub declined, and the row is unchanged", async ({

@@ -1388,6 +1388,16 @@ ticket cut, keep `write: false`, and the Temelio beat is a pull into GrantPortal
      `/__test/reset` refuses in sandbox mode.
 - **Settled by T1**: shallow merge via one POST; a cleared field is sent as `""`, since Temelio
   ignores `null`; the funder cannot rename a grantee.
+- **Found during T4's by-hand run, and folded in**: `ein` is the one key that does _not_ merge — a
+  write naming any other field silently blanks it, after which the grantee cannot be found by EIN
+  at all. `toMetadataPatch` restates `ein` on every non-empty write, with a unit test and the
+  reproduction in the findings file. Every other mapped field survives a single-field write, so
+  this is a narrow quirk rather than a change of model.
+- **Beyond the criteria**: `unwritableFields` is `["name", "orgType"]`, not `["name"]` alone.
+  Temelio has no field for an organization type — its own entity type is a two-value flag and its
+  legal status is free text — so a patch setting `orgType` would otherwise be dropped in silence,
+  which is the exact failure this mechanism exists to convert into a sentence. Not reachable from
+  the widget, since `orgType` is not in `DEMO_FIELDS`; verified by hand against the route.
 - **Edge cases**: the last-write-wins race — someone edits in Temelio's UI between the adapter's
   read and its write, and the adapter overwrites (memo item: the spec should say LWW plainly and
   there is no `If-Match` to lean on); a merge body Temelio accepts with 200 but stores

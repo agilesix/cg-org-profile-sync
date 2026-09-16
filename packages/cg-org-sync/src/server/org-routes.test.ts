@@ -14,7 +14,7 @@ import {
   updateOrg,
   type OrgRoutesConfig,
 } from "./org-routes.js";
-import { MemoryOrgStore, type OrgStore } from "./store.js";
+import { MemoryOrgStore, StoreError, type OrgStore } from "./store.js";
 
 /** The lookup the widget makes when all it knows is an EIN. */
 const einQuery = (ein: string) =>
@@ -148,6 +148,64 @@ describe("listOrgs", () => {
     });
     expect(body.items).toHaveLength(2);
   });
+
+  it("answers 502 with the store's own message and errors when list throws a StoreError", async () => {
+    const store: OrgStore = {
+      list: () => {
+        throw new StoreError("Upstream vendor is unreachable.", {
+          status: 503,
+          errors: ["timeout"],
+        });
+      },
+      read: async () => undefined,
+      write: async () => undefined,
+    };
+
+    const response = await listOrgs(new URL("https://example.com/common-grants/orgs"), {
+      store,
+      source: "portal",
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body.status).toBe(502);
+    expect(body.message).toBe("Upstream vendor is unreachable.");
+    expect(body.errors).toEqual(["timeout"]);
+  });
+
+  it("still produces a well-formed 502 envelope when the StoreError carries no status or errors", async () => {
+    const store: OrgStore = {
+      list: () => {
+        throw new StoreError("Something went wrong upstream.");
+      },
+      read: async () => undefined,
+      write: async () => undefined,
+    };
+
+    const response = await listOrgs(new URL("https://example.com/common-grants/orgs"), {
+      store,
+      source: "portal",
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body.message).toBe("Something went wrong upstream.");
+    expect(body.errors).toEqual([]);
+  });
+
+  it("lets an ordinary Error escape rather than relabelling it as an upstream failure", async () => {
+    const store: OrgStore = {
+      list: () => {
+        throw new Error("Unexpected bug.");
+      },
+      read: async () => undefined,
+      write: async () => undefined,
+    };
+
+    await expect(
+      listOrgs(new URL("https://example.com/common-grants/orgs"), { store, source: "portal" }),
+    ).rejects.toThrow();
+  });
 });
 
 describe("readOrg", () => {
@@ -169,6 +227,23 @@ describe("readOrg", () => {
 
     expect(response.status).toBe(404);
     expect(body.status).toBe(404);
+  });
+
+  it("answers 502 with the store's own message and errors when read throws a StoreError", async () => {
+    const store: OrgStore = {
+      list: async () => [],
+      read: () => {
+        throw new StoreError("Vendor credential expired.", { status: 401 });
+      },
+      write: async () => undefined,
+    };
+
+    const response = await readOrg(PORTAL_ORG_ID, { store, source: "portal" });
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body.message).toBe("Vendor credential expired.");
+    expect(body.errors).toEqual([]);
   });
 });
 
@@ -337,6 +412,53 @@ describe("updateOrg", () => {
     const response = await updateOrg(PORTAL_ORG_ID, request, { store, source: "portal" });
 
     expect(response.status).toBe(404);
+    expect(await backing.read(PORTAL_ORG_ID)).toEqual(PORTAL_SEED);
+  });
+
+  it("answers 502 when the pre-flight read throws a StoreError, before any patch is applied", async () => {
+    const store: OrgStore = {
+      list: async () => [],
+      read: () => {
+        throw new StoreError("Vendor is down.", {
+          status: 503,
+          errors: ["connect ECONNREFUSED"],
+        });
+      },
+      write: async () => undefined,
+    };
+
+    const response = await updateOrg(
+      PORTAL_ORG_ID,
+      patchRequest(PORTAL_ORG_ID, { mission: "A new mission statement." }),
+      { store, source: "portal" },
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body.message).toBe("Vendor is down.");
+    expect(body.errors).toEqual(["connect ECONNREFUSED"]);
+  });
+
+  it("answers 502 when the write throws a StoreError, so the caller learns the change did not land", async () => {
+    const backing = new MemoryOrgStore([PORTAL_SEED]);
+    const store: OrgStore = {
+      list: () => backing.list(),
+      read: (orgId) => backing.read(orgId),
+      write: () => {
+        throw new StoreError("Vendor rejected the write.", { status: 502, errors: ["conflict"] });
+      },
+    };
+
+    const response = await updateOrg(
+      PORTAL_ORG_ID,
+      patchRequest(PORTAL_ORG_ID, { mission: "A new mission statement." }),
+      { store, source: "portal" },
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body.message).toBe("Vendor rejected the write.");
+    expect(body.errors).toEqual(["conflict"]);
     expect(await backing.read(PORTAL_ORG_ID)).toEqual(PORTAL_SEED);
   });
 });

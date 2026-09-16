@@ -17,8 +17,9 @@
  */
 
 import type { Organization } from "@cg-link/org-sync/schemas";
-import type { OrgStore } from "@cg-link/org-sync/server";
-import type { TemelioApi } from "./api.js";
+import { StoreError, type OrgStore } from "@cg-link/org-sync/server";
+import { TemelioApiError, type TemelioApi } from "./api.js";
+import type { TemelioRecord } from "./records.js";
 import { toMetadataPatch, toOrganization } from "./mapping.js";
 
 export interface TemelioOrgStoreOptions {
@@ -66,7 +67,7 @@ export class TemelioOrgStore implements OrgStore {
     const orgs: Organization[] = [];
 
     for (const nonprofitId of this.#allowlist) {
-      const record = await this.#api.read(nonprofitId);
+      const record = await this.#read(nonprofitId);
 
       if (!record) {
         this.#onProblem(
@@ -94,7 +95,7 @@ export class TemelioOrgStore implements OrgStore {
       return undefined;
     }
 
-    const record = await this.#api.read(orgId);
+    const record = await this.#read(orgId);
 
     return record ? toOrganization(record) : undefined;
   }
@@ -115,7 +116,7 @@ export class TemelioOrgStore implements OrgStore {
       return undefined;
     }
 
-    const current = await this.#api.read(org.id);
+    const current = await this.#read(org.id);
 
     if (!current) {
       return undefined;
@@ -129,10 +130,50 @@ export class TemelioOrgStore implements OrgStore {
       return toOrganization(current);
     }
 
-    await this.#api.write(org.id, patch);
+    try {
+      await this.#api.write(org.id, patch);
+    } catch (cause) {
+      rethrowAsStoreError(cause);
+    }
 
-    const stored = await this.#api.read(org.id);
+    const stored = await this.#read(org.id);
 
     return stored ? toOrganization(stored) : undefined;
   }
+
+  /**
+   * Read one record, reporting a vendor failure in the shared vocabulary.
+   *
+   * Every read goes through here so no path can let a `TemelioApiError` escape
+   * as itself: outside this directory nothing knows what Temelio is, and a
+   * route that met one would answer a bare 500 with no envelope at all.
+   */
+  async #read(nonprofitId: string): Promise<TemelioRecord | undefined> {
+    try {
+      return await this.#api.read(nonprofitId);
+    } catch (cause) {
+      rethrowAsStoreError(cause);
+    }
+  }
+}
+
+/**
+ * Rethrow a vendor failure in the vocabulary the shared handlers understand.
+ *
+ * The status and the sentence survive, because both end up in front of
+ * somebody: the widget shows the message in Temelio's column, and the status
+ * is how a reader tells an expired credential from a vendor that is down.
+ * Anything that is not a `TemelioApiError` is rethrown untouched — a bug in
+ * this adapter should surface as a bug, not as a report that the vendor
+ * misbehaved.
+ *
+ * Returns `never`, so a caller writes `rethrowAsStoreError(cause)` and the
+ * compiler knows the path ends there.
+ */
+function rethrowAsStoreError(cause: unknown): never {
+  if (cause instanceof TemelioApiError) {
+    throw new StoreError(cause.message, { status: cause.status, cause });
+  }
+
+  throw cause;
 }

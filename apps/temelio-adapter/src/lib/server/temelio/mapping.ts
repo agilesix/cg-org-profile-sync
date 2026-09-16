@@ -233,6 +233,22 @@ export function toMetadataPatch(before: Organization, after: Organization): Teme
     patch[key] = (wanted as string | undefined) ?? "";
   }
 
+  // Restated on every write, changed or not, because Temelio drops it
+  // otherwise. Verified against the vendor on 2026-09-16: a write naming any
+  // other field leaves that field's value in place and silently blanks `ein` —
+  // it is the one key on this record that does not merge.
+  //
+  // Left as-is when there is nothing to write, since an empty body is never
+  // sent and so can clear nothing.
+  //
+  // This matters more than a stray null would: the EIN is how the widget finds
+  // this organization at all, so losing it does not corrupt the record, it
+  // makes the record invisible. The first push to Temelio would appear to
+  // succeed and the next comparison would show Temelio holding no profile.
+  if (Object.keys(patch).length > 0 && to.ein !== undefined) {
+    patch["ein"] = to.ein;
+  }
+
   return patch;
 }
 
