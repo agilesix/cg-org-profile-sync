@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { OrganizationBaseSchema } from "@cg-link/org-sync/schemas";
-import { AGILE_SIX_EIN, FUNDERHUB_SEED, PORTAL_SEED } from "./agile-six.js";
+import { AGILE_SIX_EIN, FUNDERHUB_SEED, PORTAL_SEED, TEMELIO_SEED } from "./agile-six.js";
 
 const seeds = [
   ["GrantPortal", PORTAL_SEED],
   ["FunderHub", FUNDERHUB_SEED],
+  ["Temelio", TEMELIO_SEED],
 ] as const;
 
 describe("seed profiles", () => {
@@ -20,11 +21,12 @@ describe("seed profiles", () => {
   });
 
   it("gives each system its own record id, as separate systems would", () => {
-    expect(PORTAL_SEED.id).not.toBe(FUNDERHUB_SEED.id);
+    expect(new Set(seeds.map(([, seed]) => seed.id)).size).toBe(seeds.length);
   });
 
   it("agrees on the fields that identify the organization", () => {
     expect(FUNDERHUB_SEED.name).toBe(PORTAL_SEED.name);
+    expect(TEMELIO_SEED.name).toBe(PORTAL_SEED.name);
   });
 
   it("disagrees on the fields the comparison is meant to surface", () => {
@@ -39,5 +41,19 @@ describe("seed profiles", () => {
   it("leaves FunderHub without the fields it does not model", () => {
     expect(FUNDERHUB_SEED.socials).toBeUndefined();
     expect(FUNDERHUB_SEED.yearFounded).toBeUndefined();
+  });
+
+  it("has the two systems that publish a website publish different ones", () => {
+    // FunderHub is absent from this on purpose: it does not model `socials` at
+    // all, and a system holding no value is not a system disagreeing.
+    expect(TEMELIO_SEED.socials?.website).toBeTruthy();
+    expect(TEMELIO_SEED.socials?.website).not.toBe(PORTAL_SEED.socials?.website);
+  });
+
+  it("splits two-to-one on the address, so Temelio sides with FunderHub", () => {
+    expect(TEMELIO_SEED.addresses?.primary.street2).toBe(FUNDERHUB_SEED.addresses?.primary.street2);
+    expect(TEMELIO_SEED.addresses?.primary.street2).not.toBe(
+      PORTAL_SEED.addresses?.primary.street2,
+    );
   });
 });

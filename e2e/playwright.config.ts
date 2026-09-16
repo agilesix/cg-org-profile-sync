@@ -1,5 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
-import { FUNDERHUB_ORIGIN, LINK_ORIGIN, PORTAL_ORIGIN } from "./env.js";
+import { FUNDERHUB_ORIGIN, LINK_ORIGIN, PORTAL_ORIGIN, TEMELIO_ORIGIN } from "./env.js";
 
 const isCI = Boolean(process.env.CI);
 
@@ -61,6 +61,14 @@ export default defineConfig({
     {
       command: "pnpm --filter @cg-link/funderhub dev",
       url: FUNDERHUB_ORIGIN,
+      reuseExistingServer: !isCI,
+      timeout: 120_000,
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+    {
+      command: "pnpm --filter @cg-link/temelio-adapter dev",
+      url: TEMELIO_ORIGIN,
       reuseExistingServer: !isCI,
       timeout: 120_000,
       stdout: "pipe",

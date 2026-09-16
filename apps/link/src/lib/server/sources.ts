@@ -51,6 +51,27 @@ export const SOURCES: readonly SourceConfig[] = [
     // out the Sync button ahead of time.
   },
 
+  {
+    // Not a CommonGrants-native system at all: an adapter in front of a vendor
+    // who has never heard of the protocol, which is the whole reason it is
+    // here. From this registry's point of view that is invisible — same
+    // routes, same flow, one more entry — and that invisibility is the claim
+    // the demo is making.
+    id: "temelio",
+    label: "Temelio",
+    website: "temelio.com",
+    baseUrl: "http://localhost:5175",
+    authorizeUrl: "http://localhost:5175/oauth/authorize",
+    tokenUrl: "http://localhost:5175/token",
+
+    // Writable as of #1190-T4. A push lands as a merge write against the
+    // vendor's own API, which is the point the whole adapter is making: a
+    // system nobody built for this contract can still receive a change through
+    // it. Two fields come back declined — see the adapter's `unwritableFields`
+    // — and the sender is told so rather than left to assume.
+    capabilities: { read: true, write: true },
+  },
+
   // Named, not wired up. Every one of these is a real product, listed the way
   // Plaid lists a bank it has not integrated: the name and the site, and a row
   // that will not start a flow.
@@ -60,7 +81,6 @@ export const SOURCES: readonly SourceConfig[] = [
   // it can never resolve — so a bug that got past `isConnectable` and tried to
   // contact one of these fails immediately and loudly rather than reaching
   // some real company's servers.
-  comingSoon("temelio", "Temelio", "temelio.com"),
   comingSoon("simpler-grants", "SimplerGrants", "simpler.grants.gov"),
   comingSoon("fluxx", "Fluxx", "fluxx.io"),
   comingSoon("submittable", "Submittable", "submittable.com"),

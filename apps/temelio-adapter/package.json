@@ -9,10 +9,13 @@
     "preview": "wrangler dev .svelte-kit/cloudflare/_worker.js --port 5275",
     "prepare": "svelte-kit sync || echo ''",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
     "gen": "wrangler types"
   },
   "dependencies": {
-    "@cg-link/org-sync": "workspace:*"
+    "@cg-link/org-sync": "workspace:*",
+    "@cg-link/seed": "workspace:*",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@sveltejs/adapter-cloudflare": "catalog:",
@@ -22,6 +25,7 @@
     "svelte-check": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
+    "vitest": "catalog:",
     "wrangler": "catalog:"
   }
 }

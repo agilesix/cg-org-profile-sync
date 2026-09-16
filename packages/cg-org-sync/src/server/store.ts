@@ -2,6 +2,44 @@ import type { Organization } from "../schemas/index.js";
 import type { Principal } from "./tokens.js";
 
 /**
+ * A store could not answer, through no fault of the request.
+ *
+ * `MemoryOrgStore` can never throw this, which is exactly why it exists: a
+ * store over somebody else's HTTP API fails in ways an in-memory one has no
+ * concept of — the vendor is down, the credential expired, the far side
+ * answered something unparseable. Without a typed failure those escape the
+ * route as an unhandled exception and the caller gets a bare 500 with no
+ * envelope and no explanation.
+ *
+ * Caught by the shared handlers and turned into a 502: the request was fine,
+ * the system behind this one was not. That distinction is the whole point for
+ * a widget reading several systems at once — a column has to be able to say
+ * "this system could not be reached" in a way nobody could mistake for
+ * agreement or for "no record of you here".
+ *
+ * Deliberately not thrown for a declined write: a store that refuses an org
+ * outside a grant answers `undefined`, which is a decision rather than a
+ * failure and becomes a 404.
+ */
+export class StoreError extends Error {
+  /** The status the system behind this one answered with, if it answered. */
+  readonly status: number | undefined;
+
+  /** Detail to pass through in the error envelope's `errors`. */
+  readonly errors: readonly unknown[];
+
+  constructor(
+    message: string,
+    options: { status?: number; errors?: readonly unknown[]; cause?: unknown } = {},
+  ) {
+    super(message, { cause: options.cause });
+    this.name = "StoreError";
+    this.status = options.status;
+    this.errors = options.errors ?? [];
+  }
+}
+
+/**
  * Where a system keeps its organization profiles.
  *
  * The routes are written against this rather than a database so a system can

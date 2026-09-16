@@ -24,7 +24,7 @@ back. The whole exchange is covered by browser tests.
 grant management systems — the two this demo runs, and others named but not wired up — the way you
 would pick a bank in Plaid.
 
-![The system picker: GrantPortal and FunderHub selectable, five more marked coming soon](docs/screenshots/1-picker.png)
+![The system picker: GrantPortal, FunderHub and Temelio selectable, four more marked coming soon](docs/screenshots/1-picker.png)
 
 **Sign in to each system, on its own terms.** Every system runs its own sign-in and then tells the
 widget which organizations you may act for. You pick one, and that is what the widget works on.
@@ -36,17 +36,28 @@ flagged. A field one system simply does not have shows as a gap, not a conflict.
 system and it is held to the organization you already chose — matched by EIN, since no two systems
 agree on ids.
 
-![The comparison grid: two systems, four fields, the address row flagged as differing](docs/screenshots/3-compare.png)
+![The comparison grid: three systems, four fields, the website and address rows flagged as differing](docs/screenshots/3-compare.png)
 
 **Fix a field everywhere in one click.** Click the value that is right, pick which systems should
 receive it, and sync. Each system gets a JSON Merge Patch that changes only that field.
 
-![After syncing GrantPortal's address to FunderHub, the row agrees and FunderHub reports the change was applied](docs/screenshots/5-synced.png)
+![After syncing GrantPortal's address to both other systems, the row agrees across all three and each target reports separately](docs/screenshots/4-synced.png)
 
 **Find out what a system could not store.** A system that does not model a field accepts the
 change, drops the field, and says so.
 
-![Pushing the website to FunderHub: accepted, with the message that this system does not store socials](docs/screenshots/6-declined.png)
+![Pushing the website: Temelio takes it, FunderHub accepts and reports that it does not store socials](docs/screenshots/5-declined.png)
+
+**Reach a system that never implemented the protocol.** The third system in the picker is Temelio,
+a real grants platform with its own API and no knowledge of CommonGrants. An adapter sits in front
+of it and speaks the contract, so Link treats it as one more entry in a list. A push through the
+widget lands as a write against Temelio's own API, and shows up on the grantee's page there.
+
+Two fields come back declined, and the widget says which: Temelio has no field for an
+organization type, and a funder cannot rename its grantee. That is the honest shape of a vendor
+adapter, and saying so beats reporting a change that did not happen.
+
+![The adapter's own page, in fixture mode, showing the profile it holds after a push](docs/screenshots/6-adapter.png)
 
 **Connect another system without new code.** Every system exposes the same routes, so a third one
 is a config entry, not a feature.
@@ -65,23 +76,27 @@ You need Node 22 or newer and pnpm 11.
 ```bash
 pnpm install
 
-# Each system reads its configuration from a gitignored .env. Copy both:
+# Each system reads its configuration from a gitignored .env. Copy all three:
 cp apps/portal/.env.example apps/portal/.env
 cp apps/funderhub/.env.example apps/funderhub/.env
+cp apps/temelio-adapter/.env.example apps/temelio-adapter/.env
 
 pnpm dev
 ```
 
 Then open **http://localhost:5176** and connect each system. Out of the box they use a stand-in
-sign-in form, so any address works — use `admin@example.org` to see both systems, or
-`portal-only@example.org` to see one system refuse you.
+sign-in form, so any address works — use `admin@example.org` to see all three systems, or
+`portal-only@example.org` to be refused by two of them.
+
+The Temelio adapter runs against an in-memory stand-in for Temelio's API unless you give it a real
+credential, so it needs no vendor account to try. Its landing page says which mode it is in.
 
 | App             | URL                     | What it is                                       |
 | --------------- | ----------------------- | ------------------------------------------------ |
 | Link            | `http://localhost:5176` | The widget. This is the one to open.             |
 | GrantPortal     | `http://localhost:5173` | A system holding the current profile             |
 | FunderHub       | `http://localhost:5174` | A system holding a stale copy, without `socials` |
-| Temelio adapter | `http://localhost:5175` | Placeholder, not built yet                       |
+| Temelio adapter | `http://localhost:5175` | A vendor's API behind the CommonGrants contract  |
 
 Do not skip the `.env` step: a system with no configuration answers 401 to everything. Link needs
 no `.env` — it holds no credentials, and forwards the token each system issues you.
@@ -100,6 +115,21 @@ private keys sitting in git. Generate your own for anything that is not localhos
 | `LINK_ORIGIN`                                 | The only origin it will send an authorization code to           |
 | `DEMO_ADMIN_EMAIL` / `DEMO_PORTAL_ONLY_EMAIL` | Real addresses for the two demo people, if you have them        |
 
+The adapter carries those same variables, plus four of its own:
+
+| Variable in `apps/temelio-adapter/.env` | What it does                                                     |
+| --------------------------------------- | ---------------------------------------------------------------- |
+| `TEMELIO_MODE`                          | `fixture` for the in-memory stand-in, `sandbox` for the real API |
+| `TEMELIO_API_ORIGIN`                    | Where that API lives. Only read in `sandbox` mode                |
+| `TEMELIO_FOUNDATION_ID`                 | The funder account the adapter acts as                           |
+| `TEMELIO_API_TOKEN`                     | That funder's API key                                            |
+| `TEMELIO_ORG_ALLOWLIST`                 | The only records it may read or change, comma-separated          |
+
+The allowlist is not an optimization. `sandbox` mode talks to a live system holding other
+organizations' data, so the adapter refuses to write to anything not named there — and refuses it
+below every route, so no amount of wrong configuration elsewhere can reach a record that is not
+ours.
+
 ### Signing in with Google instead
 
 **The demo runs on the stand-in form, not Google.** Both portals ship set to `IDENTITY_PROVIDER=fake`,
@@ -110,8 +140,9 @@ standing it up is the last ticket in the plan. What follows is what that will ta
 The stand-in form is enough to run and demo everything. To use real Google sign-in, make one
 project in the Google Cloud console with one **Web application** OAuth client:
 
-- Authorized redirect URIs: `http://localhost:5173/oauth/callback` and
-  `http://localhost:5174/oauth/callback` — each portal's own callback, not Link's.
+- Authorized redirect URIs: `http://localhost:5173/oauth/callback`,
+  `http://localhost:5174/oauth/callback` and `http://localhost:5175/oauth/callback` — each
+  system's own callback, not Link's.
 - Scopes: `openid` and `email`. Nothing else is read.
 - Leave the consent screen in **Testing** and add the demo accounts as test users.
 
@@ -134,30 +165,36 @@ lint and formatting for the whole repo.
 
 ## What's in the repo
 
-| Path                   | What it is                                                    |
-| ---------------------- | ------------------------------------------------------------- |
-| `packages/cg-org-sync` | Shared library: schemas, route handlers, client, comparison   |
-| `packages/seed`        | The demo organization's profile, one drifted copy per system  |
-| `apps/portal`          | "GrantPortal", a CommonGrants-native system                   |
-| `apps/funderhub`       | "FunderHub", a second one that does not store every field     |
-| `apps/link`            | The widget                                                    |
-| `apps/temelio-adapter` | Planned proxy over a vendor that has not adopted the protocol |
-| `e2e`                  | Playwright specs that run the real apps                       |
+| Path                   | What it is                                                   |
+| ---------------------- | ------------------------------------------------------------ |
+| `packages/cg-org-sync` | Shared library: schemas, route handlers, client, comparison  |
+| `packages/seed`        | The demo organization's profile, one drifted copy per system |
+| `apps/portal`          | "GrantPortal", a CommonGrants-native system                  |
+| `apps/funderhub`       | "FunderHub", a second one that does not store every field    |
+| `apps/link`            | The widget                                                   |
+| `apps/temelio-adapter` | A proxy putting the contract in front of a vendor's own API  |
+| `e2e`                  | Playwright specs that run the real apps                      |
 
-Storage is in memory, so restarting `pnpm dev` puts every system back to its seed — a stand-in
-with an interface behind it, chosen so the demo shows the data exchange rather than
-infrastructure. Each system signs its own access tokens and publishes the public half, and every
+Storage is in memory for the two native systems, so restarting `pnpm dev` puts them back to their
+seed — a stand-in with an interface behind it, chosen so the demo shows the data exchange rather
+than infrastructure. The adapter is the exception: its records live wherever the vendor keeps
+them, and out of the box that is an in-memory stand-in for the vendor's API so the demo runs with
+no vendor account. Each system signs its own access tokens and publishes the public half, and every
 read and write is scoped to the organizations the caller may touch. Each is also its own sign-in: the
 widget opens on a button, you pick systems from a list and link them one at a time, and each runs
 its own sign-in. A system you have not linked simply says so in its column; the rest still answer.
 
 ## Status and what's next
 
-The two-system exchange works end to end and is pinned by tests, and so is per-organization
+The three-system exchange works end to end and is pinned by tests, and so is per-organization
 access: each system runs its own sign-in flow and issues tokens scoped to what you may touch there.
+The third system is a vendor that never implemented the protocol, reached through an adapter, and
+a push through the widget lands as a write against that vendor's own API — verified by hand
+against their live sandbox as well as by the offline suite.
+
 Sign-in currently goes through a stand-in form rather than Google — see above. Not built yet: real
-Google sign-in, embedding the widget inside a host system, the Temelio adapter, and durable
-storage. The build plan lives outside this repo. Ask Billy for a copy.
+Google sign-in, embedding the widget inside a host system, selecting several fields at once, and
+durable storage. The build plan lives outside this repo. Ask Billy for a copy.
 
 ## License
 

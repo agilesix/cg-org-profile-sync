@@ -103,6 +103,34 @@ function isHeld(value: JsonValue | undefined): value is JsonValue {
 }
 
 /**
+ * Whether two held values are the same value.
+ *
+ * Exported because more than the comparison grid needs it: after a push, the
+ * fan-out asks whether the value a target now holds is the one it was sent,
+ * and an address that came back with its keys in another order must not read
+ * as a different address.
+ *
+ * `null` and `undefined` are one value here, not two. `null` is how this
+ * protocol spells "clear this field" in a merge patch, and `applyMergePatch`
+ * honours that by deleting the key rather than storing `null` — so a target
+ * that clears a field correctly comes back with the key simply absent. A
+ * caller that asked "does the snapshot hold the `null` I sent?" would get
+ * `undefined !== null` and report a successful clear as not applied, which is
+ * the same false "not accepted" this function exists to prevent, just for the
+ * other direction.
+ */
+export function sameJsonValue(a: JsonValue | undefined, b: JsonValue | undefined): boolean {
+  const left = a ?? null;
+  const right = b ?? null;
+
+  if (left === null || right === null) {
+    return left === right;
+  }
+
+  return identityOf(left) === identityOf(right);
+}
+
+/**
  * A string two equal values share and two different values do not.
  *
  * Canonical JSON with object keys sorted, so two systems that serialize the

@@ -616,8 +616,11 @@ describe("syncToTargets", () => {
     );
 
     expect(result.results).toEqual([
-      { id: "portal", ok: true, status: 200, message: "Change applied" },
-      { id: "funderhub", ok: true, status: 200, message: "Change applied" },
+      // FunderHub's snapshot here is `FUNDERHUB_SEED` unchanged, which does not
+      // model `socials` at all — so even though it answered 200, the value
+      // never landed there.
+      { id: "portal", ok: true, status: 200, message: "Change applied", applied: true },
+      { id: "funderhub", ok: true, status: 200, message: "Change applied", applied: false },
     ]);
 
     const portalPatch = calls.find(
@@ -650,7 +653,11 @@ describe("syncToTargets", () => {
       { sources: [FUNDERHUB_SOURCE], tokens, fetch },
     );
 
-    expect(result.results).toEqual([{ id: "funderhub", ok: true, status: 200, message }]);
+    // FunderHub's own message says it did not store `socials`; its snapshot
+    // agrees — `FUNDERHUB_SEED` unchanged holds no `socials` at all.
+    expect(result.results).toEqual([
+      { id: "funderhub", ok: true, status: 200, message, applied: false },
+    ]);
   });
 
   it("skips a target with no resolved org id rather than throwing, while the other target still succeeds", async () => {
@@ -691,13 +698,17 @@ describe("syncToTargets", () => {
     expect(portal?.ok).toBe(false);
     expect(portal?.status).toBeNull();
     expect(portal?.message.length).toBeGreaterThan(0);
+    expect(portal?.applied).toBe(false);
 
+    // FunderHub's snapshot here is `FUNDERHUB_SEED` unchanged, which does not
+    // model `socials` — so it answered 200 but never stored the value.
     const funderhub = result.results.find((entry) => entry.id === "funderhub");
     expect(funderhub).toEqual({
       id: "funderhub",
       ok: true,
       status: 200,
       message: "Change applied",
+      applied: false,
     });
   });
 
@@ -728,7 +739,7 @@ describe("syncToTargets", () => {
     const portalPatches = calls.filter((request) => request.method === "PATCH");
     expect(portalPatches).toHaveLength(1);
     expect(result.results).toEqual([
-      { id: "portal", ok: true, status: 200, message: "Change applied" },
+      { id: "portal", ok: true, status: 200, message: "Change applied", applied: true },
     ]);
   });
 
@@ -753,6 +764,7 @@ describe("syncToTargets", () => {
         ok: false,
         status: null,
         message: "No enabled source is configured with the id temelio.",
+        applied: false,
       },
     ]);
     expect(calls).toHaveLength(0);
@@ -819,13 +831,17 @@ describe("syncToTargets", () => {
     expect(portal?.ok).toBe(false);
     expect(portal?.status).toBeNull();
     expect(portal?.message.toLowerCase()).toContain("connect");
+    expect(portal?.applied).toBe(false);
 
+    // FunderHub's snapshot here is `FUNDERHUB_SEED` unchanged, which does not
+    // model `socials` — so it answered 200 but never stored the value.
     const funderhub = result.results.find((entry) => entry.id === "funderhub");
     expect(funderhub).toEqual({
       id: "funderhub",
       ok: true,
       status: 200,
       message: "Change applied",
+      applied: false,
     });
 
     expect(calls.some((request) => request.url.startsWith("https://portal.example.com"))).toBe(
@@ -864,6 +880,7 @@ describe("syncToTargets and capabilities", () => {
 
     expect(results[0]).toMatchObject({ id: "funderhub", ok: false, status: null });
     expect(results[0]?.message).toContain("does not accept changes");
+    expect(results[0]?.applied).toBe(false);
     expect(calls).toHaveLength(0);
   });
 
@@ -896,5 +913,177 @@ describe("syncToTargets and capabilities", () => {
     );
 
     expect(results[0]).toMatchObject({ id: "funderhub", ok: true });
+  });
+});
+
+describe("syncToTargets and applied", () => {
+  it("reports applied: true when the target's snapshot carries the new value at the changed path", async () => {
+    const value = "https://agile6.com/updated";
+    const mergePatch = buildMergePatch("socials.website", value);
+    const snapshot: Organization = {
+      ...PORTAL_SEED,
+      socials: { ...PORTAL_SEED.socials, website: value },
+    };
+    const fetch = stubFetchByOrigin({
+      "https://portal.example.com": respondByMethod({
+        get: () => listEnvelope([PORTAL_SEED]),
+        patch: () =>
+          revisionEnvelope("Change applied", revision(PORTAL_SOURCE, mergePatch, snapshot)),
+      }),
+    });
+    const tokens = new StaticTokenProvider({ portal: "portal-token" });
+
+    const result = await syncToTargets(
+      {
+        registry: "org:us:ein",
+        id: AGILE_SIX_EIN,
+        path: "socials.website",
+        value,
+        targets: ["portal"],
+      },
+      { sources: [PORTAL_SOURCE], tokens, fetch },
+    );
+
+    expect(result.results).toEqual([
+      { id: "portal", ok: true, status: 200, message: "Change applied", applied: true },
+    ]);
+  });
+
+  it("reports ok: true but applied: false when a target answers 200 without storing the value", async () => {
+    // The FunderHub-declines-`socials` case: it accepts the request and says so,
+    // but its snapshot is its own address, unchanged — the value never landed.
+    const value = PORTAL_SEED.addresses?.primary as JsonObject;
+    const mergePatch = buildMergePatch("addresses.primary", value);
+    const fetch = stubFetchByOrigin({
+      "https://funderhub.example.com": respondByMethod({
+        get: () => listEnvelope([FUNDERHUB_SEED]),
+        patch: () =>
+          revisionEnvelope(
+            "Change applied",
+            revision(FUNDERHUB_SOURCE, mergePatch, FUNDERHUB_SEED),
+          ),
+      }),
+    });
+    const tokens = new StaticTokenProvider({ funderhub: "funderhub-token" });
+
+    const result = await syncToTargets(
+      {
+        registry: "org:us:ein",
+        id: AGILE_SIX_EIN,
+        path: "addresses.primary",
+        value,
+        targets: ["funderhub"],
+      },
+      { sources: [FUNDERHUB_SOURCE], tokens, fetch },
+    );
+
+    expect(result.results).toEqual([
+      { id: "funderhub", ok: true, status: 200, message: "Change applied", applied: false },
+    ]);
+  });
+
+  it("reports applied: true when the snapshot holds the same value with its keys in a different order", async () => {
+    const sentAddress = {
+      street1: "600 B Street",
+      street2: "Suite 300",
+      city: "San Diego",
+      stateOrProvince: "CA",
+      country: "US",
+      postalCode: "92101",
+    };
+    const snapshotAddress = {
+      postalCode: "92101",
+      country: "US",
+      stateOrProvince: "CA",
+      city: "San Diego",
+      street2: "Suite 300",
+      street1: "600 B Street",
+    };
+    const mergePatch = buildMergePatch("addresses.primary", sentAddress);
+    const snapshot: Organization = { ...PORTAL_SEED, addresses: { primary: snapshotAddress } };
+    const fetch = stubFetchByOrigin({
+      "https://portal.example.com": respondByMethod({
+        get: () => listEnvelope([PORTAL_SEED]),
+        patch: () =>
+          revisionEnvelope("Change applied", revision(PORTAL_SOURCE, mergePatch, snapshot)),
+      }),
+    });
+    const tokens = new StaticTokenProvider({ portal: "portal-token" });
+
+    const result = await syncToTargets(
+      {
+        registry: "org:us:ein",
+        id: AGILE_SIX_EIN,
+        path: "addresses.primary",
+        value: sentAddress,
+        targets: ["portal"],
+      },
+      { sources: [PORTAL_SOURCE], tokens, fetch },
+    );
+
+    expect(result.results).toEqual([
+      { id: "portal", ok: true, status: 200, message: "Change applied", applied: true },
+    ]);
+  });
+
+  it("reports applied: true when the sent value clears a field the target now holds nothing for", async () => {
+    // RFC 7396: `null` in a merge patch means "remove this key," and
+    // `applyMergePatch` honours that by deleting it rather than storing
+    // `null`. So a target that clears a field correctly comes back with the
+    // key absent from its snapshot, not carrying `null` — and `applied` has
+    // to read that as the clear succeeding rather than as "nothing happened."
+    const seededWithMission: Organization = { ...PORTAL_SEED, mission: "An old mission." };
+    const mergePatch = buildMergePatch("mission", null);
+    const clearedSnapshot: Organization = { ...seededWithMission };
+    delete clearedSnapshot.mission;
+
+    const fetch = stubFetchByOrigin({
+      "https://portal.example.com": respondByMethod({
+        get: () => listEnvelope([seededWithMission]),
+        patch: () =>
+          revisionEnvelope("Change applied", revision(PORTAL_SOURCE, mergePatch, clearedSnapshot)),
+      }),
+    });
+    const tokens = new StaticTokenProvider({ portal: "portal-token" });
+
+    const result = await syncToTargets(
+      {
+        registry: "org:us:ein",
+        id: AGILE_SIX_EIN,
+        path: "mission",
+        value: null,
+        targets: ["portal"],
+      },
+      { sources: [PORTAL_SOURCE], tokens, fetch },
+    );
+
+    expect(result.results).toEqual([
+      { id: "portal", ok: true, status: 200, message: "Change applied", applied: true },
+    ]);
+  });
+
+  it("reports applied: false when the PATCH itself is refused", async () => {
+    const fetch = stubFetchByOrigin({
+      "https://portal.example.com": respondByMethod({
+        get: () => listEnvelope([PORTAL_SEED]),
+        patch: () => errorEnvelope(500, "GrantPortal had a problem."),
+      }),
+    });
+    const tokens = new StaticTokenProvider({ portal: "portal-token" });
+
+    const result = await syncToTargets(
+      {
+        registry: "org:us:ein",
+        id: AGILE_SIX_EIN,
+        path: "socials.website",
+        value: "https://agile6.com",
+        targets: ["portal"],
+      },
+      { sources: [PORTAL_SOURCE], tokens, fetch },
+    );
+
+    const portal = result.results.find((entry) => entry.id === "portal");
+    expect(portal?.ok).toBe(false);
+    expect(portal?.applied).toBe(false);
   });
 });

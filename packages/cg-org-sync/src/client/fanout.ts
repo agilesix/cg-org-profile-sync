@@ -29,7 +29,9 @@ import {
   buildMergePatch,
   capabilitiesOf,
   compareProfiles,
+  getAtPath,
   isConnectable,
+  sameJsonValue,
   summarizeOrg,
 } from "../utils/index.js";
 import { NotConnectedError, OrgClient, OrgClientError } from "./org-client.js";
@@ -272,6 +274,7 @@ export async function syncToTargets(
         return {
           id,
           ok: false,
+          applied: false,
           status: null,
           message: `No enabled source is configured with the id ${id}.`,
         };
@@ -285,6 +288,7 @@ export async function syncToTargets(
         return {
           id,
           ok: false,
+          applied: false,
           status: null,
           message: `${source.label} does not accept changes.`,
         };
@@ -320,18 +324,26 @@ async function patchOne(
       return {
         id: source.id,
         ok: false,
+        applied: false,
         status: null,
         message: `${source.label} holds no organization matching ${change.registry} ${change.id}, so there was nothing to change.`,
       };
     }
 
-    const { message, status } = await client.patch(org.id, mergePatch);
+    const { revision, message, status } = await client.patch(org.id, mergePatch);
 
-    return { id: source.id, ok: true, status, message };
+    // Read the value back out of what the target says it now holds, rather
+    // than trusting the 200. A system that cannot store a field answers 200
+    // with the field dropped — that is the protocol working as designed, and
+    // it is indistinguishable from a stored change until you look.
+    const applied = sameJsonValue(getAtPath(revision.snapshot, change.path), change.value);
+
+    return { id: source.id, ok: true, applied, status, message };
   } catch (cause) {
     return {
       id: source.id,
       ok: false,
+      applied: false,
       status: cause instanceof OrgClientError ? (cause.status ?? null) : null,
       message: reasonFor(cause, source),
     };

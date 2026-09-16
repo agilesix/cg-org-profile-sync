@@ -26,8 +26,10 @@ test("a spec can move funderhub off its seed", async ({ api }) => {
     targets: ["funderhub"],
   });
 
+  // Asserted on funderhub's own value rather than on the row agreeing: a third
+  // system holds the old address too, so the row still differs after this and
+  // that has nothing to do with whether the write landed.
   const after = rowFor(await api.compare(), "addresses.primary");
-  expect(after.status).toBe("agree");
   expect(valueHeldBy(after, "funderhub")).toEqual(PORTAL_SEED.addresses?.primary);
 });
 

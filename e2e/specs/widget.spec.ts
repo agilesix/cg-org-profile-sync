@@ -1,5 +1,5 @@
 /**
- * The widget itself, driven in a browser against the two running systems.
+ * The widget itself, driven in a browser against the running systems.
  *
  * The API specs already prove the data moves; these prove a person can make it
  * move. That is a different claim, and it is the one the demo is judged on:
@@ -18,6 +18,7 @@ import {
   FUNDERHUB_SEED,
   PORTAL_ORG_ID,
   PORTAL_SEED,
+  TEMELIO_ORG_ID,
 } from "@cg-link/seed";
 import type { Page } from "@playwright/test";
 import { connect, expect, openWidget, test } from "../fixtures.js";
@@ -137,6 +138,8 @@ test("choosing portal's address and syncing turns the row from differs to agree"
 
   const result = page.getByTestId("sync-result-funderhub");
   await expect(result).toHaveAttribute("data-ok", "true");
+  await expect(result).toHaveAttribute("data-applied", "true");
+  await expect(result).toContainText("accepted");
 
   // A result line is only published once the grid behind it has been re-read,
   // and a re-read that failed would say so here. Without this the next two
@@ -147,6 +150,33 @@ test("choosing portal's address and syncing turns the row from differs to agree"
   await expect(page.getByTestId("cell-addresses.primary-funderhub")).toContainText(PORTAL_STREET2);
 });
 
+test("a vendor behind an adapter is offered as a target, and takes the push", async ({ page }) => {
+  await openWidget(page);
+  await connect(page, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
+  await connect(page, "funderhub", ADMIN_EMAIL, FUNDERHUB_ORG_ID);
+  await connect(page, "temelio", ADMIN_EMAIL, TEMELIO_ORG_ID);
+
+  const row = page.getByTestId("row-addresses.primary");
+  await expect(row).toHaveAttribute("data-status", "differs");
+
+  await page.getByTestId("pick-addresses.primary-portal").click();
+
+  // Temelio is a checkbox like any other. Nothing on this screen says it is a
+  // proxy over a vendor's own API rather than a system that speaks the
+  // protocol, and nothing should.
+  await expect(page.getByTestId("target-funderhub")).toBeChecked();
+  await expect(page.getByTestId("target-temelio")).toBeChecked();
+
+  await page.getByTestId("sync").click();
+
+  await expect(page.getByTestId("sync-result-temelio")).toHaveAttribute("data-ok", "true");
+  await expect(page.getByTestId("problem")).toHaveCount(0);
+
+  // All three now hold the address the person chose.
+  await expect(row).toHaveAttribute("data-status", "agree");
+  await expect(page.getByTestId("cell-addresses.primary-temelio")).toContainText(PORTAL_STREET2);
+});
+
 test("pushing portal's website reports what funderhub declined, and the row is unchanged", async ({
   page,
 }) => {
@@ -155,12 +185,16 @@ test("pushing portal's website reports what funderhub declined, and the row is u
   await page.getByTestId("pick-socials.website-portal").click();
   await page.getByTestId("sync").click();
 
-  // Accepted, not rejected: FunderHub applied what it could and said what it
-  // dropped. That sentence is the only place the sender learns the value went
-  // no further, so it has to reach the screen verbatim.
+  // The request succeeded and the change went nowhere, which are different
+  // things and have to read differently. FunderHub answered 200 — this is the
+  // protocol working as designed, not a failure — but it stored none of what
+  // was sent, so the line says NOT ACCEPTED rather than showing a tick for a
+  // change that never happened.
   const result = page.getByTestId("sync-result-funderhub");
   await expect(result).toHaveAttribute("data-ok", "true");
-  await expect(result).toContainText("does not store");
+  await expect(result).toHaveAttribute("data-applied", "false");
+  await expect(result).toContainText("not accepted");
+  await expect(result).toContainText("Change not applied because this system does not store");
   await expect(result).toContainText("socials");
 
   // "The row is unchanged" is exactly what a failed re-read would also show,

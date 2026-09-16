@@ -6,16 +6,16 @@ the `curl` block, and what to say while it runs. Everything assumes `pnpm dev` i
 
 ## The click path
 
-About two minutes. Everything is at `http://localhost:5176`.
+About three minutes. Everything is at `http://localhost:5176`, except the last step.
 
 1. **Open Link.** It opens on a title and one button: **Link Grant Management System**. No data,
    no systems, no fields. Link holds no credentials of its own, so there is nothing for it to read
    until you have linked something — which is the honest version of the Plaid screen everyone
    already recognises.
 2. **Open the picker.** Click the button. The modal lists seven grant management systems, each with
-   its name and site: GrantPortal and FunderHub, then Temelio, SimplerGrants, Fluxx, Submittable
+   its name and site: GrantPortal, FunderHub and Temelio, then SimplerGrants, Fluxx, Submittable
    and Foundant GLM marked **Coming soon**. Worth saying out loud that the list is configuration —
-   the five stubs are entries in a registry, not code — and that clicking one does nothing on
+   the four stubs are entries in a registry, not code — and that clicking one does nothing on
    purpose. There is a search box if you want to show it.
 3. **Link GrantPortal** as `admin@example.org`. Picking it opens a sign-in step; **Continue with
    Google** opens GrantPortal's own window. Sign in, and the modal comes back with **Select your
@@ -27,23 +27,35 @@ About two minutes. Everything is at `http://localhost:5176`.
    greyed and says **Different organization**. You link one organization at a time, so the second
    system is held to the first system's answer — and FunderHub's own ids are different, which is
    exactly why the match is on the EIN rather than an id.
-5. **Read the grid.** One column per system, one row per compared field. Three rows agree. The
-   **Primary address** row is marked as differing: GrantPortal says Suite 300, FunderHub says Suite 210. The **Website** row shows a value under GrantPortal and nothing under FunderHub. That is a
-   gap, not a conflict, so the row is not flagged.
-6. **Fix the address.** Click GrantPortal's address to choose it. The panel echoes the pick, and
-   FunderHub is pre-selected as the target (the system a value came from is never offered, since it
-   already holds it). Click **Sync**. FunderHub answers "accepted", the grid re-reads both systems,
-   and the address row now agrees on Suite 300.
-7. **Push the website.** Click GrantPortal's website, then **Sync**. FunderHub still answers
-   "accepted", but its message reads "This system does not store socials." The patch was applied,
-   the field was dropped, and the sender was told so. The grid re-reads and the website row is
-   unchanged: FunderHub still holds nothing.
-8. **The beat worth ending on.** Open a new tab at `http://localhost:5176` — tokens and the linked
-   organization live for the tab, so this one starts empty — and link as `portal-only@example.org`.
-   GrantPortal signs them in and offers them one organization, which is what a real applicant looks
-   like. Then link FunderHub as the same person: it signs them in and answers **No organization on
-   FunderHub for that account**. Same widget, same person, two answers, because each system decides
-   for itself. Nothing is broken, and the comparison still shows what GrantPortal holds.
+5. **Link Temelio** as the same person. This is the one to slow down for. Temelio is a real grants
+   platform that has never heard of CommonGrants — what is behind this row is an adapter speaking
+   the contract on its behalf. Nothing in the flow gives that away: the same sign-in, the same
+   organization step, the same lock to the organization already linked.
+6. **Read the grid.** One column per system, one row per compared field. Two rows agree. The
+   **Primary address** row is marked as differing: GrantPortal says Suite 300, while FunderHub and
+   Temelio both say Suite 210 — so the system holding the current address is the one outnumbered.
+   The **Website** row differs too: GrantPortal has `https://agile6.com`, Temelio still has the old
+   `http://www.agile6.com`, and FunderHub has nothing at all. That last one is a gap, not a
+   conflict, and does not count as a third opinion.
+7. **Fix the address everywhere.** Click GrantPortal's address to choose it. The panel echoes the
+   pick, and both other systems are pre-selected as targets (the system a value came from is never
+   offered, since it already holds it). Click **Sync**. Each target answers separately, the grid
+   re-reads all three, and the address row agrees on Suite 300. One patch went to a system that
+   implements the protocol and to one that does not, and the screen cannot tell them apart.
+8. **Push the website.** Click GrantPortal's website, then **Sync**. Temelio takes it. FunderHub
+   also answers "accepted", but its message reads "This system does not store socials." The patch
+   was applied, the field was dropped, and the sender was told so. The grid re-reads: the website
+   now agrees between GrantPortal and Temelio, and FunderHub still holds nothing.
+9. **Show it landed on the other side.** Open http://localhost:5175 — the adapter's own page lists
+   what it currently holds, re-read on every load, so the new address and website are there. When
+   the adapter is pointed at the real Temelio instead of its stand-in, that page links straight to
+   the grantee's record in Temelio's own interface, and the change is visible there.
+10. **The beat worth ending on.** Open a new tab at `http://localhost:5176` — tokens and the linked
+    organization live for the tab, so this one starts empty — and link as `portal-only@example.org`.
+    GrantPortal signs them in and offers them one organization, which is what a real applicant looks
+    like. Then link FunderHub as the same person: it signs them in and answers **No organization on
+    FunderHub for that account**. Same widget, same person, two answers, because each system decides
+    for itself. Nothing is broken, and the comparison still shows what GrantPortal holds.
 
 **Optional, if someone asks what happens with a system that has never heard of you.** Start a fresh
 tab and link **Tallgrass Literacy Project** on GrantPortal instead of Agile Six — FunderHub does not
@@ -87,6 +99,7 @@ seeded ones.
 ```bash
 PORTAL_TOKEN=portal-local-placeholder-change-me
 FUNDERHUB_TOKEN=funderhub-local-placeholder-change-me
+TEMELIO_TOKEN=temelio-local-placeholder-change-me
 
 # Find the org by EIN on each system. Both hold it under a different id.
 curl -s "http://localhost:5173/common-grants/orgs?registry=org:us:ein&id=123456789" \
@@ -136,53 +149,42 @@ curl -s http://localhost:5174/.well-known/jwks.json
 
 # Put a system back to its seed. 204 with ENABLE_TEST_ROUTES=true, 404 without.
 curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:5174/__test/reset
+
+# The Temelio adapter answers the same three routes, over a vendor that has
+# never heard of CommonGrants. Its id for the org is Temelio's own.
+curl -s "http://localhost:5175/common-grants/orgs?registry=org:us:ein&id=123456789" \
+  -H "Authorization: Bearer $TEMELIO_TOKEN"
+
+# Its reset only exists against the in-memory stand-in. In sandbox mode it
+# answers 409: those records live in a system shared with other people.
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:5175/__test/reset
 ```
 
-### Minting a token by hand
+### Putting Temelio back by hand
 
-The flow the Connect button runs, one hop at a time — useful when something is off and you want to
-know which hop broke. Assumes `IDENTITY_PROVIDER=fake`; against Google the middle hop is a browser
-sign-in rather than a URL you can curl.
+Only needed when the adapter is in `sandbox` mode, where there is no reset route to call: those
+records live in a system shared with other people. After a demo has pushed a value to Temelio, the
+record has to be returned to the drift the demo starts from.
+
+The quickest way is through the adapter itself, which is the same path the demo used — push the
+old value back:
 
 ```bash
-# 1. Link starts the flow: a PKCE verifier into a cookie jar, a redirect to the portal.
-curl -s -c /tmp/link-jar -o /dev/null -D - \
-  'http://localhost:5176/api/connect/start?source=portal' | grep -i '^location'
+TEMELIO_TOKEN=temelio-local-placeholder-change-me
+ORG=$(curl -s "http://localhost:5175/common-grants/orgs?registry=org:us:ein&id=123456789" \
+  -H "Authorization: Bearer $TEMELIO_TOKEN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["items"][0]["id"])')
 
-# 2. Follow that location. The portal's /oauth/authorize redirects on to its own sign-in page,
-#    carrying a signed state. Submitting the form is a GET the state travels on:
-#      http://localhost:5173/oauth/callback?state=<state>&email=admin@example.org
-#    which redirects back to Link with ?code=<code>&state=<...>.
-
-# 3. Link exchanges the code for the portal's token. Ask for JSON to see it:
-curl -s -b /tmp/link-jar -H 'Accept: application/json' \
-  'http://localhost:5176/connect/callback?code=<code>&state=<state>'
-
-# 4. That token works at the system that issued it, and nowhere else:
-curl -s -o /dev/null -w '%{http_code}\n' http://localhost:5173/common-grants/orgs \
-  -H "Authorization: Bearer $TOKEN"   # 200
-curl -s -o /dev/null -w '%{http_code}\n' http://localhost:5174/common-grants/orgs \
-  -H "Authorization: Bearer $TOKEN"   # 401 — minted for another audience
+curl -s -X PATCH "http://localhost:5175/common-grants/orgs/$ORG" \
+  -H "Authorization: Bearer $TEMELIO_TOKEN" \
+  -H 'content-type: application/merge-patch+json' \
+  -d '{"socials":{"website":"http://www.agile6.com"},
+       "addresses":{"primary":{"street1":"600 B Street","street2":"Suite 210","city":"San Diego",
+                               "stateOrProvince":"CA","country":"US","postalCode":"92101"}}}'
 ```
 
-`e2e/fixtures.ts`'s `connectViaApi` drives exactly these hops, if you would rather read it than
-type it.
-
-Link's own two routes are unauthenticated. The tokens only matter server-side, between Link and
-the systems:
-
-```bash
-# Every system's copy of the four demo fields, side by side.
-curl -s "http://localhost:5176/api/compare?registry=org:us:ein&id=123456789"
-
-# Push one value to the named targets. Each target answers separately.
-curl -s -X POST http://localhost:5176/api/sync \
-  -H "Content-Type: application/json" \
-  -d '{"registry":"org:us:ein","id":"123456789","path":"addresses.primary",
-       "value":{"street1":"600 B Street","street2":"Suite 300","city":"San Diego",
-                "stateOrProvince":"CA","country":"US","postalCode":"92101"},
-       "targets":["funderhub"]}'
-```
+Going straight at the vendor's own API works too, and is sometimes what you want when the adapter
+is the thing under suspicion. Those endpoint shapes are in the internal spec and in the adapter's
+gitignored findings file, not here.
 
 ## If something is off
 
@@ -195,6 +197,16 @@ curl -s -X POST http://localhost:5176/api/sync \
 - **A port is taken**: every app sets `strictPort`, so the dev server fails instead of moving. To
   move one, change the port together in the app's `vite.config.ts`, Link's registry in
   `apps/link/src/lib/server/sources.ts`, and the Playwright origins in `e2e/env.ts`.
+- **Temelio's column is showing the wrong thing, or the demo is not proving what you think**:
+  check which mode the adapter is in. Its landing page at http://localhost:5175 says so, and so
+  does one line in its server log at start-up. `fixture` is an in-memory stand-in and never
+  contacts the vendor; `sandbox` is the real thing.
+- **Temelio answers 502**: the vendor refused or could not be reached, and the message carries what
+  it said. An expired `TEMELIO_API_TOKEN` is the usual cause — it is a foundation API key, and
+  revoking one on the vendor's own settings page takes effect immediately.
+- **A push to Temelio reports that `name` was not stored**: that is correct and not a fault. A
+  funder cannot rename a grantee through the vendor's API, so the adapter drops the field and says
+  so rather than reporting a change that did not happen.
 - **The grid shows something the code does not explain**: check what is actually listening on
   5173, 5174 and 5176. A `pnpm dev` from another checkout of this repo serves that branch's code
   on the same ports, and both `pnpm e2e` and your browser will happily talk to it.

@@ -1,8 +1,8 @@
 import { OrgPatchDataSchema, OrganizationBaseSchema, type Organization } from "../schemas/index.js";
 import type { JsonObject, JsonValue } from "../types.js";
 import { MERGE_PATCH_CONTENT_TYPE, applyMergePatch } from "../utils/merge-patch.js";
-import { badRequest, notFound, ok, paginated, unsupportedMediaType } from "./responses.js";
-import type { OrgStore } from "./store.js";
+import { badRequest, failure, notFound, ok, paginated, unsupportedMediaType } from "./responses.js";
+import { StoreError, type OrgStore } from "./store.js";
 
 export { MERGE_PATCH_CONTENT_TYPE };
 
@@ -37,6 +37,10 @@ export interface OrgRoutesConfig {
  * which is how a client that only knows an EIN finds the system's own UUID.
  */
 export async function listOrgs(url: URL, config: OrgRoutesConfig): Promise<Response> {
+  return reportingStoreFailure(() => listOrgsFrom(url, config));
+}
+
+async function listOrgsFrom(url: URL, config: OrgRoutesConfig): Promise<Response> {
   const page = positiveInt(url.searchParams.get("page"), 1);
   const pageSize = positiveInt(url.searchParams.get("pageSize"), DEFAULT_PAGE_SIZE);
 
@@ -60,9 +64,11 @@ export async function listOrgs(url: URL, config: OrgRoutesConfig): Promise<Respo
 
 /** `GET /common-grants/orgs/{orgId}` */
 export async function readOrg(orgId: string, config: OrgRoutesConfig): Promise<Response> {
-  const org = await config.store.read(orgId);
+  return reportingStoreFailure(async () => {
+    const org = await config.store.read(orgId);
 
-  return org ? ok(org) : notFound(`No organization with id ${orgId}.`);
+    return org ? ok(org) : notFound(`No organization with id ${orgId}.`);
+  });
 }
 
 /**
@@ -76,6 +82,14 @@ export async function readOrg(orgId: string, config: OrgRoutesConfig): Promise<R
  * a dropped field programmatically, rather than parsing it out of `message`.
  */
 export async function updateOrg(
+  orgId: string,
+  request: Request,
+  config: OrgRoutesConfig,
+): Promise<Response> {
+  return reportingStoreFailure(() => applyPatch(orgId, request, config));
+}
+
+async function applyPatch(
   orgId: string,
   request: Request,
   config: OrgRoutesConfig,
@@ -152,10 +166,29 @@ export async function updateOrg(
       createdAt: now,
       lastModifiedAt: now,
     },
-    skipped.length === 0
-      ? "Change applied"
-      : `Change applied. This system does not store ${skipped.join(", ")}.`,
+    changeMessage(patch, skipped),
   );
+}
+
+/**
+ * Turn a store that could not answer into a 502, and nothing else into
+ * anything.
+ *
+ * Only `StoreError` is caught. A blanket catch here would be worse than no
+ * catch at all: a genuine bug in this library would come back to the caller
+ * dressed as an upstream vendor failure, which is a sentence that sends
+ * somebody to check a system that was working fine.
+ */
+async function reportingStoreFailure(work: () => Promise<Response>): Promise<Response> {
+  try {
+    return await work();
+  } catch (cause) {
+    if (cause instanceof StoreError) {
+      return failure(502, cause.message, [...cause.errors]);
+    }
+
+    throw cause;
+  }
 }
 
 /** True when the org carries `id` in the named registry, active values only. */
@@ -168,6 +201,30 @@ function hasIdentifier(org: Organization, registry: string, id: string): boolean
   if (entry.id === id) return true;
 
   return (entry.allIds ?? []).some((value) => value.id === id && value.status === "active");
+}
+
+/**
+ * What to tell the sender about a change that was partly or wholly declined.
+ *
+ * "Change applied" is a lie when every field in the patch was dropped: nothing
+ * was applied, and a sender reading that sentence believes their value is
+ * stored here when this system holds none of it. A client that shows the
+ * message next to a green tick — which is the obvious thing to build — then
+ * reports success for a change that never happened.
+ *
+ * So the lead sentence follows what actually happened, and the explanation
+ * stays the same either way, because the reason is the same either way.
+ */
+function changeMessage(applied: JsonObject, skipped: readonly string[]): string {
+  if (skipped.length === 0) {
+    return "Change applied";
+  }
+
+  const fields = skipped.join(", ");
+
+  return Object.keys(applied).length === 0
+    ? `Change not applied because this system does not store ${fields}.`
+    : `Change applied. This system does not store ${fields}.`;
 }
 
 /** Remove fields this system declines to store, and report which were dropped. */

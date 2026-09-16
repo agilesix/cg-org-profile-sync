@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Organization } from "../schemas/index.js";
 import type { JsonObject } from "../types.js";
-import { buildMergePatch, compareProfiles, DEMO_FIELDS, getAtPath } from "./compare.js";
+import {
+  buildMergePatch,
+  compareProfiles,
+  DEMO_FIELDS,
+  getAtPath,
+  sameJsonValue,
+} from "./compare.js";
 import { applyMergePatch } from "./merge-patch.js";
 
 describe("compareProfiles", () => {
@@ -227,5 +233,43 @@ describe("buildMergePatch", () => {
       name: "Agile Six Applications, Inc.",
       socials: { linkedin: "https://linkedin.test/agilesix" },
     });
+  });
+});
+
+describe("sameJsonValue", () => {
+  it("treats equal primitives and objects as the same value", () => {
+    expect(sameJsonValue("a", "a")).toBe(true);
+    expect(sameJsonValue({ a: 1, b: 2 }, { b: 2, a: 1 })).toBe(true);
+  });
+
+  it("treats different values as different", () => {
+    expect(sameJsonValue("a", "b")).toBe(false);
+    expect(sameJsonValue({ a: 1 }, { a: 2 })).toBe(false);
+  });
+
+  it("treats a cleared field and an absent one as the same value", () => {
+    // This is the case that mattered: a merge patch clears a field by setting
+    // it to `null`, and `applyMergePatch` honours that by deleting the key
+    // rather than storing `null` — so a target that clears a field correctly
+    // comes back with the key absent, i.e. `undefined`, not `null`. Reading
+    // this the other way — that a store snapshot must literally carry `null`
+    // to count as "cleared" — would report a successful clear as a failure.
+    expect(sameJsonValue(undefined, null)).toBe(true);
+    expect(sameJsonValue(null, undefined)).toBe(true);
+    expect(sameJsonValue(undefined, undefined)).toBe(true);
+    expect(sameJsonValue(null, null)).toBe(true);
+  });
+
+  it("still tells a real value apart from an absent or cleared one", () => {
+    expect(sameJsonValue("https://agile6.com", undefined)).toBe(false);
+    expect(sameJsonValue("https://agile6.com", null)).toBe(false);
+    expect(sameJsonValue(undefined, "https://agile6.com")).toBe(false);
+  });
+
+  it("ignores key order when comparing objects", () => {
+    const address1 = { street1: "600 B Street", city: "San Diego" };
+    const address2 = { city: "San Diego", street1: "600 B Street" };
+
+    expect(sameJsonValue(address1, address2)).toBe(true);
   });
 });

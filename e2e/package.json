@@ -8,6 +8,7 @@
   "scripts": {
     "check": "tsc --noEmit",
     "e2e": "playwright test",
+    "capture": "playwright test --config playwright.capture.config.ts",
     "install-browsers": "playwright install chromium"
   },
   "devDependencies": {

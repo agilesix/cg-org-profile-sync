@@ -175,6 +175,7 @@ export const test = base.extend<{ api: LinkApi }>({
         new LinkApi(request, {
           portal: await tokenFor(request, "portal", ADMIN_EMAIL),
           funderhub: await tokenFor(request, "funderhub", ADMIN_EMAIL),
+          temelio: await tokenFor(request, "temelio", ADMIN_EMAIL),
         }),
       );
     },

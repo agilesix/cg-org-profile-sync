@@ -1,5 +1,5 @@
 import type { Organization } from "@cg-link/org-sync/schemas";
-import { FUNDERHUB_SEED, PORTAL_SEED } from "./agile-six.js";
+import { FUNDERHUB_SEED, PORTAL_SEED, TEMELIO_SEED } from "./agile-six.js";
 
 /**
  * The other organizations each system holds, so the picker has a choice in it.
@@ -141,3 +141,14 @@ export const PORTAL_SEEDS: readonly Organization[] = [PORTAL_SEED, ...PORTAL_OTH
  * GrantPortal and nowhere else.
  */
 export const FUNDERHUB_SEEDS: readonly Organization[] = [FUNDERHUB_SEED, ...FUNDERHUB_OTHER_SEEDS];
+
+/**
+ * Everything Temelio holds: Agile Six and nothing else.
+ *
+ * A list of one, and deliberately not padded out to match the other two. The
+ * adapter's universe is whatever `TEMELIO_ORG_ALLOWLIST` names, so in sandbox
+ * mode this constant does not decide anything — it is the fixture's seed, and
+ * the fixture stands in for a shared external system we are guests on. Adding
+ * invented orgs here would mean inventing them in Temelio's database too.
+ */
+export const TEMELIO_SEEDS: readonly Organization[] = [TEMELIO_SEED];

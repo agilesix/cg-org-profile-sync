@@ -18,7 +18,7 @@ import { ADMIN_EMAIL, PORTAL_ONLY_ORG } from "../env.js";
 import { connect, expect, openWidget, signInVia, test } from "../fixtures.js";
 
 /** Every system the picker names but this demo cannot connect. */
-const COMING_SOON = ["temelio", "simpler-grants", "fluxx", "submittable", "foundant"] as const;
+const COMING_SOON = ["simpler-grants", "fluxx", "submittable", "foundant"] as const;
 
 test("linking two systems, from an empty widget to a comparison", async ({ page }) => {
   await openWidget(page);
@@ -31,9 +31,10 @@ test("linking two systems, from an empty widget to a comparison", async ({ page 
 
   await page.getByTestId("link-system").click();
 
-  // Seven systems: the two this demo runs, and five it only names.
+  // Seven systems: the three this demo runs, and four it only names.
   await expect(page.getByTestId("pick-system-portal")).toBeVisible();
   await expect(page.getByTestId("pick-system-funderhub")).toBeVisible();
+  await expect(page.getByTestId("pick-system-temelio")).toBeVisible();
 
   for (const id of COMING_SOON) {
     await expect(page.getByTestId(`system-soon-${id}`)).toContainText("Coming soon");
@@ -42,7 +43,7 @@ test("linking two systems, from an empty widget to a comparison", async ({ page 
   }
 
   // A stub row goes nowhere: clicking it leaves the picker exactly as it was.
-  await page.getByTestId("system-soon-temelio").click();
+  await page.getByTestId("system-soon-simpler-grants").click();
   await expect(page.getByTestId("pick-system-portal")).toBeVisible();
   await expect(page.getByTestId("continue-with-google")).toHaveCount(0);
 

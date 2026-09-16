@@ -16,6 +16,9 @@ export const PORTAL_ORIGIN = "http://localhost:5173";
 /** FunderHub: the partial-coverage system, a suite number behind. */
 export const FUNDERHUB_ORIGIN = "http://localhost:5174";
 
+/** Temelio: a vendor behind a CommonGrants adapter, running on its in-memory stand-in. */
+export const TEMELIO_ORIGIN = "http://localhost:5175";
+
 /** Link: the widget, and the only thing the specs make assertions against. */
 export const LINK_ORIGIN = "http://localhost:5176";
 
@@ -27,6 +30,11 @@ export const LINK_ORIGIN = "http://localhost:5176";
 export const SYSTEM_ORIGINS: Readonly<Record<string, string>> = {
   portal: PORTAL_ORIGIN,
   funderhub: FUNDERHUB_ORIGIN,
+
+  // The adapter resets its in-memory stand-in for Temelio. In sandbox mode it
+  // refuses instead, with a sentence naming the mode — so a suite pointed at
+  // the real vendor fails at the fixture rather than somewhere downstream.
+  temelio: TEMELIO_ORIGIN,
 };
 
 /**

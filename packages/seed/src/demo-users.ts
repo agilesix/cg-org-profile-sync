@@ -93,17 +93,46 @@ export function demoUsers(
  * system — "no record of you here" and "you may touch nothing here" are the
  * same answer to a store that is about to filter by it.
  *
- * Matched case-insensitively: an identity provider may hand back `Admin@…` for
- * someone seeded as `admin@…`, and a case-sensitive lookup would read that as
- * a different person and silently strip their access.
+ * Matched case-insensitively — see `find`.
  */
 export function grantsFor(
   systemId: string,
   email: string,
   users: readonly DemoUser[] = DEMO_USERS,
 ): readonly string[] {
-  const normalized = email.toLowerCase();
-  const user = users.find((candidate) => candidate.email.toLowerCase() === normalized);
+  return find(email, users)?.grants[systemId] ?? [];
+}
 
-  return user?.grants[systemId] ?? [];
+/**
+ * Which of the demo's people `email` is, if any.
+ *
+ * The coarser question `grantsFor` cannot answer for every system. A system
+ * whose org ids come from its own environment — the Temelio adapter, whose
+ * grantees are whatever that foundation holds — has no way to look itself up
+ * in a seed that has never heard of those ids. It can only ask who this is,
+ * and decide for itself what that person may touch.
+ *
+ * `undefined` for anyone unknown, which is the answer that matters most: a
+ * stranger must come back as nobody rather than as whoever the list starts
+ * with.
+ */
+export function roleFor(
+  email: string,
+  users: readonly DemoUser[] = DEMO_USERS,
+): DemoRole | undefined {
+  return find(email, users)?.role;
+}
+
+/**
+ * One demo user by address, matched case-insensitively.
+ *
+ * An identity provider may hand back `Admin@…` for someone seeded as
+ * `admin@…`, and a case-sensitive lookup would read that as a different person
+ * and silently strip their access. Shared by both lookups so they cannot come
+ * to disagree about who somebody is.
+ */
+function find(email: string, users: readonly DemoUser[]): DemoUser | undefined {
+  const normalized = email.toLowerCase();
+
+  return users.find((candidate) => candidate.email.toLowerCase() === normalized);
 }
