@@ -1410,7 +1410,7 @@ ticket cut, keep `write: false`, and the Temelio beat is a pull into GrantPortal
   means a one-line address change ships the whole address, which is the read-modify-write in
   miniature and has the same last-write-wins window. Said in the memo.
 
-### #1190-T5: Prove it end to end, and tell the story
+### #1190-T5: [✓] Prove it end to end, and tell the story
 
 Depends on: #1190-T3 for the reads and, if it lands, #1190-T4 for the push.
 
