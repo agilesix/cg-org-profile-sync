@@ -24,7 +24,7 @@ back. The whole exchange is covered by browser tests.
 grant management systems — the two this demo runs, and others named but not wired up — the way you
 would pick a bank in Plaid.
 
-![The system picker: GrantPortal and FunderHub selectable, five more marked coming soon](docs/screenshots/1-picker.png)
+![The system picker: GrantPortal, FunderHub and Temelio selectable, four more marked coming soon](docs/screenshots/1-picker.png)
 
 **Sign in to each system, on its own terms.** Every system runs its own sign-in and then tells the
 widget which organizations you may act for. You pick one, and that is what the widget works on.
@@ -36,17 +36,17 @@ flagged. A field one system simply does not have shows as a gap, not a conflict.
 system and it is held to the organization you already chose — matched by EIN, since no two systems
 agree on ids.
 
-![The comparison grid: two systems, four fields, the address row flagged as differing](docs/screenshots/3-compare.png)
+![The comparison grid: three systems, four fields, the website and address rows flagged as differing](docs/screenshots/3-compare.png)
 
 **Fix a field everywhere in one click.** Click the value that is right, pick which systems should
 receive it, and sync. Each system gets a JSON Merge Patch that changes only that field.
 
-![After syncing GrantPortal's address to FunderHub, the row agrees and FunderHub reports the change was applied](docs/screenshots/5-synced.png)
+![After syncing GrantPortal's address to both other systems, the row agrees across all three and each target reports separately](docs/screenshots/4-synced.png)
 
 **Find out what a system could not store.** A system that does not model a field accepts the
 change, drops the field, and says so.
 
-![Pushing the website to FunderHub: accepted, with the message that this system does not store socials](docs/screenshots/6-declined.png)
+![Pushing the website: Temelio takes it, FunderHub accepts and reports that it does not store socials](docs/screenshots/5-declined.png)
 
 **Reach a system that never implemented the protocol.** The third system in the picker is Temelio,
 a real grants platform with its own API and no knowledge of CommonGrants. An adapter sits in front
@@ -56,6 +56,8 @@ widget lands as a write against Temelio's own API, and shows up on the grantee's
 Two fields come back declined, and the widget says which: Temelio has no field for an
 organization type, and a funder cannot rename its grantee. That is the honest shape of a vendor
 adapter, and saying so beats reporting a change that did not happen.
+
+![The adapter's own page, in fixture mode, showing the profile it holds after a push](docs/screenshots/6-adapter.png)
 
 **Connect another system without new code.** Every system exposes the same routes, so a third one
 is a config entry, not a feature.
