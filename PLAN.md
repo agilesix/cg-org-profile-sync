@@ -1180,7 +1180,7 @@ is seeded with drift, and is findable by EIN. Branches in T2–T4 are resolved b
 - **Trade-offs**: Half a day that produces no code, so that T2, T3 and T4 do not each rediscover
   the same blocker on their own day.
 
-### #1190-T2: `TemelioOrgStore`: the mapping between Temelio's records and `Organization`, under test
+### #1190-T2: [✓] `TemelioOrgStore`: the mapping between Temelio's records and `Organization`, under test
 
 Depends on: #1190-T1 for the confirmed shapes. Can start against the spec's table and adjust.
 
