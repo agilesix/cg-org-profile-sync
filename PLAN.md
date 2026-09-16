@@ -1275,7 +1275,7 @@ Depends on: #1190-T1 for the confirmed shapes. Can start against the spec's tabl
   assumed and exactly the "which copy does GET /orgs/{orgId} return" question ADR-0026 leaves open. Vendor code in a public repo is the open question above;
   the one-directory rule is what keeps that decision cheap.
 
-### #1190-T3: Serve the CommonGrants routes over Temelio, and put Temelio in Link's picker
+### #1190-T3: [✓] Serve the CommonGrants routes over Temelio, and put Temelio in Link's picker
 
 Depends on: #1190-T2.
 
