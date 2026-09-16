@@ -1478,7 +1478,7 @@ system silently drops the field.
 
 **Open questions**: none.
 
-### #1191-T1: Select several fields and sync them as one merge patch per target
+### #1191-T1: [✓] Select several fields and sync them as one merge patch per target
 
 - **Acceptance criteria**:
   - When `buildMergePatch` is given several `{ path, value }` changes, then it returns one nested
