@@ -1427,10 +1427,13 @@ Depends on: #1190-T3 for the reads and, if it lands, #1190-T4 for the push.
     `docs/demo-script.md` gets the three-system click path, a `curl` block for the adapter beside
     the portals', the by-hand sandbox reset, and the adapter's log lines in "what to check when
     something is off".
-  - When the memo is drafted in Billy's doc, then it carries what this work produced: profile
-    coverage split across two records; projection versus round trip in `OrgStore.write`; the LWW
-    race in read-modify-write with no `If-Match`; `org:temelio:system` needing a catalog entry;
-    and whatever T1–T4 turned up beyond that.
+  - When the memo is drafted, then it carries what this work produced: which copy of a profile a
+    funder integration can actually reach; projection versus round trip in `OrgStore.write`; the
+    LWW race, widened by a shallow merge on sub-objects; the field that did not merge at all and
+    what that implies for conformance testing; `org:temelio:system` needing a catalog entry; and
+    whatever T1–T4 turned up beyond that. Written to `docs/adr-0026-memo.local.md` rather than to
+    Billy's doc — gitignored, because it names the vendor's private API and this repo is public.
+    The shareable version is that file with the endpoint shapes removed.
   - When CLAUDE.md is read, then "Not started" no longer names the adapter, the layout section
     describes the adapter's directory and modes, and the `.env` paragraph covers three apps.
 - **Implementation plan**: `e2e/specs/temelio.spec.ts`, or the Temelio cases folded into the

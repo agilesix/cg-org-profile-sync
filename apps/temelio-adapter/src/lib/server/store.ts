@@ -9,6 +9,7 @@
  */
 
 import { TEMELIO_ORG_ID } from "@cg-link/seed";
+import type { Organization } from "@cg-link/org-sync/schemas";
 import { scopedStore, type OrgRoutesConfig, type Principal } from "@cg-link/org-sync/server";
 import { env } from "$env/dynamic/private";
 import { TemelioHttpApi, type TemelioApi } from "./temelio/api.js";
@@ -159,6 +160,32 @@ export function routesFor(principal: Principal | undefined): OrgRoutesConfig {
  */
 export function servedOrgIds(): readonly string[] {
   return current().allowlist;
+}
+
+/**
+ * The profiles this adapter is currently serving.
+ *
+ * Read through the unscoped store, because the landing page is not a request
+ * from a person — it is the operator's window on what this adapter is in front
+ * of. What reaches the page is the caller's decision, and `+page.server.ts`
+ * makes it: in fixture mode the whole profile, every value of it invented; in
+ * sandbox mode nothing but how many there are.
+ */
+export async function servedProfiles(): Promise<Organization[]> {
+  return current().store.list();
+}
+
+/**
+ * Temelio's own web interface, for the landing page to point at.
+ *
+ * The application's front door and nothing deeper. A link to a particular
+ * grantee would have to carry the foundation's id and that record's id, and
+ * the page rendering it is unauthenticated — so the two identifiers that say
+ * *whose* data this is would be served to anybody who asked. Whoever needs the
+ * record can sign in and find it.
+ */
+export function vendorAppUrl(): string | undefined {
+  return current().mode === "sandbox" ? "https://app.trytemelio.com" : undefined;
 }
 
 /**

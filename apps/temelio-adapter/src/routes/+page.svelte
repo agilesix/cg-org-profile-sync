@@ -6,7 +6,7 @@
   const routes = [
     { verb: "GET", path: "/common-grants/orgs", note: "list, filtered by ?registry= &id=" },
     { verb: "GET", path: "/common-grants/orgs/{orgId}", note: "read one profile" },
-    { verb: "PATCH", path: "/common-grants/orgs/{orgId}", note: "not yet — answers 405" },
+    { verb: "PATCH", path: "/common-grants/orgs/{orgId}", note: "apply a JSON Merge Patch" },
     { verb: "POST", path: "/token", note: "mint this system's own access token" },
     { verb: "GET", path: "/.well-known/jwks.json", note: "this system's public keys" },
   ];
@@ -27,7 +27,12 @@
 
   <h2>Routes</h2>
   <ul>
-    {#each routes as route (route.path)}
+    <!-- Keyed on verb and path together. The path alone is not unique — two
+         entries share one and differ only by verb — and a duplicate key throws
+         `each_key_duplicate`, which rendered no list at all. A constant list
+         like this needs no key to reconcile correctly, but `require-each-key`
+         is on for the repo, so the answer is a key that is actually unique. -->
+    {#each routes as route (`${route.verb} ${route.path}`)}
       <li>
         <code><span class="verb">{route.verb}</span> {route.path}</code>
         <span class="note">{route.note}</span>
@@ -38,6 +43,39 @@
     <strong>{data.mode} mode.</strong>
     {modes[data.mode]}
   </p>
+
+  <h2>Serving</h2>
+  {#if data.mode === "sandbox"}
+    <p class="note" data-testid="sandbox-note">
+      {data.count}
+      {data.count === 1 ? "grantee" : "grantees"}, held by Temelio. This page does not print a real
+      organization's record, or the ids that would say whose it is — it is served without a
+      credential.
+      {#if data.vendorAppUrl}
+        <!-- `rel="external"` because this leaves the app entirely: it tells
+             SvelteKit not to try client-side routing for it, which is also what
+             satisfies the navigation lint rule for a URL it cannot prove is
+             off-site. -->
+        <a href={data.vendorAppUrl} rel="external noreferrer">Open Temelio</a> to see them.
+      {/if}
+    </p>
+  {:else if data.orgs.length === 0}
+    <p class="note" data-testid="no-orgs">
+      No organizations. In sandbox mode that means <code>TEMELIO_ORG_ALLOWLIST</code> is empty.
+    </p>
+  {:else}
+    {#each data.orgs as org (org.id)}
+      <section class="profile" data-testid="profile-{org.id}">
+        <h3>{org.name}</h3>
+        <dl>
+          {#each org.fields as field (field.label)}
+            <dt>{field.label}</dt>
+            <dd data-testid="field-{field.label}">{field.value || "—"}</dd>
+          {/each}
+        </dl>
+      </section>
+    {/each}
+  {/if}
 </main>
 
 <style>
@@ -112,6 +150,28 @@
   .note {
     font-size: 0.85rem;
     color: #6b7a77;
+  }
+  .profile {
+    margin: 0 0 1.25rem;
+  }
+  .profile h3 {
+    margin: 0 0 0.35rem;
+    font-size: 1rem;
+  }
+  dl {
+    display: grid;
+    grid-template-columns: 11rem 1fr;
+    gap: 0.2rem 1rem;
+    margin: 0;
+  }
+  dt {
+    color: #4a5c5a;
+  }
+  dd {
+    margin: 0;
+  }
+  .note {
+    color: #4a5c5a;
   }
   .status {
     margin-top: 2.5rem;

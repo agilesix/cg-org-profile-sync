@@ -28,7 +28,12 @@
 
   <h2>Routes</h2>
   <ul>
-    {#each routes as route (route.path)}
+    <!-- Keyed on verb and path together. The path alone is not unique — two
+         entries share one and differ only by verb — and a duplicate key throws
+         `each_key_duplicate`, which rendered no list at all. A constant list
+         like this needs no key to reconcile correctly, but `require-each-key`
+         is on for the repo, so the answer is a key that is actually unique. -->
+    {#each routes as route (`${route.verb} ${route.path}`)}
       <li>
         <code><span class="verb">{route.verb}</span> {route.path}</code>
         <span class="note">{route.note}</span>

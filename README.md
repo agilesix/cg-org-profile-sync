@@ -163,30 +163,36 @@ lint and formatting for the whole repo.
 
 ## What's in the repo
 
-| Path                   | What it is                                                    |
-| ---------------------- | ------------------------------------------------------------- |
-| `packages/cg-org-sync` | Shared library: schemas, route handlers, client, comparison   |
-| `packages/seed`        | The demo organization's profile, one drifted copy per system  |
-| `apps/portal`          | "GrantPortal", a CommonGrants-native system                   |
-| `apps/funderhub`       | "FunderHub", a second one that does not store every field     |
-| `apps/link`            | The widget                                                    |
-| `apps/temelio-adapter` | Planned proxy over a vendor that has not adopted the protocol |
-| `e2e`                  | Playwright specs that run the real apps                       |
+| Path                   | What it is                                                   |
+| ---------------------- | ------------------------------------------------------------ |
+| `packages/cg-org-sync` | Shared library: schemas, route handlers, client, comparison  |
+| `packages/seed`        | The demo organization's profile, one drifted copy per system |
+| `apps/portal`          | "GrantPortal", a CommonGrants-native system                  |
+| `apps/funderhub`       | "FunderHub", a second one that does not store every field    |
+| `apps/link`            | The widget                                                   |
+| `apps/temelio-adapter` | A proxy putting the contract in front of a vendor's own API  |
+| `e2e`                  | Playwright specs that run the real apps                      |
 
-Storage is in memory, so restarting `pnpm dev` puts every system back to its seed — a stand-in
-with an interface behind it, chosen so the demo shows the data exchange rather than
-infrastructure. Each system signs its own access tokens and publishes the public half, and every
+Storage is in memory for the two native systems, so restarting `pnpm dev` puts them back to their
+seed — a stand-in with an interface behind it, chosen so the demo shows the data exchange rather
+than infrastructure. The adapter is the exception: its records live wherever the vendor keeps
+them, and out of the box that is an in-memory stand-in for the vendor's API so the demo runs with
+no vendor account. Each system signs its own access tokens and publishes the public half, and every
 read and write is scoped to the organizations the caller may touch. Each is also its own sign-in: the
 widget opens on a button, you pick systems from a list and link them one at a time, and each runs
 its own sign-in. A system you have not linked simply says so in its column; the rest still answer.
 
 ## Status and what's next
 
-The two-system exchange works end to end and is pinned by tests, and so is per-organization
+The three-system exchange works end to end and is pinned by tests, and so is per-organization
 access: each system runs its own sign-in flow and issues tokens scoped to what you may touch there.
+The third system is a vendor that never implemented the protocol, reached through an adapter, and
+a push through the widget lands as a write against that vendor's own API — verified by hand
+against their live sandbox as well as by the offline suite.
+
 Sign-in currently goes through a stand-in form rather than Google — see above. Not built yet: real
-Google sign-in, embedding the widget inside a host system, the Temelio adapter, and durable
-storage. The build plan lives outside this repo. Ask Billy for a copy.
+Google sign-in, embedding the widget inside a host system, selecting several fields at once, and
+durable storage. The build plan lives outside this repo. Ask Billy for a copy.
 
 ## License
 
