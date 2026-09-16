@@ -47,10 +47,19 @@ About three minutes. Everything is at `http://localhost:5176`, except the last s
    and they go together: one patch per target, not one per field. (Re-sending the address is a
    harmless no-op; **Remove** it first if you would rather show only the website moving.) Clicking
    a second value in a row you have already picked replaces that row's choice rather than adding to
-   it, since one field cannot have two values. Click **Sync**. Temelio takes the website. FunderHub
-   also answers "accepted", but its message reads "This system does not store socials." The patch
-   was applied, the field was dropped, and the sender was told so. The grid re-reads: the website
-   now agrees between GrantPortal and Temelio, and FunderHub still holds nothing.
+   it, since one field cannot have two values.
+
+   Now the beat worth slowing down for: **Sync** greys out, and a line above it reads "FunderHub
+   can't store Website. Unselect it or drop FunderHub as a target." The widget knows before asking.
+   Uncheck **FunderHub** and the button comes back. Click **Sync**. Temelio takes both, the grid
+   re-reads, and the website now agrees between GrantPortal and Temelio while FunderHub still holds
+   nothing — untouched, because nothing was sent to it.
+
+   Worth saying out loud: that list is Link's own copy of what FunderHub will not keep, and
+   duplicating it is not the real answer — a system publishing its own capabilities is, and the
+   protocol does not define that yet. It is safe to duplicate only because FunderHub still enforces
+   the rule itself, so this copy can over-block and never under-block.
+
 9. **Show it landed on the other side.** Open http://localhost:5175 — the adapter's own page lists
    what it currently holds, re-read on every load, so the new address and website are there. When
    the adapter is pointed at the real Temelio instead of its stand-in, that page links straight to

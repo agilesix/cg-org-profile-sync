@@ -78,11 +78,22 @@ export interface SourceConfig {
   capabilities?: SourceCapabilities;
 
   /**
-   * Field paths this source can store. Fields outside the list are dropped from
-   * an outgoing patch and reported as skipped, rather than sent and silently lost.
-   * Omit to allow every field.
+   * Top-level field keys this source will decline to store, mirroring
+   * `OrgRoutesConfig.unwritableFields` on the receiving side. Omit to allow
+   * every field.
+   *
+   * A denylist rather than the allowlist this used to be: an allowlist can
+   * only be written by hand-inverting the schema's whole field set, and it
+   * would go stale the moment the protocol added a field — silently blocking
+   * something every system would have accepted. A denylist fails the safe way
+   * round, since the receiver's own rule stays authoritative: a field named
+   * here is never sent, and a field missed here is still dropped and reported
+   * by the system itself.
+   *
+   * Top-level keys only, which is all the protocol's rule works in: `socials`,
+   * never `socials.website`.
    */
-  writableFields?: readonly string[];
+  unwritableFields?: readonly string[];
 
   /** Set false to keep a source in the registry but out of the current demo. */
   enabled?: boolean;
@@ -163,6 +174,13 @@ export interface SourceResolution {
 
   /** Whether this source's token got us in, and so which control to offer. */
   connection: SourceConnection;
+
+  /**
+   * This source's own `SourceConfig.unwritableFields`, copied verbatim so the
+   * page can grey out a row without a second request. `[]` when the source
+   * declares none, never `undefined` — every resolution carries the field.
+   */
+  unwritableFields: readonly string[];
 }
 
 /**

@@ -344,8 +344,20 @@ describe("compareAcrossSources", () => {
     });
 
     expect(result.sources).toEqual([
-      { id: "portal", label: "GrantPortal", orgId: PORTAL_ORG_ID, connection: "connected" },
-      { id: "funderhub", label: "FunderHub", orgId: FUNDERHUB_ORG_ID, connection: "connected" },
+      {
+        id: "portal",
+        label: "GrantPortal",
+        orgId: PORTAL_ORG_ID,
+        connection: "connected",
+        unwritableFields: [],
+      },
+      {
+        id: "funderhub",
+        label: "FunderHub",
+        orgId: FUNDERHUB_ORG_ID,
+        connection: "connected",
+        unwritableFields: [],
+      },
     ]);
 
     expect(result.fields).toHaveLength(DEMO_FIELDS.length);
@@ -355,6 +367,33 @@ describe("compareAcrossSources", () => {
 
     const name = result.fields.find((field) => field.path === "name");
     expect(name?.status).toBe("agree");
+  });
+
+  it("copies each source's unwritableFields onto its resolution, defaulting to an empty array", async () => {
+    const funderhubWithUnwritable: SourceConfig = {
+      ...FUNDERHUB_SOURCE,
+      unwritableFields: ["socials", "yearFounded"],
+    };
+    const fetch = stubFetchByOrigin({
+      "https://portal.example.com": listEnvelope([PORTAL_SEED]),
+      "https://funderhub.example.com": listEnvelope([FUNDERHUB_SEED]),
+    });
+    const tokens = new StaticTokenProvider({
+      portal: "portal-token",
+      funderhub: "funderhub-token",
+    });
+
+    const result = await compareAcrossSources("org:us:ein", AGILE_SIX_EIN, {
+      sources: [PORTAL_SOURCE, funderhubWithUnwritable],
+      tokens,
+      fetch,
+    });
+
+    const portal = result.sources.find((source) => source.id === "portal");
+    expect(portal?.unwritableFields).toEqual([]);
+
+    const funderhub = result.sources.find((source) => source.id === "funderhub");
+    expect(funderhub?.unwritableFields).toEqual(["socials", "yearFounded"]);
   });
 
   it("reports a source that returns 401 by id while the other source still contributes", async () => {
@@ -571,7 +610,13 @@ describe("compareAcrossSources", () => {
     });
 
     expect(result.sources).toEqual([
-      { id: "portal", label: "GrantPortal", orgId: PORTAL_ORG_ID, connection: "connected" },
+      {
+        id: "portal",
+        label: "GrantPortal",
+        orgId: PORTAL_ORG_ID,
+        connection: "connected",
+        unwritableFields: [],
+      },
     ]);
     expect(calls.some((request) => request.url.startsWith("https://temelio.example.com"))).toBe(
       false,
@@ -1050,6 +1095,121 @@ describe("syncToTargets and capabilities", () => {
     );
 
     expect(results[0]).toMatchObject({ id: "funderhub", ok: true });
+  });
+});
+
+describe("syncToTargets and unwritableFields", () => {
+  it("refuses a target whose unwritableFields include a picked change's top-level key, without sending it anything", async () => {
+    const declinesSocials: SourceConfig = {
+      ...FUNDERHUB_SOURCE,
+      unwritableFields: ["socials"],
+    };
+    const { fetch, calls } = captureFetch(
+      stubFetchByOrigin({ "https://funderhub.example.com": listEnvelope([FUNDERHUB_SEED]) }),
+    );
+
+    const { results } = await syncToTargets(
+      {
+        registry: "org:us:ein",
+        id: AGILE_SIX_EIN,
+        changes: [{ path: "socials.website", value: "https://agile6.com" }],
+        targets: ["funderhub"],
+      },
+      {
+        sources: [declinesSocials],
+        tokens: new StaticTokenProvider({ funderhub: "funderhub-token" }),
+        fetch,
+      },
+    );
+
+    expect(results[0]).toMatchObject({ id: "funderhub", ok: false, status: null });
+    expect(results[0]?.applied).toBe(false);
+    expect(results[0]?.message).toContain("FunderHub");
+    expect(results[0]?.message).toContain("socials");
+
+    // Refused before even the identifier lookup, so the origin sees nothing at all.
+    expect(calls).toHaveLength(0);
+  });
+
+  it("blocks the whole target when only one of several picks is blocked, rather than sending the rest", async () => {
+    const declinesSocials: SourceConfig = {
+      ...FUNDERHUB_SOURCE,
+      unwritableFields: ["socials"],
+    };
+    const { fetch, calls } = captureFetch(
+      stubFetchByOrigin({ "https://funderhub.example.com": listEnvelope([FUNDERHUB_SEED]) }),
+    );
+
+    const { results } = await syncToTargets(
+      {
+        registry: "org:us:ein",
+        id: AGILE_SIX_EIN,
+        changes: [
+          { path: "name", value: "Agile Six Applications, LLC" },
+          { path: "socials.website", value: "https://agile6.com" },
+        ],
+        targets: ["funderhub"],
+      },
+      {
+        sources: [declinesSocials],
+        tokens: new StaticTokenProvider({ funderhub: "funderhub-token" }),
+        fetch,
+      },
+    );
+
+    expect(results[0]).toMatchObject({ id: "funderhub", ok: false, status: null });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("refuses only the blocked target, while a second target with no such restriction is still patched", async () => {
+    const mergePatch = buildMergePatch([{ path: "socials.website", value: "https://agile6.com" }]);
+    const declinesSocials: SourceConfig = {
+      ...FUNDERHUB_SOURCE,
+      unwritableFields: ["socials"],
+    };
+    const { fetch, calls } = captureFetch(
+      stubFetchByOrigin({
+        "https://portal.example.com": respondByMethod({
+          get: () => listEnvelope([PORTAL_SEED]),
+          patch: () =>
+            revisionEnvelope("Change applied", revision(PORTAL_SOURCE, mergePatch, PORTAL_SEED)),
+        }),
+      }),
+    );
+    const tokens = new StaticTokenProvider({
+      portal: "portal-token",
+      funderhub: "funderhub-token",
+    });
+
+    const { results } = await syncToTargets(
+      {
+        registry: "org:us:ein",
+        id: AGILE_SIX_EIN,
+        changes: [{ path: "socials.website", value: "https://agile6.com" }],
+        targets: ["portal", "funderhub"],
+      },
+      { sources: [PORTAL_SOURCE, declinesSocials], tokens, fetch },
+    );
+
+    const funderhub = results.find((entry) => entry.id === "funderhub");
+    expect(funderhub).toMatchObject({ ok: false, status: null });
+    expect(funderhub?.message).toContain("FunderHub");
+    expect(funderhub?.message).toContain("socials");
+
+    // Portal declares no unwritableFields at all, so it is patched as today —
+    // one target's restriction costs only that target.
+    const portal = results.find((entry) => entry.id === "portal");
+    expect(portal).toEqual({
+      id: "portal",
+      ok: true,
+      status: 200,
+      message: "Change applied",
+      applied: true,
+    });
+
+    expect(calls.some((request) => request.url.startsWith("https://funderhub.example.com"))).toBe(
+      false,
+    );
   });
 });
 

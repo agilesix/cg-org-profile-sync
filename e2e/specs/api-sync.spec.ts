@@ -8,9 +8,15 @@
  * without the next read agreeing has proven nothing.
  */
 
-import { AGILE_SIX_EIN, PORTAL_SEED, TEMELIO_SEED } from "@cg-link/seed";
-import { EIN_REGISTRY } from "../env.js";
-import { expect, resultFor, rowFor, test, valueHeldBy } from "../fixtures.js";
+import {
+  AGILE_SIX_EIN,
+  FUNDERHUB_ORG_ID,
+  PORTAL_SEED,
+  TEMELIO_ORG_ID,
+  TEMELIO_SEED,
+} from "@cg-link/seed";
+import { ADMIN_EMAIL, EIN_REGISTRY, FUNDERHUB_ORIGIN, TEMELIO_ORIGIN } from "../env.js";
+import { expect, resultFor, rowFor, test, tokenFor, valueHeldBy } from "../fixtures.js";
 
 test("pushing portal's address to funderhub settles that disagreement", async ({ api }) => {
   const before = rowFor(await api.compare(), "addresses.primary");
@@ -44,7 +50,7 @@ test("pushing portal's address to funderhub settles that disagreement", async ({
   expect(after.distinctCount).toBe(2);
 });
 
-test("pushing portal's website to funderhub is accepted, and names socials as not stored", async ({
+test("pushing portal's website to funderhub is refused before anything is sent", async ({
   api,
 }) => {
   const before = rowFor(await api.compare(), "socials.website");
@@ -56,13 +62,16 @@ test("pushing portal's website to funderhub is accepted, and names socials as no
     targets: ["funderhub"],
   });
 
-  // Accepted, not rejected: a system that declines a field still applied the
-  // rest of the patch, so this is a 200 whose message carries the bad news.
+  // `ok: false` with no status at all, because no request was made. Before
+  // #1191-T2 this came back as a 200 whose message carried the bad news — an
+  // improvement on silence, but still an answer that arrives after the sender
+  // has been told their change was sent.
   const funderhub = resultFor(sync, "funderhub");
-  expect(funderhub.ok).toBe(true);
-  expect(funderhub.status).toBe(200);
+  expect(funderhub.ok).toBe(false);
+  expect(funderhub.applied).toBe(false);
+  expect(funderhub.status).toBeNull();
   expect(funderhub.message).toContain("socials");
-  expect(funderhub.message).toContain("does not store");
+  expect(funderhub.message).toContain("FunderHub");
 
   // And the value really did go no further.
   const after = rowFor(await api.compare(), "socials.website");
@@ -127,22 +136,50 @@ test("pushing a value a system already holds is accepted, so a demo can be run t
   expect(valueHeldBy(after, "temelio")).toEqual(chosen);
 });
 
-test("pushing the legal name to temelio is accepted, and names what a funder cannot change", async ({
-  api,
-}) => {
+test("pushing the legal name to temelio is refused before anything is sent", async ({ api }) => {
   const name = rowFor(await api.compare(), "name");
   const chosen = valueHeldBy(name, "portal");
 
   const sync = await api.sync({ changes: [{ path: "name", value: chosen }], targets: ["temelio"] });
 
-  // Accepted, because the rest of a patch still applies — but the message has
-  // to carry the bad news, or a sender would believe a rename landed. Temelio
-  // lets a funder send a legal name, answers 200, and stores nothing; the
-  // adapter turns that silence into a sentence.
+  // A funder cannot rename a grantee through the vendor's API, so this is the
+  // same beat as FunderHub and `socials`: the widget knows before asking, and
+  // the sender is told while they can still do something about it rather than
+  // after a request that was never going to carry the change.
   const result = resultFor(sync, "temelio");
-  expect(result.ok).toBe(true);
+  expect(result.ok).toBe(false);
+  expect(result.status).toBeNull();
   expect(result.message).toContain("name");
-  expect(result.message).toContain("does not store");
+  expect(result.message).toContain("Temelio");
+});
+
+test("the adapter still declines a rename itself when patched directly", async ({
+  api,
+  request,
+}) => {
+  // The other half of the same claim as FunderHub's above. Link's denylist is
+  // a copy; what makes copying safe is that the adapter enforces it too, and
+  // turns the vendor's silence about a rename into a sentence of its own.
+  const token = await tokenFor(request, "temelio", ADMIN_EMAIL);
+  const before = rowFor(await api.compare(), "name");
+  const chosen = valueHeldBy(before, "portal");
+
+  const response = await request.patch(`${TEMELIO_ORIGIN}/common-grants/orgs/${TEMELIO_ORG_ID}`, {
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/merge-patch+json",
+    },
+    data: { name: `${chosen} (renamed)` },
+  });
+
+  expect(response.status()).toBe(200);
+
+  const body = (await response.json()) as { message: string };
+  expect(body.message).toContain("name");
+  expect(body.message).toContain("does not store");
+
+  // And the rename really went nowhere.
+  expect(valueHeldBy(rowFor(await api.compare(), "name"), "temelio")).toBe(chosen);
 });
 
 test("a sync reaching every target reports each one separately", async ({ api }) => {
@@ -160,16 +197,45 @@ test("a sync reaching every target reports each one separately", async ({ api })
   expect(sync.results.every((result) => result.ok)).toBe(true);
 });
 
-test("two fields travel to a target in one patch, stored and declined together", async ({
+test("two fields travel to one target in a single patch, and both land", async ({ api }) => {
+  const before = await api.compare();
+  const address = valueHeldBy(rowFor(before, "addresses.primary"), "portal");
+  const website = valueHeldBy(rowFor(before, "socials.website"), "portal");
+
+  // Worth pinning: Temelio starts out disagreeing with portal about both, so
+  // the assertions below are about values that actually moved.
+  expect(valueHeldBy(rowFor(before, "addresses.primary"), "temelio")).not.toEqual(address);
+  expect(valueHeldBy(rowFor(before, "socials.website"), "temelio")).not.toEqual(website);
+
+  const sync = await api.sync({
+    changes: [
+      { path: "addresses.primary", value: address },
+      { path: "socials.website", value: website },
+    ],
+    targets: ["temelio"],
+  });
+
+  // One row, not two. Temelio was asked once and answered once, and that one
+  // answer covers both changes — and it is a vendor behind an adapter, so the
+  // single patch became whatever call its own API takes.
+  expect(sync.results).toHaveLength(1);
+
+  const temelio = resultFor(sync, "temelio");
+  expect(temelio.ok, temelio.message).toBe(true);
+  expect(temelio.applied, temelio.message).toBe(true);
+
+  const after = await api.compare();
+  expect(valueHeldBy(rowFor(after, "addresses.primary"), "temelio")).toEqual(address);
+  expect(valueHeldBy(rowFor(after, "socials.website"), "temelio")).toEqual(website);
+});
+
+test("a target blocked on one of two picks is refused for both, not sent half of them", async ({
   api,
 }) => {
   const before = await api.compare();
   const address = valueHeldBy(rowFor(before, "addresses.primary"), "portal");
   const website = valueHeldBy(rowFor(before, "socials.website"), "portal");
-
-  // Worth pinning: FunderHub starts out disagreeing with portal about the
-  // address, so the assertion below is about a value that actually moved.
-  expect(valueHeldBy(rowFor(before, "addresses.primary"), "funderhub")).not.toEqual(address);
+  const funderhubAddress = valueHeldBy(rowFor(before, "addresses.primary"), "funderhub");
 
   const sync = await api.sync({
     changes: [
@@ -179,24 +245,47 @@ test("two fields travel to a target in one patch, stored and declined together",
     targets: ["funderhub"],
   });
 
-  // One row, not two. FunderHub was asked once and answered once, and that one
-  // answer covers both changes: it stored the address and named socials as the
-  // part it would not keep. Two requests could not produce that.
-  expect(sync.results).toHaveLength(1);
-
-  // `ok` but not `applied`: the address landed and `socials` did not, and the
-  // changes went as one patch, so the target did not store what it was sent.
+  // FunderHub would have kept the address. It gets neither, because a partial
+  // send is the surprise this guard exists to remove — the sender picked two
+  // things and would have been told the request was accepted.
   const funderhub = resultFor(sync, "funderhub");
-  expect(funderhub.ok, funderhub.message).toBe(true);
-  expect(funderhub.applied).toBe(false);
-  expect(funderhub.message).toContain("socials");
+  expect(funderhub.ok).toBe(false);
+  expect(funderhub.status).toBeNull();
 
-  // Only FunderHub was a target, so the row does not reach `agree` — Temelio
-  // still holds its own address. What matters is that both halves of the one
-  // patch did what the message said.
   const after = await api.compare();
-  expect(valueHeldBy(rowFor(after, "addresses.primary"), "funderhub")).toEqual(address);
-  expect(rowFor(after, "socials.website").values).not.toHaveProperty("funderhub");
+  expect(valueHeldBy(rowFor(after, "addresses.primary"), "funderhub")).toEqual(funderhubAddress);
+});
+
+test("the server still drops socials itself when patched directly, which is the authoritative rule", async ({
+  api,
+  request,
+}) => {
+  // Link's denylist is a copy, and a copy can be wrong. What makes the copy
+  // safe is that FunderHub enforces the rule itself — so that has to keep
+  // being true, proven against the system rather than through the widget that
+  // now refuses to ask it.
+  const token = await tokenFor(request, "funderhub", ADMIN_EMAIL);
+  const website = valueHeldBy(rowFor(await api.compare(), "socials.website"), "portal");
+
+  const response = await request.patch(
+    `${FUNDERHUB_ORIGIN}/common-grants/orgs/${FUNDERHUB_ORG_ID}`,
+    {
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/merge-patch+json",
+      },
+      data: { socials: { website } },
+    },
+  );
+
+  expect(response.status()).toBe(200);
+
+  const body = (await response.json()) as { message: string };
+  expect(body.message).toContain("socials");
+  expect(body.message).toContain("does not store");
+
+  // And it really went nowhere.
+  expect(rowFor(await api.compare(), "socials.website").values).not.toHaveProperty("funderhub");
 });
 
 test("a repeated path is a 400", async ({ api }) => {

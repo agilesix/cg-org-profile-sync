@@ -250,7 +250,23 @@ address in a different key order still agree. Adding a field to the demo is one 
 `utils/format.ts`'s `formatFieldValue` turns one held value into the line the grid shows — an
 address collapses to one line, anything unrecognised falls back to JSON, and a value with nothing
 to say renders as `""` for the caller to label. Both live in the library rather than in the widget
-because `apps/*` has no test harness. `buildMergePatch` is the inverse of the path walk: it folds a list of
+because `apps/*` has no test harness. **What a system will not store, known before sending.** `utils/writability.ts` holds
+`topLevelKey(path)` and `blockedChanges(changes, source)` — the sending side's copy of the
+receiving side's `OrgRoutesConfig.unwritableFields` rule. It exists because a system that drops a
+field answers 200 and says so in its message, which only reaches someone _after_ they were told
+the change was sent; `compareAcrossSources` copies each source's list onto its `SourceResolution`
+so the widget can grey Sync out and name the system and field with no extra request, and
+`syncToTargets` refuses a blocked target itself so the API cannot say "accepted" either. The
+duplication is real: Link's lists are hand-kept in `apps/link/src/lib/server/sources.ts`
+(FunderHub's `socials`/`yearFounded`/`orgType`, Temelio's `name`/`orgType`). It is safe only
+because the receiver's rule stays authoritative — a hand-kept list can over-block but never
+under-block, since anything it misses is still dropped and named by the system itself. The honest
+fix is each system publishing its own capabilities, which v0.4.0 does not define. `SourceConfig`
+took a `writableFields` _allowlist_ before #1191-T2; it went because an allowlist has to be
+written by hand-inverting the schema's whole field set and would silently block any field the
+protocol later added.
+
+`buildMergePatch` is the inverse of the path walk: it folds a list of
 `FieldChange`s back into the one nested RFC 7396 body that sets them all, sharing a parent where two
 paths pass through it. Overlapping paths — the same path twice, or one containing another — throw
 rather than resolving to a last-one-wins order, because such a body means two different things
@@ -293,8 +309,10 @@ answered. A source that is reachable but simply holds no matching record is **no
 gets `orgId: null` with no `error`, because "no record of you" must not render as a conflict.
 `syncToTargets` builds the merge patch once from every change the person picked — one PATCH per
 target, not one per field — resolves each target's own org id (no two systems agree
-on ids), dedupes repeated targets so one change is not recorded twice, and reports each target
-separately as `{ ok, applied, status, message }` — passing the target's own sentence through
+on ids), and dedupes repeated targets so one change is not recorded twice. A target whose
+`unwritableFields` name any picked field is refused the same way a `write: false` one is — before a
+request, and all-or-nothing, since a partial send is the surprise that guard exists to remove. It
+reports each target separately as `{ ok, applied, status, message }` — passing the target's own sentence through
 untouched, since that is where a system says which fields it declined. `applied` is read back out
 of the post-change snapshot rather than parsed from that sentence, and is all-or-nothing across one
 sync's changes: they travelled as a single patch, so a target that kept the address and dropped the
@@ -318,7 +336,8 @@ server's fails only at the token exchange, with nothing on either side saying wh
 `SourceConfig` and `TokenProvider`. Deliberately Zod-free so app config and UI can import them
 without the schema layer. `SourceConfig` carries `authorizeUrl`, `tokenUrl`, an optional
 `capabilities` (`utils/sources.ts`'s `capabilitiesOf` applies the both-true default in one place;
-the UI words are pull and push), and `website`/`status` for the picker. `status: "coming-soon"` is
+the UI words are pull and push), an optional `unwritableFields`, and `website`/`status` for the
+picker. `status: "coming-soon"` is
 a system the picker names and will not connect; `isConnectable` is what both Link's registry and
 the library's fan-out filter on, so a named system is never contacted even if a caller hands the
 whole registry in.

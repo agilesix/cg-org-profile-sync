@@ -15,6 +15,7 @@
 
 <script lang="ts">
   import { SOURCE_TOKENS_HEADER, sourceTokensHeader } from "@cg-link/org-sync/client";
+  import { blockedChanges } from "@cg-link/org-sync/utils";
   import { onMount, untrack } from "svelte";
   import type {
     ApiError,
@@ -267,7 +268,31 @@
     targets.filter((target) => candidates.some((source) => source.id === target)),
   );
 
-  const canSync = $derived(picks.length > 0 && chosen.length > 0 && !busy);
+  /**
+   * The chosen targets that cannot store something picked, and what.
+   *
+   * Asked before anything is sent, which is the whole point of the ticket: a
+   * system that drops a field answers 200 and says so in its message, so
+   * without this the only way to find out is to click Sync and read the bad
+   * news afterwards. `blockedChanges` is the library's rule rather than a
+   * comparison written out here, so this and `syncToTargets`' own refusal
+   * cannot disagree about what is blocked.
+   *
+   * Only the targets actually checked count. Unchecking the blocking system,
+   * or removing the pick, is what clears it.
+   */
+  const blocked = $derived(
+    chosen
+      .map((id) => {
+        const source = comparison?.sources.find((row) => row.id === id);
+        const fields = source === undefined ? [] : blockedChanges(picks, source);
+
+        return { id, label: labels[id] ?? id, fields };
+      })
+      .filter((target) => target.fields.length > 0),
+  );
+
+  const canSync = $derived(picks.length > 0 && chosen.length > 0 && blocked.length === 0 && !busy);
 
   /** Every request to Link's own API carries the whole set of tokens, or none. */
   function authHeaders(): Record<string, string> {
@@ -651,7 +676,7 @@
    * otherwise the results would be describing a grid from before the change.
    */
   async function sync(): Promise<void> {
-    if (picks.length === 0 || chosen.length === 0 || busy) return;
+    if (!canSync) return;
 
     busy = true;
     results = null;
@@ -834,6 +859,14 @@
             {/each}
           </fieldset>
         {/if}
+
+        {#each blocked as target (target.id)}
+          <p class="blocked" role="status" data-testid="blocked-{target.id}">
+            {target.label} can't store {target.fields
+              .map((field) => selections[field.path]?.label ?? field.path)
+              .join(" or ")}. Unselect it or drop {target.label} as a target.
+          </p>
+        {/each}
 
         <button type="button" class="sync" data-testid="sync" disabled={!canSync} onclick={sync}>
           {busy ? "Syncing…" : "Sync"}
@@ -1036,6 +1069,11 @@
   .chosen-from {
     color: #6b7a77;
   }
+  .blocked {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #97590d;
+  }
   .unpick {
     font: inherit;
     font-size: 0.75rem;
@@ -1119,6 +1157,9 @@
     .unpick,
     .linked-org-ein {
       color: #8a9895;
+    }
+    .blocked {
+      color: #e0ab5f;
     }
     .unpick {
       border-color: #2a3736;

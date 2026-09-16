@@ -26,6 +26,7 @@ import type {
 } from "../types.js";
 import {
   DEMO_FIELDS,
+  blockedChanges,
   buildMergePatch,
   capabilitiesOf,
   compareProfiles,
@@ -33,6 +34,7 @@ import {
   isConnectable,
   sameJsonValue,
   summarizeOrg,
+  topLevelKey,
 } from "../utils/index.js";
 import { NotConnectedError, OrgClient, OrgClientError } from "./org-client.js";
 
@@ -118,7 +120,14 @@ export async function compareAcrossSources(
       profiles[source.id] = org;
     }
 
-    return { id: source.id, label: source.label, orgId: org?.id ?? null, error, connection };
+    return {
+      id: source.id,
+      label: source.label,
+      orgId: org?.id ?? null,
+      error,
+      connection,
+      unwritableFields: source.unwritableFields ?? [],
+    };
   });
 
   return { sources, fields: compareProfiles(profiles, DEMO_FIELDS) };
@@ -299,6 +308,29 @@ export async function syncToTargets(
           applied: false,
           status: null,
           message: `${source.label} does not accept changes.`,
+        };
+      }
+
+      // A field this target is known not to store stops the whole patch to it,
+      // rather than sending what it would keep. The changes were picked and
+      // sent as one thing, and a partial send is the surprise this guard
+      // exists to remove: the sender would be told "accepted" about a request
+      // that was never going to carry part of what they chose.
+      //
+      // The receiver's own rule is still the authoritative one — this list is
+      // the sending side's copy and can only over-block, so a field it does
+      // not name is still dropped and reported by the target itself.
+      const blocked = blockedChanges(change.changes, source);
+
+      if (blocked.length > 0) {
+        const fields = [...new Set(blocked.map((field) => topLevelKey(field.path)))];
+
+        return {
+          id,
+          ok: false,
+          applied: false,
+          status: null,
+          message: `${source.label} cannot store ${fields.join(", ")}, so nothing was sent to it.`,
         };
       }
 
