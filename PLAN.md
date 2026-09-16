@@ -977,8 +977,8 @@ pull from a named portal, and only portals whose configuration allows writes are
 Depends on: #1189-T1
 
 - **Acceptance criteria**:
-  - When "Open Link" is clicked on a profile page, then Link renders in an overlay iframe on that
-    page, already looking up the same org (EIN in the URL) and knowing which system it is hosted
+  - When "Sync profile" is clicked on a profile page, then Link renders in an overlay iframe on
+    that page, already looking up the same org (EIN in the URL) and knowing which system it is hosted
     in (`?host=portal`).
   - When a sync completes inside the frame, then Link posts a `synced` message to the host page,
     which re-reads the org and updates the displayed values without a full reload.
@@ -1003,7 +1003,7 @@ host, onSynced, onClose })` builds the overlay and iframe (`data-testid="cg-link
      `{ type: "cg-link:synced", targets, results }` to `parent`; a Close button posts
      `{ type: "cg-link:close" }`. Both only when `window.parent !== window`.
   4. Profile pages in both apps: include the loader from `PUBLIC_LINK_ORIGIN` (add to each app's
-     `.env.example`, read via `$env/dynamic/public`), an "Open Link" button
+     `.env.example`, read via `$env/dynamic/public`), a "Sync profile" button
      (`data-testid="open-link"`), `onSynced` → `invalidateAll()`.
   5. `e2e/specs/embedded.spec.ts`: drives the frame with `page.frameLocator` and the widget's
      existing `data-testid`s. No Playwright config change; all servers already boot.
@@ -1063,54 +1063,376 @@ Depends on: #1189-T2, #1188-T1 (for `SourceConfig.capabilities`)
 **GitHub issue**: #1190 — [Data exchange] Temelio Integration
 (https://github.com/HHS/simpler-grants-protocol/issues/1190)
 
-**Goal**: Temelio appears in Link as a third system with no route changes, through a
-CommonGrants-compatible adapter. The shape of that adapter is not decidable until after the
-Sept 14 conversation with Ruthwick (what API and auth Temelio exposes, whether a sandbox exists),
-so this issue holds one planning ticket that turns into implementation tickets on Monday.
+**Goal**: Temelio appears in Link as a third system through `apps/temelio-adapter`: a
+CommonGrants-conformant proxy that holds a Temelio sandbox credential server-side and translates
+the three org routes onto Temelio's own API. The framing for Temelio is wrapper first, native
+later — this is what their existing API looks like behind the contract today, and the routes are
+what they would serve themselves eventually. The adapter writes as well as reads if the sandbox
+allows it, because the demo this issue builds toward is a push into a system we do not control.
 
-**Scope**: In: the decisions and the known scaffolding below. Out until Monday: everything else.
+**Target demo** — the whole beat, and which ticket delivers each step. Steps 1, 4 and 5 are the
+Temelio-specific ones; the rest are #1189 and #1191, listed so the dependencies are visible:
+
+1. The same organization is open in GrantPortal, FunderHub and Temelio, and the three copies
+   disagree — #1190-T3 puts Agile Six behind the adapter; #1189-T1 gives the two portals a profile
+   page.
+2. The person changes the website or the address on GrantPortal's profile page — #1189-T1.
+3. They click "Sync profile" on that page and Link opens as a modal over GrantPortal — #1189-T2.
+4. In the modal they pick FunderHub and Temelio, sign in to each, and see the three-column
+   comparison — #1188 (done) plus #1190-T3, which makes the adapter its own authorization server.
+5. They select the fields that differ and click Push — #1191-T1 for several fields in one patch,
+   #1190-T4 for Temelio accepting the write.
+6. They open FunderHub's and Temelio's own pages and see the change — #1189-T1 for FunderHub;
+   Temelio's sandbox UI when the adapter is on the sandbox, or the adapter's own page in fixture
+   mode (#1190-T5).
+
+**Scope**:
+
+- In: a time-boxed spike against the sandbox that answers the two day-0 blockers; a
+  `TemelioOrgStore` implementing `OrgStore` over Temelio's records, under Vitest in the adapter's
+  own suite; the same fifteen-file wiring the two portals carry (bearer guard, own ES256 key and
+  JWKS, own OAuth server on the fake or Google provider, reset route); a write path guarded by an
+  allowlist of sandbox org ids; a fixture mode so `pnpm e2e` runs offline; Link's registry entry
+  flipped from `coming-soon`; README, CLAUDE.md and demo-script updates; the findings-memo entries
+  this work produces.
+- Out: Temelio's per-relationship profile copies (the spec names them as follow-on work — the
+  adapter syncs the root record only); embedding Link in Temelio; fields beyond what the mapping
+  carries; a registry-catalog PR for `org:temelio:system` (a memo item, not code); a D1 store.
 
 **Assumptions**:
 
-- Temelio is read-only for the demo (we cannot push to it or embed Link in it), so it registers
-  with `capabilities: { read: true, write: false }` and the demo beat is a pull from Temelio into
-  GrantPortal.
-- Temelio delegates sign-in to Google SSO, so the adapter can reuse #1188's shared auth handlers as
-  its own authorization server and hold any Temelio API credential server-side.
+- **The vendor-facing detail lives in Billy's spec, not here.** The endpoints, record shapes and
+  field-by-field mapping are in the "The Temelio proxy" section of the Org Profile Sync Spec doc,
+  which is marked internal. This repo is public. `PLAN.md`, `README.md` and `docs/` describe the
+  vendor side only by pointing at that section. The adapter's source has to name what it calls,
+  so everything that does is confined to one directory, `apps/temelio-adapter/src/lib/server/temelio/`,
+  and imported from exactly one place — so it can be lifted into a private package with a single
+  import change if that is what Billy decides. See the open question.
+- **Settled by the spike (2026-09-16):** our access is a funder account, and a funder cannot
+  read a nonprofit's own record — the reachable one is the per-funder copy, a single record that
+  carries the legal name, EIN, mission, founding date, socials, both addresses, email and phone.
+  The adapter wraps that record. A read is one call and a write is one merge POST, so there is
+  no two-record compose and no read-modify-write. The credential is a foundation API key on the
+  `X-API-Key` header; it reads, searches and merge-writes, and cannot use the single-field route. Billy's plan assumed the root record; the
+  difference is a memo finding. The findings file has the field-by-field mapping.
+- The sandbox is shared and real. Every write the adapter makes is gated by
+  `TEMELIO_ORG_ALLOWLIST`, whatever credential the caller presented — the service token included.
+- Temelio records are matched by EIN like everyone else's; the funder-scoped search filters on
+  it directly (digits only). We created our own grantee, Agile Six with the demo's EIN, so the
+  adapter writes to a record nobody else uses.
+- The adapter is its own authorization server exactly like the two portals — same shared
+  handlers, same fake or Google identity provider — so signing in to Temelio in the modal looks
+  like signing in anywhere else. Grants: the admin may touch every allowlisted org; the
+  portal-only person nothing, so Temelio refuses them the way FunderHub does.
+- Capabilities start at `{ read: true, write: false }` (#1190-T3) and flip to `write: true` when
+  #1190-T4 lands. If the spike finds writes impossible, T4 is cut, `write: false` stays, and the
+  Temelio beat becomes a pull from Temelio into GrantPortal (#1189-T3).
 
-### #1190-T1: Decide the Temelio adapter's shape after Monday's conversation with Ruthwick
+**Open questions**:
 
-Depends on: the Sept 14 conversation; #1188-T1 for `capabilities` and the shared auth handlers.
+- Public repo versus internal API detail: does the vendor-facing directory stay in this repo, or
+  move to a private package the adapter depends on? Decide with Billy before #1190-T2 merges. The
+  plan assumes it stays and the prose stays abstract.
+- Public repo versus internal detail also covers the findings file: it stays gitignored, and the
+  memo entries move to Billy's doc in T5.
+
+### #1190-T1: Spike the Temelio sandbox and record what the adapter can rely on
+
+Depends on: sandbox access from Ruthwick. Time-box: half a day, before any adapter code.
+
+**Status 2026-09-16**: done. Findings are in `apps/temelio-adapter/SANDBOX-FINDINGS.local.md`
+(gitignored via `*.local.md`, because the repo is public). All five questions are answered
+against the real foundation with the credential the adapter will use; the test grantee exists,
+is seeded with drift, and is findable by EIN. Branches in T2–T4 are resolved below.
 
 - **Acceptance criteria**:
-  - When the conversation has happened, then this ticket is replaced in `PLAN.md` by two to four
-    implementation tickets that answer: what the adapter wraps (a real Temelio sandbox API, or a
-    fixture-shaped stand-in defined in this repo); how identity is mapped between Temelio's org
-    records and the EIN lookup; whether Temelio joins `pnpm e2e` (a fourth `webServer` entry) or
-    is demoed by hand only; and how the pull beat is shown given Link cannot be embedded in
-    Temelio.
-- **Implementation plan** (what is already known, so the split is quick):
-  1. `apps/temelio-adapter` is a scaffold on port 5175 with no routes, no `src/lib`, no
-     `hooks.server.ts`, no `.env.example`, and no dependency on `@cg-link/seed`. `.claude/launch.json`
-     already knows it; `e2e/playwright.config.ts` does not.
-  2. The registry entry already exists, commented out, in `apps/link/src/lib/server/sources.ts`
-     (id `temelio`, `http://localhost:5175`). Adding Temelio to Link is uncommenting it, adding
-     `capabilities`, and adding its token to `apps/link/.env.example`.
-  3. Recommended architecture regardless of Monday's answer: implement the `OrgStore` interface
-     (`packages/cg-org-sync/src/server/store.ts`) over Temelio's shape — a `TemelioOrgStore`
-     that maps vendor records to `Organization` on `list`/`read` and rejects `write` — and wire
-     `listOrgs`/`readOrg` from the shared handlers unchanged. If fixture-backed, the vendor side
-     is a `TEMELIO_SEED` in `@cg-link/seed` in Temelio's own field names, so the translation layer
-     is real even though the API is not.
-  4. If Temelio joins e2e, `e2e/env.ts` gains its origin and `SYSTEM_ORIGINS` gains a reset
-     route for it.
-- **Edge cases**: a Temelio record with no EIN (cannot be matched; reported as "no record" rather
-  than an error); vendor fields with no CommonGrants counterpart (dropped on read, listed in the
-  adapter's README).
-- **Unit tests**: n/a for the placeholder. The split tickets will put the store mapping under
-  Vitest in `@cg-link/org-sync` or in the adapter's own small suite.
-- **Trade-offs**: Deferring the split costs one planning pass on Monday but avoids writing tickets
-  against an API we have not seen.
+  - When the spike is done, then `apps/temelio-adapter/SANDBOX-FINDINGS.local.md` (gitignored;
+    the repo is public) answers, in plain words: (a) how the sandbox authenticates and whether one token can be held
+    server-side for the length of a demo; (b) whether the metadata write merges into the record or
+    replaces it; (c) whether the org search by EIN returns the record we expect, and what a miss
+    looks like; (d) whether the thin record can be written, and whether a nonprofit carrying the
+    demo's EIN can be created, or an existing sandbox org has to be adopted; (e) what a refused
+    write looks like — status and body — so the adapter can pass it through faithfully.
+  - When those are answered, then every "Branch on T1" note in T2–T4 below is resolved in this
+    file, and any ticket the answers make impossible is marked cut rather than left open.
+  - When the spike is finished, then `apps/temelio-adapter/.env.example` exists and names
+    `TEMELIO_API_ORIGIN`, `TEMELIO_API_TOKEN`, `TEMELIO_ORG_ALLOWLIST` (comma-separated ids) and
+    `TEMELIO_MODE` (`fixture` | `sandbox`), each with a comment and no value.
+  - When a recorded request or response is kept for T2's tests, then it is scrubbed of anything
+    beyond the demo org — other orgs, tokens, people — before it is committed.
+- **Implementation plan**:
+  1. Sign in to the sandbox with devtools open and capture the calls its own profile page makes on
+     load and on save: the auth header's shape, and the token's lifetime (decode `exp` if it is a
+     JWT).
+  2. With the captured token, read the demo org by hand with `curl`, then search for it by EIN.
+     Compare what comes back with the spec's mapping table and note every field the table names
+     that is absent, renamed or shaped differently.
+  3. On a sandbox org we own: write a metadata body carrying one field, read back, and check
+     whether everything else survived. That is the merge-or-replace answer. Restore the value.
+  4. Try the thin-record write. If the sandbox lets us, create a nonprofit with EIN `123456789`
+     (the demo's, a registry example value); otherwise record the adopted org's EIN for T2's seed.
+  5. Write the findings into the doc, resolve the branches in this file, write `.env.example`.
+- **Edge cases**: the token expires within a demo (record the lifetime; if it is short, T3 mints
+  or refreshes it at first request rather than reading a stale one from `.env`); the sandbox
+  rate-limits a read-per-org list; the UI uses a call the published OpenAPI document does not
+  list (prefer the documented one, note the difference).
+- **Unit tests**: none. The output is the findings section and the resolved branches.
+- **Trade-offs**: Half a day that produces no code, so that T2, T3 and T4 do not each rediscover
+  the same blocker on their own day.
+
+### #1190-T2: `TemelioOrgStore`: the mapping between Temelio's records and `Organization`, under test
+
+Depends on: #1190-T1 for the confirmed shapes. Can start against the spec's table and adjust.
+
+- **Acceptance criteria**:
+  - When `apps/temelio-adapter` gains a `test` script, then `pnpm test` runs its Vitest suite
+    alongside the packages' (`pnpm -r run test` picks it up).
+  - When `toOrganization(record)` is given the fixture record (the per-funder copy), then it
+    returns an `Organization` that parses under `OrganizationBaseSchema`, with `id` set to
+    Temelio's nonprofit id, `identifiers.systemId` under `org:temelio:system`, the EIN under
+    `org:us:ein`, and the four demo fields where the findings file's table puts them.
+  - When a vendor value has no counterpart, or a lossy one (the org type), then it lands in
+    `customFields` or is dropped as the table says, and one test names every dropped field so the
+    list T5 publishes cannot drift from the code.
+  - When `toMetadataPatch(before, after)` is given the current and the patched `Organization`,
+    then it returns one merge body holding only the top-level Temelio keys that changed — with
+    sub-objects such as `headquarters` sent whole, since Temelio's merge is shallow — `""` for a
+    cleared field (Temelio ignores `null`), and nothing for `name`, which a funder cannot change.
+    So a patch to the website sends exactly one call carrying exactly one key.
+  - When `TemelioOrgStore.list()` runs, then it returns one `Organization` per allowlisted org id
+    in allowlist order (one read each); an id the foundation has no interaction with (403) is
+    skipped with one log line; a 401 or 5xx throws, so the route answers an error rather than an
+    empty list that reads as "no record".
+  - When `read(orgId)` is asked for an id outside the allowlist, then `undefined`, with no request
+    sent — the same answer `scopedStore` gives for an org outside a grant.
+  - When `write(org)` runs, then it diffs against the current record, sends one merge POST,
+    re-reads (writes return an empty body), and returns the result; the api client refuses a
+    write outside the allowlist by throwing before any request, so no path — route, script or
+    test — can reach Temelio for an org not on the list.
+- **Implementation plan**:
+  1. `apps/temelio-adapter/package.json`: `"test": "vitest run"`, `vitest` as a `catalog:`
+     devDependency, `@cg-link/seed` as a dependency; a `vitest.config.ts` matching
+     `packages/seed`'s (`src/**/*.test.ts`).
+  2. `src/lib/server/temelio/records.ts`: a Zod schema for the per-funder record as the adapter
+     reads it — only the fields it maps, every one nullable, `null` and `""` both meaning empty —
+     plus the search page and the `ApiError` envelope. Parsed at the boundary the way `OrgClient`
+     parses its responses, so a vendor change fails loudly rather than leaking a half-mapped
+     profile into the grid.
+  3. `src/lib/server/temelio/mapping.ts`: `toOrganization`, `toMetadataPatch`,
+     `TEMELIO_SYSTEM_REGISTRY = "org:temelio:system"`, `yearFounded` from the `YYYY-MM-DD`
+     founding date (and back as `<year>-01-01`), the `customFields` pass-through for `dba`,
+     `vision`, `description`, `legalStatus`, and `DROPPED_FIELDS` — the funder-side fields the
+     mapping leaves behind.
+  4. `src/lib/server/temelio/api.ts`: a `TemelioApi` interface with three methods — search the
+     foundation's grantees by EIN, read one grantee's record, merge-write one record — and
+     `TemelioHttpApi` implementing it over an injectable `fetch`, scoped to `TEMELIO_FOUNDATION_ID`,
+     sending the key as `X-API-Key`, with the allowlist guard on the write; failures as
+     `TemelioApiError { status, message }` from the `ApiError` envelope (and from the bare Spring
+     403 body, which has no `message`).
+  5. `src/lib/server/temelio/store.ts`: `TemelioOrgStore implements OrgStore` over a `TemelioApi`
+     and the allowlist. Its doc comment says plainly that it is a projection, not a round trip —
+     see trade-offs.
+  6. `src/lib/server/temelio/fixture.ts`: `FakeTemelioApi implements TemelioApi` — in memory,
+     seeded with a hand-written vendor-shape record for Agile Six matching what we seeded in the
+     real foundation (findings file, "as seeded"), plus two funder-side fields, with `reset()`.
+     This is also T3's fixture mode and T5's offline e2e.
+  7. `packages/seed/src/agile-six.ts`: `TEMELIO_ORG_ID` (the real grantee's id, since fixture and
+     sandbox should agree) and `TEMELIO_SEED: Organization`, drifted the way the real record is —
+     website `http://www.agile6.com`, Suite 210, no LinkedIn — so a three-column comparison has
+     three answers for the website and two for the address. `TEMELIO_SEEDS = [TEMELIO_SEED]`. `agile-six.test.ts` covers it as it does the
+     other two. `DEMO_USERS` is left alone and `demo-users.test.ts` keeps pinning
+     `grantsFor("temelio", …)` empty: Temelio's grants come from the allowlist (T3), not the seed,
+     because in sandbox mode the ids are whatever the sandbox assigned.
+  8. Tests. `mapping.test.ts`: `toOrganization(fixture)` equals `TEMELIO_SEED` (which is what
+     keeps the vendor-shape fixture and the CommonGrants-shape seed in step);
+     `toMetadataPatch(seed, seed with a new website)` is exactly `{ website }`; a changed suite
+     number yields the whole `headquarters` object; a cleared field yields `""`; a changed `name`
+     yields nothing; `DROPPED_FIELDS` matches what the fixture loses on a round trip. `store.test.ts` over `FakeTemelioApi`: `list` is the allowlist;
+     `read` outside it is `undefined` and sends nothing; `write` re-reads; a refused write never
+     reaches the fake's write. `api.test.ts`: `TemelioHttpApi` against a stubbed `fetch` with the
+     scrubbed pair from T1 — the bearer header, the search query, a 401 and a 5xx each becoming
+     `TemelioApiError`.
+- **Settled by T1**: writes merge at the top level, so `write` diffs and sends one merge POST
+  with whole sub-objects — no read-modify-write of the record, but the address is sent complete.
+  `""` clears and `null` is ignored. The single-field route exists but refuses the API key, so
+  it is not used. The EIN lookup is the funder-scoped typed search with a string filter on `ein`,
+  digits only, 1-based pages; the same EIN can match several records, so take the first active
+  hit and log the rest. Address keys are `address1`/`address2`/`zipcode`; `records.ts` follows the
+  findings file, not Billy's table.
+- **Edge cases**: a record with no EIN (mapped with no `org:us:ein` entry; it matches nothing,
+  which the fan-out already reports as "no record" rather than an error); a null founding date
+  (no `yearFounded`); a mailing address that is all `null`/`""` (no `otherAddresses`); `null`
+  versus `""` for empty (both read as absent, and a cleared field is written as `""`); a
+  `name` change (no update sent, and T4 names `name` in `unwritableFields` so the sender hears
+  about it).
+- **Unit tests**: as above, in the adapter's own suite.
+- **Trade-offs**: `OrgStore.write`'s contract says unknown keys must survive a write, and a store
+  that projects onto a vendor's columns cannot honour it — an older sender's field that Temelio
+  has no home for is gone after one patch. Documented on the class rather than papered over, and
+  it is the memo's "a real vendor covers a fraction of OrganizationBase" finding, observed rather
+  than contrived. The bigger memo item is that the funder-side copy, not the nonprofit's own
+  record, is the surface a funder integration can reach — which is the opposite of what the plan
+  assumed and exactly the "which copy does GET /orgs/{orgId} return" question ADR-0026 leaves open. Vendor code in a public repo is the open question above;
+  the one-directory rule is what keeps that decision cheap.
+
+### #1190-T3: Serve the CommonGrants routes over Temelio, and put Temelio in Link's picker
+
+Depends on: #1190-T2.
+
+- **Acceptance criteria**:
+  - When the adapter runs with `TEMELIO_MODE=sandbox`, a token and an allowlist, then
+    `GET /common-grants/orgs?registry=org:us:ein&id=<ein>` returns Agile Six as an `Organization`
+    carrying Temelio's own id, `GET /common-grants/orgs/{orgId}` returns the composed profile, and
+    `PATCH` answers 405 until T4 (SvelteKit's answer for an unexported method — assert it, so the
+    read-only claim is pinned rather than assumed).
+  - When it runs with `TEMELIO_MODE=fixture`, then the same routes answer from `FakeTemelioApi`
+    and no request leaves the process; `POST /__test/reset` behind `ENABLE_TEST_ROUTES` resets the
+    fake; in sandbox mode that route answers 409 with a sentence saying a shared sandbox cannot be
+    reset, so the e2e fixture fails by name rather than by a mystery assertion.
+  - When `/common-grants/*` is hit with no credential, then 401 in the portals' envelope; with a
+    token the adapter minted, reads are scoped to that person's grants; with `CG_ACCESS_TOKEN`,
+    everything the allowlist exposes and nothing beyond it.
+  - When someone signs in to Temelio through Link's modal as the admin, then the organization step
+    lists the allowlisted org and locks to the linked EIN like any other system; as the portal-only
+    person, the modal lands on its denied step — Temelio refuses them as FunderHub does.
+  - When Link's registry entry is flipped, then Temelio is a third column in the comparison with
+    `capabilities: { read: true, write: false }`, its picker row starts a flow, and the
+    `coming-soon` assertions in `connect.spec.ts` and `link-flow.spec.ts` move to another named
+    system.
+  - When the adapter starts serving, then one log line names its mode and its identity provider,
+    so a presenter can tell fixture from sandbox without opening `.env`.
+- **Implementation plan**:
+  1. The portal wiring, adapted. `src/lib/server/store.ts`: `SYSTEM_ID = "temelio"`;
+     `temelioApi()` picks `TemelioHttpApi` or `FakeTemelioApi` from `TEMELIO_MODE`, built once per
+     isolate on first request and memoized by the values it was built from, the way `keys.ts`
+     memoizes the key — `$env/dynamic/private` is empty at module load, and in fixture mode the
+     fake must be a singleton or writes vanish between requests; a module-level `TemelioOrgStore`
+     over it; `routesFor(principal)`. Then `keys.ts`, `hooks.server.ts`, `app.d.ts`,
+     `oauth.ts` (grants computed here: `roleFor(email, users) === "admin"` → the allowlist ids,
+     anyone else → `[]`), routes `common-grants/orgs/{+server.ts,[orgId]/+server.ts}` with GET
+     only, `[x+2e]well-known/jwks.json`, `oauth/{authorize,callback,fake-login}`, `token`,
+     `__test/reset` (with the 409 branch), and `.env.example` gaining the portals' variables
+     (`CG_ACCESS_TOKEN`, `SIGNING_KEY_JWK` with its own fresh key, `ENABLE_TEST_ROUTES`,
+     `IDENTITY_PROVIDER`, `SYSTEM_ORIGIN`, `LINK_ORIGIN`, `DEMO_*_EMAIL`). The landing page's
+     route list loses "Not implemented yet" and shows the mode.
+  2. `packages/seed/src/demo-users.ts`: `roleFor(email, users): DemoRole | undefined`, since the
+     adapter cannot use `grantsFor` when its ids come from the environment. Tested beside
+     `grantsFor`.
+  3. `apps/link/src/lib/server/sources.ts`: replace `comingSoon("temelio", …)` with a real entry —
+     `baseUrl` on 5175, `authorizeUrl`, `tokenUrl`, `website: "temelio.com"`,
+     `capabilities: { read: true, write: false }`, and a comment saying T4 flips it.
+  4. `e2e/env.ts`: `TEMELIO_ORIGIN` and `SYSTEM_ORIGINS.temelio`; `playwright.config.ts`: a fourth
+     `webServer`; `fixtures.ts`: the reset and the per-system token now cover three systems (it
+     already iterates `SYSTEM_ORIGINS`; check nothing is hard-coded to two). Move the coming-soon
+     assertions to `simpler-grants`. `api-compare.spec.ts` asserts the third column and that the
+     website row now holds three distinct values.
+  5. Docs: the README's app table row for the adapter stops saying placeholder and the variable
+     table gains its four variables; CLAUDE.md's `.env` paragraph covers three apps and says
+     `pnpm e2e` needs the adapter's `.env` with `TEMELIO_MODE=fixture`.
+- **Settled by T1**: the session JWT lives sixty seconds, so it is not a credential the adapter
+  can hold. `TEMELIO_API_TOKEN` is the funder API key (`cg-link-adapter`, Edit), sent as
+  `X-API-Key`; it covers read, search and merge-write on the grantee routes. The adapter also
+  needs `TEMELIO_FOUNDATION_ID`, since every reachable route is under the foundation.
+- **Edge cases**: the sandbox is down or the token has expired (the store throws, the route
+  answers 502, and the Temelio column reads as an error — never as agreement or as "no record");
+  an empty allowlist (an empty list plus one log line naming the variable); `TEMELIO_MODE` unset
+  (default to `fixture`, so a fresh checkout with no sandbox works, and the start-up line says so);
+  sandbox mode with `ENABLE_TEST_ROUTES=true` (the 409, not a reset); the admin's grant when the
+  allowlist has two ids (both listed, the EIN lock picks one).
+- **Unit tests**: `store.test.ts` gains the 401-and-5xx-throw case if T2 did not. The wiring itself
+  is covered by `pnpm e2e`, as the portals' is.
+- **Trade-offs**: The same fifteen files a third time. One parameterised app was rejected for the
+  two portals, and the argument is stronger here: the adapter is the copy that is _not_ a copy,
+  and its differences — mode, allowlist, projection — read more clearly next to a full copy than
+  threaded through a shared app as flags.
+
+### #1190-T4: Push to Temelio: `PATCH` through the adapter, guarded by the allowlist
+
+Depends on: #1190-T3, and T1's answer that the sandbox accepts writes. If it does not, mark this
+ticket cut, keep `write: false`, and the Temelio beat is a pull into GrantPortal via #1189-T3.
+
+- **Acceptance criteria**:
+  - When `PATCH /common-grants/orgs/{orgId}` arrives with a merge patch setting `socials.website`,
+    then the adapter reads the current record, applies the patch, sends one merge POST carrying
+    `website`, re-reads, and answers an `OrgRevision` whose snapshot carries the new website — and
+    the grantee's page in Temelio shows it.
+  - When the patch sets `name`, which Temelio does not let a funder change, then the field is
+    dropped and named in the message through `unwritableFields: ["name"]`, exactly as FunderHub
+    does, so the widget's existing handling applies and #1191-T2's grey-out can list it in Link's
+    config.
+  - When the patch targets an id outside the allowlist, then 404 and no sandbox request.
+  - When the sandbox refuses the write, then the adapter answers 502 with the sandbox's status and
+    message in `errors`, so `SyncResults` shows what Temelio said rather than "accepted".
+  - When Link's entry flips to `capabilities: { read: true, write: true }`, then Temelio is offered
+    as a target, and `api-sync.spec.ts` pushes GrantPortal's address to Temelio in fixture mode and
+    then sees the address row agree across all three.
+  - When fixture mode receives that write, then `FakeTemelioApi` holds it and the vendor-only
+    fields survive — asserted through the fake in a store test, since the e2e suite can only see
+    the composed profile.
+- **Implementation plan**:
+  1. `[orgId]/+server.ts`: export `PATCH` calling `updateOrg(orgId, request, routesFor(principal))`.
+     `store.ts`: `unwritableFields` from T2's dropped list, so the shared handler does the naming.
+  2. A store that talks to a network fails in ways `MemoryOrgStore` never does, and `updateOrg`
+     has nowhere to put that today. Add `StoreError { status, message, errors }` to
+     `packages/cg-org-sync/src/server/store.ts`; `updateOrg` (and `readOrg`, `listOrgs`) catch it
+     and answer `failure(502, …)` with the cause in `errors`. `TemelioOrgStore` wraps
+     `TemelioApiError` in it. Pinned in `org-routes.test.ts` with a throwing store. The alternative
+     — a try/catch in the adapter's route — leaves every future non-memory store re-inventing it.
+  3. `TemelioOrgStore.write`: one merge POST carrying only the changed top-level keys, so the
+     demo's website or address push is exactly one vendor call.
+  4. Flip Link's capabilities; update `api-sync.spec.ts` and `widget.spec.ts` (Temelio appears as a
+     target checkbox).
+  5. By hand against the sandbox: push the website from GrantPortal to Temelio, screenshot the
+     sandbox UI for the README, then put the old value back so the drift is there for the next run.
+     The restore steps go in `docs/demo-script.md` as "reset Temelio by hand", since
+     `/__test/reset` refuses in sandbox mode.
+- **Settled by T1**: shallow merge via one POST; a cleared field is sent as `""`, since Temelio
+  ignores `null`; the funder cannot rename a grantee.
+- **Edge cases**: the last-write-wins race — someone edits in Temelio's UI between the adapter's
+  read and its write, and the adapter overwrites (memo item: the spec should say LWW plainly and
+  there is no `If-Match` to lean on); a merge body Temelio accepts with 200 but stores
+  differently (the re-read is the truth, and the revision echoes what was stored); the allowlist changing
+  between a compare and a sync (404 at sync time, already handled per target).
+- **Unit tests**: `store.test.ts`: a write touching two fields sends one POST with two keys; an
+  unchanged field is absent from the body; a refused write throws before any request; a 4xx
+  surfaces as `StoreError`. `org-routes.test.ts`: a store that throws `StoreError` becomes a 502 envelope.
+- **Trade-offs**: The write is one call, so there is nothing to roll back — but a shallow merge
+  means a one-line address change ships the whole address, which is the read-modify-write in
+  miniature and has the same last-write-wins window. Said in the memo.
+
+### #1190-T5: Prove it end to end, and tell the story
+
+Depends on: #1190-T3 for the reads and, if it lands, #1190-T4 for the push.
+
+- **Acceptance criteria**:
+  - When `pnpm e2e` runs, then it boots four apps and covers: Temelio as a third column holding
+    its own website value; signing in to Temelio as the admin lists the org and as the portal-only
+    person is refused; and, with T4, pushing to Temelio lands and the comparison agrees.
+  - When the adapter runs in fixture mode, then its landing page shows the profile it currently
+    holds — the four demo fields, re-read on every load — so step 6 of the target demo has a
+    screen when the sandbox is unavailable. In sandbox mode the page links to the sandbox UI
+    instead.
+  - When the README is read, then the adapter is described as the wrapper-first pattern, with
+    setup (`.env`, the two modes) and no endpoint or record detail beyond "Temelio's own API";
+    `docs/demo-script.md` gets the three-system click path, a `curl` block for the adapter beside
+    the portals', the by-hand sandbox reset, and the adapter's log lines in "what to check when
+    something is off".
+  - When the memo is drafted in Billy's doc, then it carries what this work produced: profile
+    coverage split across two records; projection versus round trip in `OrgStore.write`; the LWW
+    race in read-modify-write with no `If-Match`; `org:temelio:system` needing a catalog entry;
+    and whatever T1–T4 turned up beyond that.
+  - When CLAUDE.md is read, then "Not started" no longer names the adapter, the layout section
+    describes the adapter's directory and modes, and the `.env` paragraph covers three apps.
+- **Implementation plan**: `e2e/specs/temelio.spec.ts`, or the Temelio cases folded into the
+  `api-*` and `connect` specs where they fit; the adapter's `+page.server.ts` and `+page.svelte`;
+  `README.md`, `docs/demo-script.md`, `CLAUDE.md`; memo bullets in the doc.
+- **Edge cases**: `pnpm e2e` with the adapter in sandbox mode (the reset fixture's 409 surfaces as
+  a sentence naming the adapter and `TEMELIO_MODE`); the adapter's `.env` missing (the same
+  fail-by-name the portals' missing `.env` already produces).
+- **Unit tests**: none new.
+- **Trade-offs**: Fixture mode proves the adapter's translation and the widget's three-way fan-out;
+  only the by-hand run proves the sandbox. That is the honest split for a shared external sandbox
+  that CI cannot reset.
 
 ## #1191: Multi-field patch support and unsupported-field guardrails (nice-to-have)
 
@@ -1234,13 +1556,17 @@ Depends on: #1191-T1
 
 - #1188-T1 → #1188-T2, #1188-T3; #1188-T2, #1188-T3 → #1188-T4
 - #1188-T4 → #1188-T5, #1188-T6; #1188-T5, #1188-T6 → #1188-T7 → #1188-T8 → #1188-T9
-- #1188-T1 → #1189-T3, #1190-T1
+- #1188-T1 → #1189-T3, #1190-T3
+- #1190-T1 → #1190-T2 → #1190-T3 → #1190-T4 → #1190-T5 (T5 can start once T3 lands)
+- #1190-T4 → #1191-T2 (Temelio's `unwritableFields` join FunderHub's in Link's config)
+- #1189-T1, #1189-T2, #1191-T1 and #1190-T3 → the target demo in #1190
 - #1189-T1 → #1189-T2 → #1189-T3
 - #1191-T1 → #1191-T2
 - **Parallel**: #1188-T1, #1189-T1, and #1191-T1 have no dependencies on each other and can start
   now. Once #1188-T1 lands, #1188-T2 and #1188-T3 can run in parallel. #1191 touches
   `apps/link/src/routes/+page.svelte` heavily, as do #1188-T3's connect screen and #1189-T3; land
-  #1191-T1 early or expect merge work there. #1190-T1 waits for Monday Sept 14. #1188-T5 and
+  #1191-T1 early or expect merge work there. #1190-T1 needs only sandbox access and can start
+  now; #1190-T2 can start against the spec's mapping table before T1 finishes and adjust. #1188-T5 and
   #1188-T6 can run in parallel now that T4 is done; #1188-T6 rewrites `+page.svelte` around the
   modal, so #1189-T3's "connect-list badges" land on its picker rows and chips instead, and
   #1189-T2's embed keeps working because the popup already reports to `window.opener`. #1188-T9 is

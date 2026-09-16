@@ -12,3 +12,6 @@ build/
 # Playwright
 playwright-report/
 test-results/
+
+# Local notes that must not reach the public repo (Temelio API detail)
+*.local.md
