@@ -191,6 +191,12 @@ importers:
       '@cg-link/org-sync':
         specifier: workspace:*
         version: link:../../packages/cg-org-sync
+      '@cg-link/seed':
+        specifier: workspace:*
+        version: link:../../packages/seed
+      zod:
+        specifier: 'catalog:'
+        version: 4.5.4
     devDependencies:
       '@sveltejs/adapter-cloudflare':
         specifier: 'catalog:'
@@ -213,6 +219,9 @@ importers:
       vite:
         specifier: 'catalog:'
         version: 8.2.2(@types/node@22.20.2)(esbuild@0.28.1)
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.0(@types/node@22.20.2)(vite@8.2.2(@types/node@22.20.2)(esbuild@0.28.1))
       wrangler:
         specifier: 'catalog:'
         version: 4.129.0
