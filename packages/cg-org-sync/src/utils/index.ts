@@ -13,4 +13,6 @@ export { DIFFERENT_ORG_REASON, selectableOrgs, summarizeOrg } from "./orgs.js";
 export type { OrgLock } from "./orgs.js";
 export type { FieldSpec } from "./compare.js";
 export { capabilitiesOf, isConnectable } from "./sources.js";
-export { sameOriginPath } from "./urls.js";
+export { directionOf, syncTargets } from "./direction.js";
+export type { SyncDirection } from "./direction.js";
+export { originIfAllowed, parseOrigin, parseOriginList, sameOriginPath } from "./urls.js";

@@ -9,7 +9,8 @@
 
 import type { JsonValue } from "$lib/api-types.js";
 
-export { EIN_REGISTRY, formatFieldValue } from "@cg-link/org-sync/utils";
+export { EIN_REGISTRY, directionOf, formatFieldValue, syncTargets } from "@cg-link/org-sync/utils";
+export type { SyncDirection } from "@cg-link/org-sync/utils";
 
 /**
  * The EIN a deep link falls back to.

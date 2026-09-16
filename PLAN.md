@@ -927,7 +927,7 @@ pull from a named portal, and only portals whose configuration allows writes are
 - Whether a pull may target more than the host. Plan says no: pull is "into the host" only.
 - Whether the portals' profile pages should sit behind the #1188 login too. Not for Sept 18.
 
-### #1189-T1: Add an editable org profile page to GrantPortal and FunderHub
+### #1189-T1: [✓] Add an editable org profile page to GrantPortal and FunderHub
 
 - **Acceptance criteria**:
   - When `/orgs/{orgId}` loads in either app, then it renders that system's copy of the org:
@@ -972,13 +972,13 @@ pull from a named portal, and only portals whose configuration allows writes are
   which the apps cannot unit-test. Kept to that mapping; every rule stays in the library. Two
   copies of the page, one per app, on purpose.
 
-### #1189-T2: Embed Link in the portals as an iframe with a postMessage bridge
+### #1189-T2: [✓] Embed Link in the portals as an iframe with a postMessage bridge
 
 Depends on: #1189-T1
 
 - **Acceptance criteria**:
-  - When "Sync profile" is clicked on a profile page, then Link renders in an overlay iframe on
-    that page, already looking up the same org (EIN in the URL) and knowing which system it is hosted
+  - When "Open Link" is clicked on a profile page, then Link renders in an overlay iframe on that
+    page, already looking up the same org (EIN in the URL) and knowing which system it is hosted
     in (`?host=portal`).
   - When a sync completes inside the frame, then Link posts a `synced` message to the host page,
     which re-reads the org and updates the displayed values without a full reload.
@@ -1003,7 +1003,7 @@ host, onSynced, onClose })` builds the overlay and iframe (`data-testid="cg-link
      `{ type: "cg-link:synced", targets, results }` to `parent`; a Close button posts
      `{ type: "cg-link:close" }`. Both only when `window.parent !== window`.
   4. Profile pages in both apps: include the loader from `PUBLIC_LINK_ORIGIN` (add to each app's
-     `.env.example`, read via `$env/dynamic/public`), a "Sync profile" button
+     `.env.example`, read via `$env/dynamic/public`), an "Open Link" button
      (`data-testid="open-link"`), `onSynced` → `invalidateAll()`.
   5. `e2e/specs/embedded.spec.ts`: drives the frame with `page.frameLocator` and the widget's
      existing `data-testid`s. No Playwright config change; all servers already boot.
@@ -1020,7 +1020,7 @@ host, onSynced, onClose })` builds the overlay and iframe (`data-testid="cg-link
   `link-initialize.js` is included from their origin. Enough for the demo; packaging is a later
   concern. Dev-only `http://` origins in the allow-list.
 
-### #1189-T3: Make direction explicit: push to, pull from, driven by capabilities
+### #1189-T3: [✓] Make direction explicit: push to, pull from, driven by capabilities
 
 Depends on: #1189-T2, #1188-T1 (for `SourceConfig.capabilities`)
 

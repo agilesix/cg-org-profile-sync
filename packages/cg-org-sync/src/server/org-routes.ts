@@ -72,9 +72,123 @@ export async function readOrg(orgId: string, config: OrgRoutesConfig): Promise<R
 }
 
 /**
+ * The revision a system emits for a change it just applied.
+ *
+ * Spelled out rather than reusing `OrgRevision`, which is the *parsed* form:
+ * `UTCDateTimeSchema` is a transform to `Date`, so a revision that has been
+ * through the schema no longer matches the one that went over the wire. This
+ * is the wire form, timestamps and all.
+ */
+export interface AppliedRevision {
+  id: string;
+  status: { value: "accepted"; description: string };
+  source: string;
+
+  /** The patch this system actually applied — unwritable fields already gone. */
+  patch: JsonObject;
+
+  snapshot: Organization;
+  createdAt: string;
+  lastModifiedAt: string;
+}
+
+/** What `applyOrgPatch` did, or why it declined. */
+export type OrgPatchOutcome =
+  | {
+      ok: true;
+      revision: AppliedRevision;
+
+      /** Fields this system declined to store, named for the sender. */
+      skipped: readonly string[];
+
+      /** This system's own sentence about the change, dropped fields included. */
+      message: string;
+    }
+  | { ok: false; status: number; message: string; errors: unknown[] };
+
+/**
+ * Apply an already-parsed merge patch to one profile.
+ *
+ * Every rule a change has to pass lives here rather than in `updateOrg`: drop
+ * what this system declines to store, apply, re-validate the result, write.
+ * Exported because a system's own edit form has to go through exactly the same
+ * rules as its `PATCH` route, and the alternative — building a `Request` to
+ * call a handler in-process — would make an app's form action depend on the
+ * transport to reach behaviour that has nothing to do with it.
+ *
+ * The patch is expected to have been validated against `OrgPatchDataSchema`
+ * already; that parse is the caller's, because only the caller knows where the
+ * body came from and what a rejection should look like to whoever sent it.
+ */
+export async function applyOrgPatch(
+  orgId: string,
+  patch: JsonObject,
+  config: OrgRoutesConfig,
+): Promise<OrgPatchOutcome> {
+  const existing = await config.store.read(orgId);
+
+  if (!existing) {
+    return missing(orgId);
+  }
+
+  const { patch: writable, skipped } = dropUnwritable(patch, config.unwritableFields);
+
+  // `id` is assigned by this system, so a patch can never move a record.
+  const updated = {
+    ...(applyMergePatch(existing as unknown as JsonValue, writable) as object),
+    id: existing.id,
+  };
+
+  const validated = OrganizationBaseSchema.safeParse(updated);
+
+  if (!validated.success) {
+    return {
+      ok: false,
+      status: 400,
+      message: "Applying the patch would leave the profile invalid.",
+      errors: [...validated.error.issues],
+    };
+  }
+
+  // Store `updated`, not `validated.data`. The schemas strip unknown keys, so
+  // storing the parse output would let any patch quietly delete whatever an
+  // older sender left on the record — the opposite of the tolerance the read
+  // path shows it. The parse is a gate here, not a filter; nothing in the org
+  // schemas coerces or defaults, so the two differ only by what was stripped.
+  const stored = await config.store.write(updated as Organization);
+
+  // A store that declines the write stored nothing, so the record is not one
+  // this caller can reach — the same answer the read above already gave for it.
+  // Unreachable through `scopedStore`, whose `read` and `write` share a grant;
+  // here so a store that scopes them differently cannot report a change it
+  // never made.
+  if (!stored) {
+    return missing(orgId);
+  }
+
+  const now = new Date().toISOString();
+
+  return {
+    ok: true,
+    skipped,
+    message: changeMessage(writable, skipped),
+    revision: {
+      id: crypto.randomUUID(),
+      status: { value: "accepted", description: "The change was applied." },
+      source: config.source,
+      patch: writable,
+      snapshot: stored,
+      createdAt: now,
+      lastModifiedAt: now,
+    },
+  };
+}
+
+/**
  * `PATCH /common-grants/orgs/{orgId}`
  *
- * Applies a JSON Merge Patch and returns the change as an accepted revision.
+ * Parses the body, hands it to `applyOrgPatch`, and wraps the outcome in the
+ * response envelope. Every rule about what a change may do lives there.
  *
  * The revision echoes the patch this system actually applied, not the one that
  * arrived: anything named in `unwritableFields` has already been removed. That
@@ -100,9 +214,11 @@ async function applyPatch(
     return unsupportedMediaType(`A patch body must be sent as ${MERGE_PATCH_CONTENT_TYPE}.`);
   }
 
-  const existing = await config.store.read(orgId);
-
-  if (!existing) {
+  // Checked before the body is looked at, so an unknown org gets the answer
+  // that says the least about itself whatever was sent to it. `applyOrgPatch`
+  // reads again and answers 404 too — this is about which refusal a bad body
+  // to a record that does not exist earns, not about whether one is needed.
+  if (!(await config.store.read(orgId))) {
     return notFound(`No organization with id ${orgId}.`);
   }
 
@@ -122,52 +238,16 @@ async function applyPatch(
     ]);
   }
 
-  const { patch, skipped } = dropUnwritable(parsed.data as JsonObject, config.unwritableFields);
+  const outcome = await applyOrgPatch(orgId, parsed.data as JsonObject, config);
 
-  // `id` is assigned by this system, so a patch can never move a record.
-  const updated = {
-    ...(applyMergePatch(existing as unknown as JsonValue, patch) as object),
-    id: existing.id,
-  };
+  return outcome.ok
+    ? ok(outcome.revision, outcome.message)
+    : failure(outcome.status, outcome.message, outcome.errors);
+}
 
-  const validated = OrganizationBaseSchema.safeParse(updated);
-
-  if (!validated.success) {
-    return badRequest("Applying the patch would leave the profile invalid.", [
-      ...validated.error.issues,
-    ]);
-  }
-
-  // Store `updated`, not `validated.data`. The schemas strip unknown keys, so
-  // storing the parse output would let any patch quietly delete whatever an
-  // older sender left on the record — the opposite of the tolerance the read
-  // path shows it. The parse is a gate here, not a filter; nothing in the org
-  // schemas coerces or defaults, so the two differ only by what was stripped.
-  const stored = await config.store.write(updated as Organization);
-
-  // A store that declines the write stored nothing, so the record is not one
-  // this caller can reach — the same answer `read` above already gave for it.
-  // Unreachable through `scopedStore`, whose `read` and `write` share a grant;
-  // here so a store that scopes them differently cannot report a change it
-  // never made.
-  if (!stored) {
-    return notFound(`No organization with id ${orgId}.`);
-  }
-
-  const now = new Date().toISOString();
-
-  return ok(
-    {
-      id: crypto.randomUUID(),
-      status: { value: "accepted", description: "The change was applied." },
-      source: config.source,
-      patch,
-      snapshot: stored,
-      createdAt: now,
-      lastModifiedAt: now,
-    },
-    changeMessage(patch, skipped),
-  );
+/** The one answer for an org this caller cannot reach, whether or not it exists. */
+function missing(orgId: string): OrgPatchOutcome {
+  return { ok: false, status: 404, message: `No organization with id ${orgId}.`, errors: [] };
 }
 
 /**

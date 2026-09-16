@@ -41,6 +41,20 @@ export const store = new MemoryOrgStore(PORTAL_SEEDS);
 const orgRoutes: OrgRoutesConfig = { store, source: SYSTEM_ID };
 
 /**
+ * This system's own config, scoped by nobody.
+ *
+ * For this system's own screens rather than for its protocol surface. The
+ * profile page is the app a nonprofit edits their profile in, and putting it
+ * behind the same access token as `/common-grants/*` is deliberately out of
+ * scope for the demo — the presenter is taken to be signed in already.
+ *
+ * Named apart from `routesFor` so the distinction is a thing a reader sees: a
+ * `/common-grants/*` handler reaching for the unscoped store has to ask for it
+ * by this name, which is not a thing anyone types by accident.
+ */
+export const unscopedRoutes: OrgRoutesConfig = orgRoutes;
+
+/**
  * This system's org routes, narrowed to whoever the request is.
  *
  * Every handler goes through here rather than through `orgRoutes` directly, so

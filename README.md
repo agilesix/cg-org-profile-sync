@@ -39,9 +39,9 @@ agree on ids.
 ![The comparison grid: three systems, four fields, the website and address rows flagged as differing](docs/screenshots/3-compare.png)
 
 **Fix a field everywhere in one click.** Click the value that is right, pick which systems should
-receive it, and sync. Each system gets a JSON Merge Patch that changes only that field.
+receive it, and push. Each system gets a JSON Merge Patch that changes only that field.
 
-![After syncing GrantPortal's address to both other systems, the row agrees across all three and each target reports separately](docs/screenshots/4-synced.png)
+![After pushing GrantPortal's address to both other systems, the row agrees across all three and each target reports separately](docs/screenshots/4-synced.png)
 
 **Find out what a system could not store.** A system that does not model a field accepts the
 change, drops the field, and says so.
@@ -59,8 +59,27 @@ adapter, and saying so beats reporting a change that did not happen.
 
 ![The adapter's own page, in fixture mode, showing the profile it holds after a push](docs/screenshots/6-adapter.png)
 
-**Connect another system without new code.** Every system exposes the same routes, so a third one
-is a config entry, not a feature.
+**Open it where the data already lives.** Each system has its own profile page, and one button
+puts the widget in an overlay on top of it — no new tab, no second login. The widget knows whose
+page it is on, and tells it when something changes.
+
+![The widget open in an overlay over GrantPortal's profile page](docs/screenshots/7-embedded.png)
+
+**Know which way a value is moving.** Nothing is ever just "synced". Taking the page's own value
+out to the others is a push; taking another system's value into the page you are on is a pull, and
+a pull goes nowhere else.
+
+![Choosing FunderHub's address reads "Pull Primary address from FunderHub into GrantPortal", with GrantPortal the only target offered](docs/screenshots/8-pull.png)
+
+**Edit a profile on the system that holds it.** Every system serves its own editable page, saving
+through exactly the rules its `PATCH` route enforces — so an edit typed there and one pushed by the
+widget are the same edit.
+
+![GrantPortal's organization profile page, with the four compared fields editable](docs/screenshots/9-profile.png)
+
+**Connect another system without new code.** Every system exposes the same routes, so a fourth one
+is a config entry, not a feature. One configured read-only is labelled as such and is never offered
+as a target.
 
 ```
 GET   /common-grants/orgs             find an org by identifier, e.g. ?registry=org:us:ein&id=
@@ -76,10 +95,11 @@ You need Node 22 or newer and pnpm 11.
 ```bash
 pnpm install
 
-# Each system reads its configuration from a gitignored .env. Copy all three:
+# Each app reads its configuration from a gitignored .env. Copy all four:
 cp apps/portal/.env.example apps/portal/.env
 cp apps/funderhub/.env.example apps/funderhub/.env
 cp apps/temelio-adapter/.env.example apps/temelio-adapter/.env
+cp apps/link/.env.example apps/link/.env
 
 pnpm dev
 ```
@@ -98,8 +118,12 @@ credential, so it needs no vendor account to try. Its landing page says which mo
 | FunderHub       | `http://localhost:5174` | A system holding a stale copy, without `socials` |
 | Temelio adapter | `http://localhost:5175` | A vendor's API behind the CommonGrants contract  |
 
-Do not skip the `.env` step: a system with no configuration answers 401 to everything. Link needs
-no `.env` — it holds no credentials, and forwards the token each system issues you.
+Then open GrantPortal's profile page from its landing page and click **Open Link** to see the
+widget the way a nonprofit would: in an overlay on the system they were already using.
+
+Do not skip the `.env` step: a system with no configuration answers 401 to everything. Link's own
+`.env` holds no credentials — it forwards the token each system issues you — but it does say which
+origins may frame the widget, and unset means none may.
 
 Every value in the examples is a local placeholder, including the signing keys, which are real
 private keys sitting in git. Generate your own for anything that is not localhost.
@@ -130,6 +154,12 @@ organizations' data, so the adapter refuses to write to anything not named there
 below every route, so no amount of wrong configuration elsewhere can reach a record that is not
 ours.
 
+Link carries one variable of its own, and no secrets:
+
+| Variable in Link's `.env` | What it does                                                           |
+| ------------------------- | ---------------------------------------------------------------------- |
+| `EMBED_ALLOWED_ORIGINS`   | Which origins may frame the widget, and which it will post messages to |
+
 ### Signing in with Google instead
 
 **The demo runs on the stand-in form, not Google.** Both portals ship set to `IDENTITY_PROVIDER=fake`,
@@ -158,7 +188,7 @@ pnpm --filter @cg-link/e2e install-browsers  # once per machine
 pnpm e2e                                     # boots all three apps and drives the widget in a browser
 ```
 
-`pnpm e2e` runs the real apps, so it needs both portal `.env` files and `IDENTITY_PROVIDER=fake` —
+`pnpm e2e` runs the real apps, so it needs all four `.env` files and `IDENTITY_PROVIDER=fake` —
 it signs in through the stand-in form and cannot drive Google. A portal set to `google` fails the
 suite with a sentence naming it. `pnpm check`, `pnpm lint` and `pnpm format:check` cover types,
 lint and formatting for the whole repo.
@@ -190,11 +220,12 @@ The three-system exchange works end to end and is pinned by tests, and so is per
 access: each system runs its own sign-in flow and issues tokens scoped to what you may touch there.
 The third system is a vendor that never implemented the protocol, reached through an adapter, and
 a push through the widget lands as a write against that vendor's own API — verified by hand
-against their live sandbox as well as by the offline suite.
+against their live sandbox as well as by the offline suite. The widget also runs embedded in a
+host system's own page, and every change names the direction it travels.
 
 Sign-in currently goes through a stand-in form rather than Google — see above. Not built yet: real
-Google sign-in, embedding the widget inside a host system, selecting several fields at once, and
-durable storage. The build plan lives outside this repo. Ask Billy for a copy.
+Google sign-in, selecting several fields at once, and durable storage. The build plan lives outside
+this repo. Ask Billy for a copy.
 
 ## License
 

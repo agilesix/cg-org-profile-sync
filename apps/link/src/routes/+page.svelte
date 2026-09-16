@@ -31,9 +31,12 @@
   import SyncResults from "$lib/components/SyncResults.svelte";
   import {
     EIN_REGISTRY,
+    directionOf,
     formatFieldValue,
+    syncTargets,
     type ConnectOutcome,
     type Selection,
+    type SyncDirection,
     type SystemView,
   } from "$lib/demo.js";
   import {
@@ -94,6 +97,16 @@
   let targets = $state<string[]>([]);
   let results = $state.raw<SyncTargetResult[] | null>(null);
 
+  /**
+   * The direction the published results describe.
+   *
+   * Captured when the change is sent rather than read off the current pick:
+   * the grid re-reads afterwards and a pick can change under the result lines,
+   * and a line that said "pulled into" about a push would be worse than one
+   * that said nothing.
+   */
+  let syncedDirection = $state<SyncDirection | null>(null);
+
   /** One flag for both requests: neither should overlap itself or the other. */
   let busy = $state(false);
 
@@ -134,6 +147,19 @@
   let ready = $state(false);
 
   /**
+   * Whether the widget is running inside somebody else's page.
+   *
+   * Two conditions, both required: the deployment has to allow the origin that
+   * claims to be framing us (`data.parentOrigin`, decided on the server), and
+   * we have to actually be in a frame. The second is what keeps a standalone
+   * Link opened with a stray `?parent=` from growing a Close button that
+   * closes nothing, and it can only be answered in the browser.
+   */
+  let framed = $state(false);
+
+  const embedded = $derived(framed && data.parentOrigin !== null);
+
+  /**
    * The popup being waited on, so closing it by hand is not silence.
    *
    * A window someone shut is not a refusal and not an error; without this the
@@ -144,6 +170,7 @@
   onMount(() => {
     tokens = readTokens();
     denied = readDenied();
+    framed = window.self !== window.top;
     linkedSources = readLinkedSources();
     linkedOrg = adoptLinkedOrg();
     resumeFromUrl();
@@ -207,6 +234,17 @@
   const connectedCount = $derived(Object.keys(tokens).length);
 
   /**
+   * The system whose page we are embedded in, or `null` standalone.
+   *
+   * Already validated server-side against the registry, so an unrecognised
+   * `?host=` arrives as `null` and everything below reads as standalone.
+   */
+  const host = $derived(data.host?.id ?? null);
+
+  /** Which way the current pick travels: out of the host, or into it. */
+  const direction = $derived(selection === null ? null : directionOf(selection.sourceId, host));
+
+  /**
    * Labels come from the registry, not the comparison.
    *
    * The comparison is null until something is connected, and a source that is
@@ -217,11 +255,16 @@
     Object.fromEntries(data.sources.map((source) => [source.id, source.label])),
   );
 
-  /** The systems a change could actually reach, given what is picked. */
+  /**
+   * The systems a change could actually reach, given what is picked.
+   *
+   * `syncTargets` holds the rules — not the source it came from, nothing with
+   * an error or no record, nothing that declares `write: false`, and on a pull
+   * only the host. They live in the library because they decide where a change
+   * is sent, which is not a thing to leave untested in a template.
+   */
   const candidates = $derived(
-    (comparison?.sources ?? []).filter(
-      (source) => source.id !== selection?.sourceId && source.orgId !== null && !source.error,
-    ),
+    selection === null ? [] : syncTargets(comparison?.sources ?? [], selection.sourceId, host),
   );
 
   /**
@@ -481,6 +524,7 @@
     // recomputed on read, so this already reflects the line above.
     targets = candidates.map((source) => source.id);
     results = null;
+    syncedDirection = null;
     problem = null;
   }
 
@@ -568,6 +612,25 @@
   }
 
   /**
+   * Tell the host page something happened, if there is a host to tell.
+   *
+   * Always targeted at `data.parentOrigin` rather than `"*"`: the message
+   * names the systems a change reached, and a wildcard target would hand that
+   * to whatever page happened to be framing us instead of to the one the
+   * deployment allows.
+   */
+  function postToHost(message: { type: string; [key: string]: unknown }): void {
+    if (!embedded || data.parentOrigin === null) return;
+
+    window.parent.postMessage(message, data.parentOrigin);
+  }
+
+  /** Ask the host to take the frame away. It owns the overlay, so it decides. */
+  function close(): void {
+    postToHost({ type: "cg-link:close" });
+  }
+
+  /**
    * Send the picked value to every checked target, then re-read.
    *
    * The result lines are published *after* the refresh, so a result line with
@@ -581,6 +644,7 @@
 
     busy = true;
     results = null;
+    syncedDirection = null;
     problem = null;
 
     try {
@@ -606,6 +670,17 @@
       const refreshed = await refresh();
 
       results = (body as SyncResult).results;
+      syncedDirection = direction;
+
+      // After the refresh, so a host that re-reads on this message sees the
+      // post-change values rather than racing Link's own re-read. Sent even
+      // when a target failed: the host's copy may still have changed, and the
+      // per-target results are in the message for it to say so.
+      postToHost({
+        type: "cg-link:synced",
+        targets: chosen,
+        results: (body as SyncResult).results,
+      });
 
       if (!refreshed) {
         // `load` has already said why it could not re-read. Say what that
@@ -620,7 +695,35 @@
     }
   }
 
-  /** What a source allows, in the words the widget uses for it. */
+  /**
+   * What the Sync button is about to do, said in full.
+   *
+   * Named rather than left as "Sync": the one thing someone has to get right
+   * before clicking is which copy is about to be overwritten, and a verb that
+   * hides it is the whole reason this ticket exists.
+   */
+  const action = $derived.by(() => {
+    if (selection === null || direction === null) return null;
+
+    const from = labels[selection.sourceId] ?? selection.sourceId;
+    const into = chosen.map((id) => labels[id] ?? id).join(" and ");
+
+    // Both branches name a target only when there is one. Naming the host on a
+    // pull regardless would describe a change that unchecking it had already
+    // called off — the exact implication this ticket exists to remove.
+    return direction === "push"
+      ? `Push ${selection.label} from ${from}${into ? ` to ${into}` : ""}`
+      : `Pull ${selection.label} from ${from}${into ? ` into ${into}` : ""}`;
+  });
+
+  /**
+   * What a source allows, in the words the widget uses for it.
+   *
+   * "pull" and "push" rather than "read" and "write", so a chip names the two
+   * buttons someone is about to be offered: a system that cannot be pushed to
+   * is one the Push button will never list, and saying so in the same verb is
+   * what makes the two screens agree.
+   */
   function capabilityWords(capabilities: { read: boolean; write: boolean }): string {
     const allowed = [
       capabilities.read ? "pull" : undefined,
@@ -631,7 +734,16 @@
   }
 </script>
 
-<main data-testid="widget" data-ready={ready}>
+<main data-testid="widget" data-ready={ready} data-embedded={embedded}>
+  {#if embedded}
+    <div class="host-bar">
+      <p class="host" data-testid="host-system">
+        {data.host ? `Opened from ${data.host.label}` : "Opened from a host page"}
+      </p>
+      <button type="button" class="close" data-testid="close" onclick={close}>Close</button>
+    </div>
+  {/if}
+
   <p class="role">Widget</p>
   <h1>CommonGrants Link</h1>
   <p class="tagline">
@@ -728,13 +840,17 @@
           <span class="chosen-from">from {labels[selection.sourceId] ?? selection.sourceId}</span>
         </p>
 
+        <p class="direction" data-testid="direction" data-direction={direction}>{action}</p>
+
         {#if candidates.length === 0}
           <p class="prompt" data-testid="no-targets">
-            No other system holds a record of this organization, so there is nowhere to send this.
+            {direction === "pull"
+              ? `${data.host?.label ?? "This page"} cannot accept this change, so there is nowhere to pull it into.`
+              : "No other system can accept this change, so there is nowhere to send it."}
           </p>
         {:else}
           <fieldset>
-            <legend>Send it to</legend>
+            <legend>{direction === "pull" ? "Pull it into" : "Push it to"}</legend>
             {#each candidates as source (source.id)}
               <label>
                 <input
@@ -750,12 +866,12 @@
         {/if}
 
         <button type="button" class="sync" data-testid="sync" disabled={!canSync} onclick={sync}>
-          {busy ? "Syncing…" : "Sync"}
+          {busy ? "Sending…" : direction === "pull" ? "Pull" : "Push"}
         </button>
       {/if}
 
-      {#if results}
-        <SyncResults {results} {labels} />
+      {#if results && syncedDirection}
+        <SyncResults {results} {labels} direction={syncedDirection} />
       {/if}
     </section>
   {/if}
@@ -778,6 +894,31 @@
 />
 
 <style>
+  .host-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    margin: -2rem 0 2rem;
+    padding-bottom: 0.9rem;
+    border-bottom: 1px solid #d9e0dd;
+  }
+  .host {
+    margin: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #6b7a77;
+  }
+  .close {
+    font-size: 0.8rem;
+    padding: 0.2rem 0.75rem;
+    color: #14201f;
+    background: transparent;
+    border-color: #b7c4c1;
+  }
   .link-system {
     font: inherit;
     font-size: 0.95rem;
@@ -929,6 +1070,11 @@
     gap: 0.3rem 0.75rem;
     font-size: 0.9rem;
   }
+  .direction {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
   .chosen-field {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.72rem;
@@ -985,8 +1131,17 @@
   }
 
   @media (prefers-color-scheme: dark) {
-    .chip-caps {
+    .chip-caps,
+    .host {
       color: #8a9895;
+    }
+    .host-bar {
+      border-color: #2a3736;
+    }
+    .close {
+      color: #e7edeb;
+      background: transparent;
+      border-color: #3f5250;
     }
     .chip-ok {
       color: #56b7a9;

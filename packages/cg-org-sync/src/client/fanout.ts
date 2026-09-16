@@ -114,7 +114,14 @@ export async function compareAcrossSources(
       profiles[source.id] = org;
     }
 
-    return { id: source.id, label: source.label, orgId: org?.id ?? null, error, connection };
+    return {
+      id: source.id,
+      label: source.label,
+      orgId: org?.id ?? null,
+      error,
+      connection,
+      capabilities: capabilitiesOf(source),
+    };
   });
 
   return { sources, fields: compareProfiles(profiles, DEMO_FIELDS) };
