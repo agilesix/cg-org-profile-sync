@@ -27,7 +27,7 @@ that delegates identity to Google or to a dev-only form, and mints a token scope
 person may touch there. A person granted an org on GrantPortal and nothing on FunderHub is refused
 at FunderHub, which is the beat the demo turns on. Link uses it, and now in the Plaid shape: the widget opens on a
 title and one "Link Grant Management System" button, which opens a modal listing every system in
-the catalog — the two real ones and five named `coming-soon` — and walks pick → sign in → choose an organization → linked. The organization step
+the catalog — the three real ones and four named `coming-soon` — and walks pick → sign in → choose an organization → linked. The organization step
 lists what that system says the person may touch, and once one is chosen every later system is
 locked to it: `selectableOrgs` marks the rows a second system may offer (by EIN, falling back to
 name when the linked organization publishes none) and the widget pre-selects the single remaining
@@ -40,17 +40,20 @@ reads as "not connected" in its own column while the rest of the fan-out proceed
 401 offers Reconnect. `pnpm e2e` proves the whole of it: every spec signs in through the stand-in
 provider and holds no credential of its own, and `specs/connect.spec.ts` pins the beat the issue
 exists for — a person granted an org on GrantPortal and nothing on FunderHub is refused by FunderHub
-alone, with the comparison still showing what GrantPortal holds. `temelio-adapter` has its
-translation layer and nothing else yet: a `TemelioOrgStore` over the real vendor API, under its own
-Vitest suite, plus an in-memory fake of that API so it runs with no credential. It serves no routes
-— that is #1190-T3. Not started: the embed loader (the widget is a standalone page, not an iframe
-in a host app). `README.md` is the short overview for someone new —
+alone, with the comparison still showing what GrantPortal holds. `temelio-adapter` is now a third real
+system: a `TemelioOrgStore` over the vendor's API under its own Vitest suite, an in-memory fake of
+that API so it runs with no credential, and the same wiring the two portals carry — the two GET org
+routes, its own keys and JWKS, its own OAuth server, a dev-only reset. It is read-only until
+#1190-T4 adds `PATCH`, so Link registers it `write: false` and never offers it as a sync target, and
+`TEMELIO_MODE` picks the fake or the vendor. Link's picker and `pnpm e2e` treat it as one more
+entry, which is the claim the adapter exists to make. Not started: the embed loader (the widget is a
+standalone page, not an iframe in a host app). `README.md` is the short overview for someone new —
 why the project exists, what the widget does with screenshots, and setup. `docs/demo-script.md`
 is the presenter's runbook: the click path, the `curl` block per system, and what to check when
 something is off. Keep both in step with the code.
 
-**Running portal or funderhub needs a `.env`.** Copy each app's `.env.example` to `.env`
-(gitignored). Three variables:
+**Running portal, funderhub or temelio-adapter needs a `.env`.** Copy each app's `.env.example` to
+`.env` (gitignored). All three carry the same variables:
 
 - `CG_ACCESS_TOKEN` — the static service credential that app accepts on `/common-grants/*`, scoped
   to every org. It is what the `curl` block, the `api-*` specs and Link currently use.
@@ -72,6 +75,13 @@ something is off. Keep both in step with the code.
   redirect URI is registered and every `/oauth/authorize` request is refused.
 - `DEMO_ADMIN_EMAIL` / `DEMO_PORTAL_ONLY_EMAIL` — the addresses the demo's two people sign in with,
   overriding the seed's placeholders. An empty value is ignored rather than blanking an address.
+
+The adapter carries four more: `TEMELIO_MODE` (`fixture`, the default, answers from an in-memory
+stand-in and needs nothing else; `sandbox` talks to the vendor), `TEMELIO_API_ORIGIN`,
+`TEMELIO_FOUNDATION_ID`, `TEMELIO_API_TOKEN` (a funder API key, sent as `X-API-Key`), and
+`TEMELIO_ORG_ALLOWLIST` — the only records it serves, and the only ones it will ever write to. In
+sandbox mode `POST /__test/reset` answers 409 rather than resetting, since the records live in a
+system shared with other people. `pnpm e2e` needs the adapter's `.env` with `TEMELIO_MODE=fixture`.
 
 The guard fails closed: a system with neither credential configured 401s every request. All three
 are read through `$env/dynamic/private`, so `svelte-check` does not need them present. Keep

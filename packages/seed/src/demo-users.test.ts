@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PORTAL_ORG_ID } from "./agile-six.js";
-import { DEMO_USERS, demoUsers, grantsFor } from "./demo-users.js";
+import { DEMO_USERS, demoUsers, grantsFor, roleFor } from "./demo-users.js";
 import { FUNDERHUB_SEEDS, PORTAL_SEEDS } from "./other-orgs.js";
 
 const PORTAL_ORG_IDS = PORTAL_SEEDS.map((seed) => seed.id);
@@ -121,5 +121,30 @@ describe("demoUsers", () => {
     const users = demoUsers({ admin: "someone-else@example.net" });
 
     expect(grantsFor("portal", "Someone-Else@Example.net", users)).toEqual(PORTAL_ORG_IDS);
+  });
+});
+
+describe("roleFor", () => {
+  it("resolves the admin's address to the admin role", () => {
+    expect(roleFor("admin@example.org")).toBe("admin");
+  });
+
+  it("resolves the portal-only person's address to the portal-only role", () => {
+    expect(roleFor("portal-only@example.org")).toBe("portal-only");
+  });
+
+  it("resolves an address belonging to nobody to undefined, not a default role", () => {
+    expect(roleFor("nobody@example.org")).toBeUndefined();
+  });
+
+  it("matches the email case-insensitively, like grantsFor", () => {
+    expect(roleFor("Admin@Example.org")).toBe("admin");
+  });
+
+  it("looks up an overridden email in the list passed to it, and no longer matches the placeholder it replaced", () => {
+    const users = demoUsers({ admin: "someone-else@example.net" });
+
+    expect(roleFor("someone-else@example.net", users)).toBe("admin");
+    expect(roleFor("admin@example.org", users)).toBeUndefined();
   });
 });

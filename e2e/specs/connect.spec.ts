@@ -19,6 +19,7 @@ import {
   PORTAL_ORG_ID,
   PORTAL_SEED,
   PORTAL_SEEDS,
+  TEMELIO_ORG_ID,
 } from "@cg-link/seed";
 import { ADMIN_EMAIL, PORTAL_ONLY_EMAIL } from "../env.js";
 import {
@@ -47,11 +48,12 @@ test("the picker lists every system, and names the ones it cannot connect", asyn
 
   await expect(page.getByTestId("link-modal")).toBeVisible();
 
-  // The two real systems are choosable; the rest are named and are not.
+  // The three real systems are choosable; the rest are named and are not.
   await expect(page.getByTestId("pick-system-portal")).toBeVisible();
   await expect(page.getByTestId("pick-system-funderhub")).toBeVisible();
-  await expect(page.getByTestId("system-soon-temelio")).toContainText("Coming soon");
-  await expect(page.getByTestId("pick-system-temelio")).toHaveCount(0);
+  await expect(page.getByTestId("pick-system-temelio")).toBeVisible();
+  await expect(page.getByTestId("system-soon-simpler-grants")).toContainText("Coming soon");
+  await expect(page.getByTestId("pick-system-simpler-grants")).toHaveCount(0);
 });
 
 test("connecting one system shows its values and says the other is not connected", async ({
@@ -256,6 +258,43 @@ test("the second system is locked to the organization already linked", async ({ 
     await expect(row).toBeDisabled();
     await expect(row).toContainText("Different organization");
   }
+});
+
+test("a vendor behind an adapter signs in like any other system, and locks to the same organization", async ({
+  page,
+}) => {
+  await openWidget(page);
+  await connect(page, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
+
+  await signInVia(page, "temelio", ADMIN_EMAIL);
+
+  // Temelio is not a CommonGrants-native system at all — it is a vendor with
+  // its own API, behind an adapter. None of that is visible here: the same
+  // sign-in, the same organization step, the same EIN lock against what is
+  // already linked. That indistinguishability is the point of the adapter.
+  const matching = page.getByTestId(`org-${TEMELIO_ORG_ID}`);
+  await expect(matching).toHaveAttribute("aria-pressed", "true");
+  await expect(matching).toBeEnabled();
+
+  await page.getByTestId("confirm-org").click();
+  await expect(page.getByTestId("connected-temelio")).toBeVisible();
+
+  // And its column is in the grid, holding the website only it has.
+  await expect(page.getByTestId("grid")).toBeVisible();
+  await expect(page.getByTestId("cell-socials.website-temelio")).toContainText("agile6.com");
+});
+
+test("the adapter refuses someone it grants nothing, exactly as a native system does", async ({
+  page,
+}) => {
+  await openWidget(page);
+  await connect(page, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
+
+  // The same beat FunderHub plays above, from a system whose records we do not
+  // own. The adapter grants the allowlist to the demo's admin and nothing to
+  // anybody else, so this person is turned away at Temelio's own door rather
+  // than by Link deciding on its behalf.
+  await connectExpectingDenial(page, "temelio", PORTAL_ONLY_EMAIL);
 });
 
 test("closing the modal before choosing leaves the system signed in, not linked", async ({

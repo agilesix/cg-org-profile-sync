@@ -65,23 +65,27 @@ You need Node 22 or newer and pnpm 11.
 ```bash
 pnpm install
 
-# Each system reads its configuration from a gitignored .env. Copy both:
+# Each system reads its configuration from a gitignored .env. Copy all three:
 cp apps/portal/.env.example apps/portal/.env
 cp apps/funderhub/.env.example apps/funderhub/.env
+cp apps/temelio-adapter/.env.example apps/temelio-adapter/.env
 
 pnpm dev
 ```
 
 Then open **http://localhost:5176** and connect each system. Out of the box they use a stand-in
-sign-in form, so any address works — use `admin@example.org` to see both systems, or
-`portal-only@example.org` to see one system refuse you.
+sign-in form, so any address works — use `admin@example.org` to see all three systems, or
+`portal-only@example.org` to be refused by two of them.
+
+The Temelio adapter runs against an in-memory stand-in for Temelio's API unless you give it a real
+credential, so it needs no vendor account to try. Its landing page says which mode it is in.
 
 | App             | URL                     | What it is                                       |
 | --------------- | ----------------------- | ------------------------------------------------ |
 | Link            | `http://localhost:5176` | The widget. This is the one to open.             |
 | GrantPortal     | `http://localhost:5173` | A system holding the current profile             |
 | FunderHub       | `http://localhost:5174` | A system holding a stale copy, without `socials` |
-| Temelio adapter | `http://localhost:5175` | Placeholder, not built yet                       |
+| Temelio adapter | `http://localhost:5175` | A vendor's API behind the CommonGrants contract  |
 
 Do not skip the `.env` step: a system with no configuration answers 401 to everything. Link needs
 no `.env` — it holds no credentials, and forwards the token each system issues you.
@@ -100,6 +104,21 @@ private keys sitting in git. Generate your own for anything that is not localhos
 | `LINK_ORIGIN`                                 | The only origin it will send an authorization code to           |
 | `DEMO_ADMIN_EMAIL` / `DEMO_PORTAL_ONLY_EMAIL` | Real addresses for the two demo people, if you have them        |
 
+The adapter carries those same variables, plus four of its own:
+
+| Variable in `apps/temelio-adapter/.env` | What it does                                                     |
+| --------------------------------------- | ---------------------------------------------------------------- |
+| `TEMELIO_MODE`                          | `fixture` for the in-memory stand-in, `sandbox` for the real API |
+| `TEMELIO_API_ORIGIN`                    | Where that API lives. Only read in `sandbox` mode                |
+| `TEMELIO_FOUNDATION_ID`                 | The funder account the adapter acts as                           |
+| `TEMELIO_API_TOKEN`                     | That funder's API key                                            |
+| `TEMELIO_ORG_ALLOWLIST`                 | The only records it may read or change, comma-separated          |
+
+The allowlist is not an optimization. `sandbox` mode talks to a live system holding other
+organizations' data, so the adapter refuses to write to anything not named there — and refuses it
+below every route, so no amount of wrong configuration elsewhere can reach a record that is not
+ours.
+
 ### Signing in with Google instead
 
 **The demo runs on the stand-in form, not Google.** Both portals ship set to `IDENTITY_PROVIDER=fake`,
@@ -110,8 +129,9 @@ standing it up is the last ticket in the plan. What follows is what that will ta
 The stand-in form is enough to run and demo everything. To use real Google sign-in, make one
 project in the Google Cloud console with one **Web application** OAuth client:
 
-- Authorized redirect URIs: `http://localhost:5173/oauth/callback` and
-  `http://localhost:5174/oauth/callback` — each portal's own callback, not Link's.
+- Authorized redirect URIs: `http://localhost:5173/oauth/callback`,
+  `http://localhost:5174/oauth/callback` and `http://localhost:5175/oauth/callback` — each
+  system's own callback, not Link's.
 - Scopes: `openid` and `email`. Nothing else is read.
 - Leave the consent screen in **Testing** and add the demo accounts as test users.
 

@@ -1,11 +1,20 @@
 <script lang="ts">
+  import type { PageData } from "./$types.js";
+
+  const { data }: { data: PageData } = $props();
+
   const routes = [
     { verb: "GET", path: "/common-grants/orgs", note: "list, filtered by ?registry= &id=" },
     { verb: "GET", path: "/common-grants/orgs/{orgId}", note: "read one profile" },
-    { verb: "PATCH", path: "/common-grants/orgs/{orgId}", note: "apply a JSON Merge Patch" },
+    { verb: "PATCH", path: "/common-grants/orgs/{orgId}", note: "not yet — answers 405" },
     { verb: "POST", path: "/token", note: "mint this system's own access token" },
     { verb: "GET", path: "/.well-known/jwks.json", note: "this system's public keys" },
   ];
+
+  const modes = {
+    fixture: "Serving an in-memory stand-in for Temelio's API. Nothing leaves this process.",
+    sandbox: "Serving Temelio's real API, as a foundation, over the grantees it is allowed.",
+  };
 </script>
 
 <main>
@@ -25,7 +34,10 @@
       </li>
     {/each}
   </ul>
-  <p class="status">Not implemented yet — this app is a scaffold.</p>
+  <p class="status" data-testid="mode">
+    <strong>{data.mode} mode.</strong>
+    {modes[data.mode]}
+  </p>
 </main>
 
 <style>
