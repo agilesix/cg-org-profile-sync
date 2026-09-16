@@ -211,6 +211,68 @@ test("pushing portal's website reports what funderhub declined, and the row is u
   await expect(page.getByTestId("row-socials.website")).toHaveAttribute("data-status", "agree");
 });
 
+test("picking two rows sends them together, and each pick can be taken back", async ({ page }) => {
+  await openConnected(page);
+
+  const addressRow = page.getByTestId("row-addresses.primary");
+  await expect(addressRow).toHaveAttribute("data-status", "differs");
+
+  await page.getByTestId("pick-addresses.primary-portal").click();
+  await page.getByTestId("pick-socials.website-portal").click();
+
+  // Both picks stand at once, each on its own line.
+  await expect(page.getByTestId("selected-addresses.primary")).toContainText(PORTAL_STREET2);
+  await expect(page.getByTestId("selected-socials.website")).toContainText(PORTAL_WEBSITE);
+
+  // Picking again in a row replaces that row's choice rather than adding to
+  // it — otherwise the patch would carry two values for one field.
+  await page.getByTestId("pick-addresses.primary-funderhub").click();
+  await expect(page.getByTestId("selected-addresses.primary")).toContainText(FUNDERHUB_STREET2);
+  await expect(page.getByTestId("cell-addresses.primary-portal")).toHaveAttribute(
+    "data-selected",
+    "false",
+  );
+
+  // Put it back, then prove a pick is removable.
+  await page.getByTestId("pick-addresses.primary-portal").click();
+  await page.getByTestId("unpick-socials.website").click();
+  await expect(page.getByTestId("selected-socials.website")).toHaveCount(0);
+  await expect(page.getByTestId("selected-addresses.primary")).toBeVisible();
+
+  await page.getByTestId("pick-socials.website-portal").click();
+  await page.getByTestId("sync").click();
+
+  // One result line, because both changes went in one request. It reports the
+  // address stored and names socials as the part FunderHub would not keep.
+  await expect(page.getByTestId("sync-result-funderhub")).toHaveAttribute("data-ok", "true");
+  await expect(page.getByTestId("sync-result-funderhub")).toContainText("socials");
+  await expect(page.getByTestId("problem")).toHaveCount(0);
+
+  await expect(addressRow).toHaveAttribute("data-status", "agree");
+  await expect(page.getByTestId("cell-addresses.primary-funderhub")).toContainText(PORTAL_STREET2);
+  await expect(page.getByTestId("cell-socials.website-funderhub")).toHaveAttribute(
+    "data-held",
+    "false",
+  );
+});
+
+test("unchecking a target survives a later pick in another row", async ({ page }) => {
+  await openConnected(page);
+
+  await page.getByTestId("pick-addresses.primary-portal").click();
+  await expect(page.getByTestId("target-funderhub")).toBeChecked();
+
+  // Deliberately taken off the list.
+  await page.getByTestId("target-funderhub").uncheck();
+  await expect(page.getByTestId("sync")).toBeDisabled();
+
+  // A pick in an unrelated row must not put it back. Re-checking here would
+  // undo a decision on a click that had nothing to do with that system.
+  await page.getByTestId("pick-socials.website-portal").click();
+  await expect(page.getByTestId("target-funderhub")).not.toBeChecked();
+  await expect(page.getByTestId("sync")).toBeDisabled();
+});
+
 test("the linked organization and both systems survive a reload", async ({ page }) => {
   await openConnected(page);
 

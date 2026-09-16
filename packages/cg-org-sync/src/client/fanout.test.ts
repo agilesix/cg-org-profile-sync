@@ -581,7 +581,7 @@ describe("compareAcrossSources", () => {
 
 describe("syncToTargets", () => {
   it("builds one merge patch, PATCHes each target, and returns one result per target in order", async () => {
-    const mergePatch = buildMergePatch("socials.website", "https://agile6.com");
+    const mergePatch = buildMergePatch([{ path: "socials.website", value: "https://agile6.com" }]);
     const { fetch, calls } = captureFetch(
       stubFetchByOrigin({
         "https://portal.example.com": respondByMethod({
@@ -608,8 +608,7 @@ describe("syncToTargets", () => {
       {
         registry: "org:us:ein",
         id: AGILE_SIX_EIN,
-        path: "socials.website",
-        value: "https://agile6.com",
+        changes: [{ path: "socials.website", value: "https://agile6.com" }],
         targets: ["portal", "funderhub"],
       },
       { sources: [PORTAL_SOURCE, FUNDERHUB_SOURCE], tokens, fetch },
@@ -646,8 +645,7 @@ describe("syncToTargets", () => {
       {
         registry: "org:us:ein",
         id: AGILE_SIX_EIN,
-        path: "socials.website",
-        value: "https://agile6.com",
+        changes: [{ path: "socials.website", value: "https://agile6.com" }],
         targets: ["funderhub"],
       },
       { sources: [FUNDERHUB_SOURCE], tokens, fetch },
@@ -661,7 +659,7 @@ describe("syncToTargets", () => {
   });
 
   it("skips a target with no resolved org id rather than throwing, while the other target still succeeds", async () => {
-    const mergePatch = buildMergePatch("socials.website", "https://agile6.com");
+    const mergePatch = buildMergePatch([{ path: "socials.website", value: "https://agile6.com" }]);
     const fetch = stubFetchByOrigin({
       "https://portal.example.com": respondByMethod({
         get: () => listEnvelope([]),
@@ -687,8 +685,7 @@ describe("syncToTargets", () => {
       {
         registry: "org:us:ein",
         id: AGILE_SIX_EIN,
-        path: "socials.website",
-        value: "https://agile6.com",
+        changes: [{ path: "socials.website", value: "https://agile6.com" }],
         targets: ["portal", "funderhub"],
       },
       { sources: [PORTAL_SOURCE, FUNDERHUB_SOURCE], tokens, fetch },
@@ -713,7 +710,7 @@ describe("syncToTargets", () => {
   });
 
   it("does not PATCH the same target twice for a duplicate entry in targets", async () => {
-    const mergePatch = buildMergePatch("socials.website", "https://agile6.com");
+    const mergePatch = buildMergePatch([{ path: "socials.website", value: "https://agile6.com" }]);
     const { fetch, calls } = captureFetch(
       stubFetchByOrigin({
         "https://portal.example.com": respondByMethod({
@@ -729,8 +726,7 @@ describe("syncToTargets", () => {
       {
         registry: "org:us:ein",
         id: AGILE_SIX_EIN,
-        path: "socials.website",
-        value: "https://agile6.com",
+        changes: [{ path: "socials.website", value: "https://agile6.com" }],
         targets: ["portal", "portal"],
       },
       { sources: [PORTAL_SOURCE], tokens, fetch },
@@ -751,8 +747,7 @@ describe("syncToTargets", () => {
       {
         registry: "org:us:ein",
         id: AGILE_SIX_EIN,
-        path: "socials.website",
-        value: "https://agile6.com",
+        changes: [{ path: "socials.website", value: "https://agile6.com" }],
         targets: ["temelio"],
       },
       { sources: [COMING_SOON_SOURCE], tokens, fetch },
@@ -789,8 +784,7 @@ describe("syncToTargets", () => {
       {
         registry: "org:us:ein",
         id: AGILE_SIX_EIN,
-        path: "socials.website",
-        value: null,
+        changes: [{ path: "socials.website", value: null }],
         targets: ["portal"],
       },
       { sources: [PORTAL_SOURCE], tokens, fetch },
@@ -801,7 +795,7 @@ describe("syncToTargets", () => {
   });
 
   it("reports a target with no connected token as not connected, without sending it a request, while the other target still succeeds", async () => {
-    const mergePatch = buildMergePatch("socials.website", "https://agile6.com");
+    const mergePatch = buildMergePatch([{ path: "socials.website", value: "https://agile6.com" }]);
     const { fetch, calls } = captureFetch(
       stubFetchByOrigin({
         "https://funderhub.example.com": respondByMethod({
@@ -820,8 +814,7 @@ describe("syncToTargets", () => {
       {
         registry: "org:us:ein",
         id: AGILE_SIX_EIN,
-        path: "socials.website",
-        value: "https://agile6.com",
+        changes: [{ path: "socials.website", value: "https://agile6.com" }],
         targets: ["portal", "funderhub"],
       },
       { sources: [PORTAL_SOURCE, FUNDERHUB_SOURCE], tokens, fetch },
@@ -850,6 +843,148 @@ describe("syncToTargets", () => {
   });
 });
 
+describe("syncToTargets with several changes", () => {
+  it("carries every change to each target in a single PATCH request", async () => {
+    const changes = [
+      { path: "name", value: "Agile Six Applications, LLC" },
+      { path: "addresses.primary", value: PORTAL_SEED.addresses?.primary as JsonObject },
+    ];
+    const mergePatch = buildMergePatch(changes);
+
+    // Both snapshots come back carrying both changes, so `applied` has
+    // something to be true about — it is read out of the snapshot, not the 200.
+    const portalAfter = { ...PORTAL_SEED, name: "Agile Six Applications, LLC" } as Organization;
+    const funderhubAfter = {
+      ...FUNDERHUB_SEED,
+      name: "Agile Six Applications, LLC",
+      addresses: { ...FUNDERHUB_SEED.addresses, primary: PORTAL_SEED.addresses?.primary },
+    } as Organization;
+
+    const { fetch, calls } = captureFetch(
+      stubFetchByOrigin({
+        "https://portal.example.com": respondByMethod({
+          get: () => listEnvelope([PORTAL_SEED]),
+          patch: () =>
+            revisionEnvelope("Change applied", revision(PORTAL_SOURCE, mergePatch, portalAfter)),
+        }),
+        "https://funderhub.example.com": respondByMethod({
+          get: () => listEnvelope([FUNDERHUB_SEED]),
+          patch: () =>
+            revisionEnvelope(
+              "Change applied",
+              revision(FUNDERHUB_SOURCE, mergePatch, funderhubAfter),
+            ),
+        }),
+      }),
+    );
+    const tokens = new StaticTokenProvider({
+      portal: "portal-token",
+      funderhub: "funderhub-token",
+    });
+
+    const result = await syncToTargets(
+      {
+        registry: "org:us:ein",
+        id: AGILE_SIX_EIN,
+        changes,
+        targets: ["portal", "funderhub"],
+      },
+      { sources: [PORTAL_SOURCE, FUNDERHUB_SOURCE], tokens, fetch },
+    );
+
+    expect(result.results).toEqual([
+      { id: "portal", ok: true, applied: true, status: 200, message: "Change applied" },
+      { id: "funderhub", ok: true, applied: true, status: 200, message: "Change applied" },
+    ]);
+
+    const portalPatches = calls.filter(
+      (request) =>
+        request.url.startsWith("https://portal.example.com") && request.method === "PATCH",
+    );
+    const funderhubPatches = calls.filter(
+      (request) =>
+        request.url.startsWith("https://funderhub.example.com") && request.method === "PATCH",
+    );
+    expect(portalPatches).toHaveLength(1);
+    expect(funderhubPatches).toHaveLength(1);
+
+    const expectedBody = {
+      name: "Agile Six Applications, LLC",
+      addresses: { primary: PORTAL_SEED.addresses?.primary },
+    };
+    expect(await portalPatches[0]?.json()).toEqual(expectedBody);
+    expect(await funderhubPatches[0]?.json()).toEqual(expectedBody);
+  });
+
+  it("reports applied: false when a target stores one change and drops the other", async () => {
+    const address = PORTAL_SEED.addresses?.primary as JsonObject;
+    const changes = [
+      { path: "addresses.primary", value: address },
+      { path: "socials.website", value: "https://agile6.com" },
+    ];
+
+    // FunderHub's answer to the real thing: the address landed, `socials` did
+    // not. The changes went as one patch, so a tick against the row would be
+    // claiming the website moved too.
+    const after = {
+      ...FUNDERHUB_SEED,
+      addresses: { ...FUNDERHUB_SEED.addresses, primary: address },
+    } as Organization;
+    const fetch = stubFetchByOrigin({
+      "https://funderhub.example.com": respondByMethod({
+        get: () => listEnvelope([FUNDERHUB_SEED]),
+        patch: () =>
+          revisionEnvelope(
+            "Change applied. This system does not store socials.",
+            revision(FUNDERHUB_SOURCE, buildMergePatch(changes), after),
+          ),
+      }),
+    });
+
+    const result = await syncToTargets(
+      { registry: "org:us:ein", id: AGILE_SIX_EIN, changes, targets: ["funderhub"] },
+      {
+        sources: [FUNDERHUB_SOURCE],
+        tokens: new StaticTokenProvider({ funderhub: "funderhub-token" }),
+        fetch,
+      },
+    );
+
+    expect(result.results[0]).toMatchObject({ id: "funderhub", ok: true, applied: false });
+  });
+
+  it("merges two changes under the same parent into one object on the wire", async () => {
+    const changes = [
+      { path: "socials.website", value: "https://agile6.com" },
+      { path: "socials.linkedin", value: "https://linkedin.com/company/agile-6" },
+    ];
+    const mergePatch = buildMergePatch(changes);
+    const { fetch, calls } = captureFetch(
+      stubFetchByOrigin({
+        "https://portal.example.com": respondByMethod({
+          get: () => listEnvelope([PORTAL_SEED]),
+          patch: () =>
+            revisionEnvelope("Change applied", revision(PORTAL_SOURCE, mergePatch, PORTAL_SEED)),
+        }),
+      }),
+    );
+    const tokens = new StaticTokenProvider({ portal: "portal-token" });
+
+    await syncToTargets(
+      { registry: "org:us:ein", id: AGILE_SIX_EIN, changes, targets: ["portal"] },
+      { sources: [PORTAL_SOURCE], tokens, fetch },
+    );
+
+    const portalPatch = calls.find((request) => request.method === "PATCH");
+    expect(await portalPatch?.json()).toEqual({
+      socials: {
+        website: "https://agile6.com",
+        linkedin: "https://linkedin.com/company/agile-6",
+      },
+    });
+  });
+});
+
 describe("syncToTargets and capabilities", () => {
   it("refuses a target that declares it cannot be written to, without sending it anything", async () => {
     // `capabilities` is the source's own statement about itself. Asking anyway
@@ -867,8 +1002,9 @@ describe("syncToTargets and capabilities", () => {
       {
         registry: "org:us:ein",
         id: AGILE_SIX_EIN,
-        path: "addresses.primary",
-        value: PORTAL_SEED.addresses?.primary as JsonObject,
+        changes: [
+          { path: "addresses.primary", value: PORTAL_SEED.addresses?.primary as JsonObject },
+        ],
         targets: ["funderhub"],
       },
       {
@@ -901,8 +1037,9 @@ describe("syncToTargets and capabilities", () => {
       {
         registry: "org:us:ein",
         id: AGILE_SIX_EIN,
-        path: "addresses.primary",
-        value: PORTAL_SEED.addresses?.primary as JsonObject,
+        changes: [
+          { path: "addresses.primary", value: PORTAL_SEED.addresses?.primary as JsonObject },
+        ],
         targets: ["funderhub"],
       },
       {
@@ -919,7 +1056,7 @@ describe("syncToTargets and capabilities", () => {
 describe("syncToTargets and applied", () => {
   it("reports applied: true when the target's snapshot carries the new value at the changed path", async () => {
     const value = "https://agile6.com/updated";
-    const mergePatch = buildMergePatch("socials.website", value);
+    const mergePatch = buildMergePatch([{ path: "socials.website", value: value }]);
     const snapshot: Organization = {
       ...PORTAL_SEED,
       socials: { ...PORTAL_SEED.socials, website: value },
@@ -937,8 +1074,7 @@ describe("syncToTargets and applied", () => {
       {
         registry: "org:us:ein",
         id: AGILE_SIX_EIN,
-        path: "socials.website",
-        value,
+        changes: [{ path: "socials.website", value }],
         targets: ["portal"],
       },
       { sources: [PORTAL_SOURCE], tokens, fetch },
@@ -953,7 +1089,7 @@ describe("syncToTargets and applied", () => {
     // The FunderHub-declines-`socials` case: it accepts the request and says so,
     // but its snapshot is its own address, unchanged — the value never landed.
     const value = PORTAL_SEED.addresses?.primary as JsonObject;
-    const mergePatch = buildMergePatch("addresses.primary", value);
+    const mergePatch = buildMergePatch([{ path: "addresses.primary", value: value }]);
     const fetch = stubFetchByOrigin({
       "https://funderhub.example.com": respondByMethod({
         get: () => listEnvelope([FUNDERHUB_SEED]),
@@ -970,8 +1106,7 @@ describe("syncToTargets and applied", () => {
       {
         registry: "org:us:ein",
         id: AGILE_SIX_EIN,
-        path: "addresses.primary",
-        value,
+        changes: [{ path: "addresses.primary", value }],
         targets: ["funderhub"],
       },
       { sources: [FUNDERHUB_SOURCE], tokens, fetch },
@@ -999,7 +1134,7 @@ describe("syncToTargets and applied", () => {
       street2: "Suite 300",
       street1: "600 B Street",
     };
-    const mergePatch = buildMergePatch("addresses.primary", sentAddress);
+    const mergePatch = buildMergePatch([{ path: "addresses.primary", value: sentAddress }]);
     const snapshot: Organization = { ...PORTAL_SEED, addresses: { primary: snapshotAddress } };
     const fetch = stubFetchByOrigin({
       "https://portal.example.com": respondByMethod({
@@ -1014,8 +1149,7 @@ describe("syncToTargets and applied", () => {
       {
         registry: "org:us:ein",
         id: AGILE_SIX_EIN,
-        path: "addresses.primary",
-        value: sentAddress,
+        changes: [{ path: "addresses.primary", value: sentAddress }],
         targets: ["portal"],
       },
       { sources: [PORTAL_SOURCE], tokens, fetch },
@@ -1033,7 +1167,7 @@ describe("syncToTargets and applied", () => {
     // key absent from its snapshot, not carrying `null` — and `applied` has
     // to read that as the clear succeeding rather than as "nothing happened."
     const seededWithMission: Organization = { ...PORTAL_SEED, mission: "An old mission." };
-    const mergePatch = buildMergePatch("mission", null);
+    const mergePatch = buildMergePatch([{ path: "mission", value: null }]);
     const clearedSnapshot: Organization = { ...seededWithMission };
     delete clearedSnapshot.mission;
 
@@ -1050,8 +1184,7 @@ describe("syncToTargets and applied", () => {
       {
         registry: "org:us:ein",
         id: AGILE_SIX_EIN,
-        path: "mission",
-        value: null,
+        changes: [{ path: "mission", value: null }],
         targets: ["portal"],
       },
       { sources: [PORTAL_SOURCE], tokens, fetch },
@@ -1075,8 +1208,7 @@ describe("syncToTargets and applied", () => {
       {
         registry: "org:us:ein",
         id: AGILE_SIX_EIN,
-        path: "socials.website",
-        value: "https://agile6.com",
+        changes: [{ path: "socials.website", value: "https://agile6.com" }],
         targets: ["portal"],
       },
       { sources: [PORTAL_SOURCE], tokens, fetch },

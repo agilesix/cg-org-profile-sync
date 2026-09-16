@@ -18,7 +18,8 @@ of them are written and tested, and `apps/link` now serves `GET /api/compare`, `
 chosen value does reach them — and `pnpm e2e` now proves it end to end: the `e2e/` Playwright
 workspace boots all three apps and drives Link's two routes against the real portal and funderhub,
 so the data exchange is pinned by a test rather than by a curl someone ran once. Link's **page** is
-now the widget: `apps/link/+page.svelte` renders the comparison grid, picks a value, syncs it, and
+now the widget: `apps/link/+page.svelte` renders the comparison grid, picks a value per row (several
+rows at a time, each removable, all sent as one patch per target), syncs them, and
 shows what each target said, and `e2e/specs/widget.spec.ts` drives that in a browser. Auth is
 real on the portal side: each system signs, verifies and publishes its own ES256 keys, scopes every
 read and write to the caller's orgs, serves `GET /.well-known/jwks.json`, and is its own OAuth
@@ -249,8 +250,11 @@ address in a different key order still agree. Adding a field to the demo is one 
 `utils/format.ts`'s `formatFieldValue` turns one held value into the line the grid shows — an
 address collapses to one line, anything unrecognised falls back to JSON, and a value with nothing
 to say renders as `""` for the caller to label. Both live in the library rather than in the widget
-because `apps/*` has no test harness. `buildMergePatch` is the inverse of the path walk: it wraps a chosen value back into
-the nested RFC 7396 body that sets that one field.
+because `apps/*` has no test harness. `buildMergePatch` is the inverse of the path walk: it folds a list of
+`FieldChange`s back into the one nested RFC 7396 body that sets them all, sharing a parent where two
+paths pass through it. Overlapping paths — the same path twice, or one containing another — throw
+rather than resolving to a last-one-wins order, because such a body means two different things
+depending on application order; Link's `/api/sync` turns that throw into a 400.
 
 **One client per source, built from config.** `src/client/org-client.ts` holds `OrgClient` —
 `findByIdentifier` (the EIN lookup the widget starts from, since ids are assigned per system),
@@ -287,10 +291,14 @@ injectable `fetch` — so a source is configuration on the way in. Each source i
 system: it comes back with `orgId: null` and a reason, and the comparison is built from whoever
 answered. A source that is reachable but simply holds no matching record is **not** an error — it
 gets `orgId: null` with no `error`, because "no record of you" must not render as a conflict.
-`syncToTargets` builds the merge patch once, resolves each target's own org id (no two systems agree
+`syncToTargets` builds the merge patch once from every change the person picked — one PATCH per
+target, not one per field — resolves each target's own org id (no two systems agree
 on ids), dedupes repeated targets so one change is not recorded twice, and reports each target
-separately as `{ ok, status, message }` — passing the target's own sentence through untouched, since
-that is where a system says which fields it declined. `null` is a legal value throughout: it is how
+separately as `{ ok, applied, status, message }` — passing the target's own sentence through
+untouched, since that is where a system says which fields it declined. `applied` is read back out
+of the post-change snapshot rather than parsed from that sentence, and is all-or-nothing across one
+sync's changes: they travelled as a single patch, so a target that kept the address and dropped the
+website has not stored what it was sent. `null` is a legal value throughout: it is how
 RFC 7396 spells clearing a field.
 
 **Link forwards tokens; it never holds or verifies them.** `SOURCE_TOKENS_HEADER`

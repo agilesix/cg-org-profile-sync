@@ -13,6 +13,21 @@ export type JsonValue =
 export type JsonObject = { [key: string]: JsonValue };
 
 /**
+ * One field a caller wants to set, as `buildMergePatch` and `syncToTargets` take it.
+ *
+ * A dot path plus the value to set there, `null` meaning clear. Several of these
+ * combine into one RFC 7396 body, which is what lets a person pick values from
+ * several rows and push them to a target in a single request.
+ */
+export interface FieldChange {
+  /** Dot path into the org profile, such as `addresses.primary`. Splits on `.` only. */
+  path: string;
+
+  /** The value to set at that path. `null` clears the field. */
+  value: JsonValue;
+}
+
+/**
  * A system the widget can read from and write to.
  *
  * Every source speaks the same CommonGrants org routes, so adding one is a new
@@ -216,13 +231,17 @@ export interface SyncTargetResult {
   ok: boolean;
 
   /**
-   * Whether the chosen value is actually there now.
+   * Whether every chosen value is actually there now.
    *
    * Distinct from `ok`, and the distinction is the point. A system that cannot
    * store a field does not fail — it applies what it can, drops the rest, and
    * answers 200. So `ok: true, applied: false` is the ordinary way a change
    * goes nowhere, and a caller that showed a tick for `ok` alone would report
    * success for something that never happened.
+   *
+   * All-or-nothing across the changes in one sync, because they travelled as
+   * one patch: a target that kept the address and dropped the website has not
+   * applied what it was sent.
    *
    * Established by reading the value back out of the post-change snapshot the
    * target returned, not by parsing its message — a receiver is free to word

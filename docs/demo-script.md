@@ -42,7 +42,12 @@ About three minutes. Everything is at `http://localhost:5176`, except the last s
    offered, since it already holds it). Click **Sync**. Each target answers separately, the grid
    re-reads all three, and the address row agrees on Suite 300. One patch went to a system that
    implements the protocol and to one that does not, and the screen cannot tell them apart.
-8. **Push the website.** Click GrantPortal's website, then **Sync**. Temelio takes it. FunderHub
+8. **Push the website too, without starting over.** Click GrantPortal's website. The panel now
+   lists two picks — the address from the last step and the website — each with its own **Remove**,
+   and they go together: one patch per target, not one per field. (Re-sending the address is a
+   harmless no-op; **Remove** it first if you would rather show only the website moving.) Clicking
+   a second value in a row you have already picked replaces that row's choice rather than adding to
+   it, since one field cannot have two values. Click **Sync**. Temelio takes the website. FunderHub
    also answers "accepted", but its message reads "This system does not store socials." The patch
    was applied, the field was dropped, and the sender was told so. The grid re-reads: the website
    now agrees between GrantPortal and Temelio, and FunderHub still holds nothing.

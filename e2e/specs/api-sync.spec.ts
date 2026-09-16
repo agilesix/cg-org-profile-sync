@@ -23,8 +23,7 @@ test("pushing portal's address to funderhub settles that disagreement", async ({
   expect(chosen).toEqual(PORTAL_SEED.addresses?.primary);
 
   const sync = await api.sync({
-    path: "addresses.primary",
-    value: chosen,
+    changes: [{ path: "addresses.primary", value: chosen }],
     targets: ["funderhub"],
   });
 
@@ -53,8 +52,7 @@ test("pushing portal's website to funderhub is accepted, and names socials as no
   expect(chosen).toBe(PORTAL_SEED.socials?.website);
 
   const sync = await api.sync({
-    path: "socials.website",
-    value: chosen,
+    changes: [{ path: "socials.website", value: chosen }],
     targets: ["funderhub"],
   });
 
@@ -90,8 +88,7 @@ test("pushing portal's address to both other systems makes all three agree", asy
   // translates it into a call shaped nothing like a merge patch. Neither Link
   // nor this spec can tell which is which, which is the whole claim.
   const sync = await api.sync({
-    path: "addresses.primary",
-    value: chosen,
+    changes: [{ path: "addresses.primary", value: chosen }],
     targets: ["funderhub", "temelio"],
   });
 
@@ -112,13 +109,16 @@ test("pushing a value a system already holds is accepted, so a demo can be run t
   const before = rowFor(await api.compare(), "addresses.primary");
   const chosen = valueHeldBy(before, "portal");
 
-  await api.sync({ path: "addresses.primary", value: chosen, targets: ["temelio"] });
+  await api.sync({ changes: [{ path: "addresses.primary", value: chosen }], targets: ["temelio"] });
 
   // The same push again. Nothing has changed, so the adapter has nothing to
   // send — but it must still report success rather than failing or reporting a
   // change it did not make. A presenter re-running the demo, or clicking Sync
   // twice, should not have to care which of those they just did.
-  const second = await api.sync({ path: "addresses.primary", value: chosen, targets: ["temelio"] });
+  const second = await api.sync({
+    changes: [{ path: "addresses.primary", value: chosen }],
+    targets: ["temelio"],
+  });
   const result = resultFor(second, "temelio");
 
   expect(result.ok, result.message).toBe(true);
@@ -133,7 +133,7 @@ test("pushing the legal name to temelio is accepted, and names what a funder can
   const name = rowFor(await api.compare(), "name");
   const chosen = valueHeldBy(name, "portal");
 
-  const sync = await api.sync({ path: "name", value: chosen, targets: ["temelio"] });
+  const sync = await api.sync({ changes: [{ path: "name", value: chosen }], targets: ["temelio"] });
 
   // Accepted, because the rest of a patch still applies — but the message has
   // to carry the bad news, or a sender would believe a rename landed. Temelio
@@ -147,8 +147,12 @@ test("pushing the legal name to temelio is accepted, and names what a funder can
 
 test("a sync reaching every target reports each one separately", async ({ api }) => {
   const sync = await api.sync({
-    path: "addresses.primary",
-    value: valueHeldBy(rowFor(await api.compare(), "addresses.primary"), "portal"),
+    changes: [
+      {
+        path: "addresses.primary",
+        value: valueHeldBy(rowFor(await api.compare(), "addresses.primary"), "portal"),
+      },
+    ],
     targets: ["portal", "funderhub"],
   });
 
@@ -156,10 +160,79 @@ test("a sync reaching every target reports each one separately", async ({ api })
   expect(sync.results.every((result) => result.ok)).toBe(true);
 });
 
+test("two fields travel to a target in one patch, stored and declined together", async ({
+  api,
+}) => {
+  const before = await api.compare();
+  const address = valueHeldBy(rowFor(before, "addresses.primary"), "portal");
+  const website = valueHeldBy(rowFor(before, "socials.website"), "portal");
+
+  // Worth pinning: FunderHub starts out disagreeing with portal about the
+  // address, so the assertion below is about a value that actually moved.
+  expect(valueHeldBy(rowFor(before, "addresses.primary"), "funderhub")).not.toEqual(address);
+
+  const sync = await api.sync({
+    changes: [
+      { path: "addresses.primary", value: address },
+      { path: "socials.website", value: website },
+    ],
+    targets: ["funderhub"],
+  });
+
+  // One row, not two. FunderHub was asked once and answered once, and that one
+  // answer covers both changes: it stored the address and named socials as the
+  // part it would not keep. Two requests could not produce that.
+  expect(sync.results).toHaveLength(1);
+
+  // `ok` but not `applied`: the address landed and `socials` did not, and the
+  // changes went as one patch, so the target did not store what it was sent.
+  const funderhub = resultFor(sync, "funderhub");
+  expect(funderhub.ok, funderhub.message).toBe(true);
+  expect(funderhub.applied).toBe(false);
+  expect(funderhub.message).toContain("socials");
+
+  // Only FunderHub was a target, so the row does not reach `agree` — Temelio
+  // still holds its own address. What matters is that both halves of the one
+  // patch did what the message said.
+  const after = await api.compare();
+  expect(valueHeldBy(rowFor(after, "addresses.primary"), "funderhub")).toEqual(address);
+  expect(rowFor(after, "socials.website").values).not.toHaveProperty("funderhub");
+});
+
+test("a repeated path is a 400", async ({ api }) => {
+  const response = await api.rawSync({
+    registry: EIN_REGISTRY,
+    id: AGILE_SIX_EIN,
+    changes: [
+      { path: "name", value: PORTAL_SEED.name },
+      { path: "name", value: "Something else entirely" },
+    ],
+    targets: ["funderhub"],
+  });
+
+  // Two values for one field describe two different outcomes depending on
+  // which is applied last, so the request is refused rather than resolved by
+  // an ordering nothing in the UI made visible.
+  expect(response.status()).toBe(400);
+
+  const after = rowFor(await api.compare(), "name");
+  expect(valueHeldBy(after, "funderhub")).not.toBe("Something else entirely");
+});
+
+test("an empty changes list is a 400", async ({ api }) => {
+  const response = await api.rawSync({
+    registry: EIN_REGISTRY,
+    id: AGILE_SIX_EIN,
+    changes: [],
+    targets: ["funderhub"],
+  });
+
+  expect(response.status()).toBe(400);
+});
+
 test("a target that is not in the registry fails on its own row", async ({ api }) => {
   const sync = await api.sync({
-    path: "name",
-    value: PORTAL_SEED.name,
+    changes: [{ path: "name", value: PORTAL_SEED.name }],
     targets: ["portal", "nowhere"],
   });
 
@@ -174,8 +247,7 @@ test("a path outside DEMO_FIELDS is a 400", async ({ api }) => {
   const response = await api.rawSync({
     registry: EIN_REGISTRY,
     id: AGILE_SIX_EIN,
-    path: "mission",
-    value: "Anything at all.",
+    changes: [{ path: "mission", value: "Anything at all." }],
     targets: ["funderhub"],
   });
 
@@ -190,8 +262,7 @@ test("a body missing its targets is a 400", async ({ api }) => {
   const response = await api.rawSync({
     registry: EIN_REGISTRY,
     id: AGILE_SIX_EIN,
-    path: "name",
-    value: PORTAL_SEED.name,
+    changes: [{ path: "name", value: PORTAL_SEED.name }],
   });
 
   expect(response.status()).toBe(400);
