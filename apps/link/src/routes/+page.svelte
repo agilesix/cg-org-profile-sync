@@ -234,6 +234,17 @@
   const connectedCount = $derived(Object.keys(tokens).length);
 
   /**
+   * Whether there is a system left to link.
+   *
+   * The grid's invitation column asks for another one, so it has to disappear
+   * once there is no other one to ask for — an invitation that opens a picker
+   * with nothing choosable in it is worse than no invitation.
+   */
+  const canAddSource = $derived(
+    sourceStates.some((source) => source.connection === "not-connected"),
+  );
+
+  /**
    * The system whose page we are embedded in, or `null` standalone.
    *
    * Already validated server-side against the registry, so an unrecognised
@@ -740,7 +751,9 @@
       <p class="host" data-testid="host-system">
         {data.host ? `Opened from ${data.host.label}` : "Opened from a host page"}
       </p>
-      <button type="button" class="close" data-testid="close" onclick={close}>Close</button>
+      <button type="button" class="close" data-testid="close" aria-label="Close" onclick={close}
+        >×</button
+      >
     </div>
   {/if}
 
@@ -826,7 +839,13 @@
       compare.
     </p>
   {:else}
-    <ComparisonGrid {comparison} {selection} onpick={pick} />
+    <ComparisonGrid
+      {comparison}
+      {selection}
+      canAdd={canAddSource}
+      onpick={pick}
+      onadd={openPicker}
+    />
 
     <section class="panel" data-testid="panel">
       {#if selection === null}
@@ -913,11 +932,12 @@
     color: #6b7a77;
   }
   .close {
-    font-size: 0.8rem;
-    padding: 0.2rem 0.75rem;
-    color: #14201f;
+    font-size: 1.4rem;
+    line-height: 1;
+    padding: 0 0.25rem;
+    color: #6b7a77;
     background: transparent;
-    border-color: #b7c4c1;
+    border: 0;
   }
   .link-system {
     font: inherit;
@@ -1139,9 +1159,7 @@
       border-color: #2a3736;
     }
     .close {
-      color: #e7edeb;
-      background: transparent;
-      border-color: #3f5250;
+      color: #8a9895;
     }
     .chip-ok {
       color: #56b7a9;

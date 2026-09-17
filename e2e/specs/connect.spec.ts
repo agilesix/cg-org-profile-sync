@@ -56,18 +56,52 @@ test("the picker lists every system, and names the ones it cannot connect", asyn
   await expect(page.getByTestId("pick-system-simpler-grants")).toHaveCount(0);
 });
 
-test("connecting one system shows its values and says the other is not connected", async ({
+test("connecting one system shows its values and invites another", async ({ page }) => {
+  await openWidget(page);
+  await connect(page, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
+
+  // GrantPortal's column fills in. The systems nobody has linked get no column
+  // between them — a column per registered system would pre-announce systems
+  // this person may never connect, and would look like agreement besides.
+  await expect(page.getByTestId("connected-portal")).toBeVisible();
+  await expect(page.getByTestId("connected-funderhub")).toHaveCount(0);
+  await expect(page.getByTestId("grid")).toContainText(PORTAL_SEED.name);
+  await expect(page.getByTestId("source-portal")).toBeVisible();
+  await expect(page.getByTestId("source-funderhub")).toHaveCount(0);
+
+  // One empty column stands in for all of them, and it is the way to another.
+  await expect(page.getByTestId("add-source")).toContainText(
+    "Connect another grant management system to compare",
+  );
+
+  await page.getByTestId("add-source-button").click();
+  await expect(page.getByTestId("link-modal")).toBeVisible();
+});
+
+test("a column appears per system connected, and the invitation goes once two are", async ({
   page,
 }) => {
   await openWidget(page);
   await connect(page, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
 
-  // GrantPortal's column fills in; FunderHub's says why it is empty rather
-  // than looking like a system that agrees.
-  await expect(page.getByTestId("connected-portal")).toBeVisible();
-  await expect(page.getByTestId("connected-funderhub")).toHaveCount(0);
-  await expect(page.getByTestId("grid")).toContainText(PORTAL_SEED.name);
-  await expect(page.getByTestId("grid")).toContainText("not connected");
+  // Field, GrantPortal, the invitation, Status.
+  await expect(page.getByTestId("grid").locator("thead th")).toHaveCount(4);
+
+  // The second system is a second column rather than one that was already
+  // waiting for it — and now that there is something to compare, the
+  // invitation goes rather than sitting there as a permanent empty column.
+  await connect(page, "funderhub", ADMIN_EMAIL, FUNDERHUB_ORG_ID);
+
+  await expect(page.getByTestId("source-funderhub")).toBeVisible();
+  await expect(page.getByTestId("add-source")).toHaveCount(0);
+  await expect(page.getByTestId("grid").locator("thead th")).toHaveCount(4);
+
+  // A third is a third column, from the button above the grid.
+  await connect(page, "temelio", ADMIN_EMAIL, TEMELIO_ORG_ID);
+
+  await expect(page.getByTestId("source-temelio")).toBeVisible();
+  await expect(page.getByTestId("add-source")).toHaveCount(0);
+  await expect(page.getByTestId("grid").locator("thead th")).toHaveCount(5);
 });
 
 test("a person with no grant on a system is refused by that system alone", async ({ page }) => {

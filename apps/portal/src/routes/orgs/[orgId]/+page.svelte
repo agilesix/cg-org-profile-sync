@@ -137,7 +137,7 @@
 </script>
 
 <main data-testid="profile" data-ready={ready}>
-  <p class="role">GrantPortal · organization profile</p>
+  <p class="role">Organization profile</p>
   <h1>{org.name}</h1>
   <p class="tagline">
     This system's own copy. The four fields the demo compares are editable here; everything else is
@@ -221,22 +221,10 @@
 </main>
 
 <style>
-  :global(body) {
-    margin: 0;
-    background: #f5f7f6;
-    color: #14201f;
-    font-family:
-      ui-sans-serif,
-      system-ui,
-      -apple-system,
-      "Segoe UI",
-      sans-serif;
-    line-height: 1.6;
-  }
   main {
     max-width: 46rem;
     margin: 0 auto;
-    padding: 4rem 1.5rem;
+    padding: 2.5rem 1.5rem 4rem;
   }
   .role {
     margin: 0 0 0.5rem;
@@ -244,7 +232,7 @@
     font-size: 0.72rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: #0d6e63;
+    color: var(--brand);
   }
   h1 {
     margin: 0 0 0.75rem;
@@ -254,7 +242,7 @@
   .tagline {
     margin: 0 0 2.5rem;
     font-size: 1.1rem;
-    color: #3b4a48;
+    color: var(--ink-soft);
     max-width: 34rem;
   }
   h2 {
@@ -263,11 +251,11 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: #6b7a77;
+    color: var(--muted);
   }
   dl {
     margin: 0;
-    border-top: 1px solid #d9e0dd;
+    border-top: 1px solid var(--border);
     padding-top: 0.9rem;
   }
   .row {
@@ -280,20 +268,20 @@
   dt {
     flex: 0 0 9rem;
     font-size: 0.85rem;
-    color: #6b7a77;
+    color: var(--muted);
   }
   dd {
     margin: 0;
     font-size: 0.9rem;
   }
   form {
-    border-top: 1px solid #d9e0dd;
+    border-top: 1px solid var(--border);
     padding-top: 0.9rem;
   }
   label {
     display: block;
     font-size: 0.85rem;
-    color: #6b7a77;
+    color: var(--muted);
     margin-bottom: 0.2rem;
   }
   input {
@@ -305,18 +293,18 @@
     font: inherit;
     font-size: 0.9rem;
     color: inherit;
-    background: #ffffff;
-    border: 1px solid #d9e0dd;
+    background: var(--surface);
+    border: 1px solid var(--border);
     border-radius: 0.25rem;
   }
   input:focus-visible {
-    outline: 2px solid #0d6e63;
+    outline: 2px solid var(--brand);
     outline-offset: 1px;
   }
   fieldset {
     margin: 0 0 1rem;
     padding: 0.9rem 1rem 0;
-    border: 1px solid #d9e0dd;
+    border: 1px solid var(--border);
     border-radius: 0.25rem;
   }
   legend {
@@ -325,7 +313,7 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: #6b7a77;
+    color: var(--muted);
   }
   .open-link {
     margin: 0 0 2rem;
@@ -336,12 +324,12 @@
   }
   .note {
     font-size: 0.85rem;
-    color: #6b7a77;
+    color: var(--muted);
   }
   .problem {
     margin: 0 0 2rem;
     font-size: 0.85rem;
-    color: #9c2f2f;
+    color: var(--danger);
   }
   .save {
     display: flex;
@@ -353,26 +341,26 @@
     font: inherit;
     font-size: 0.9rem;
     padding: 0.45rem 1.1rem;
-    color: #ffffff;
-    background: #0d6e63;
-    border: 1px solid #0d6e63;
+    color: var(--surface);
+    background: var(--brand);
+    border: 1px solid var(--brand);
     border-radius: 0.25rem;
     cursor: pointer;
   }
   .message {
     margin: 0;
     font-size: 0.85rem;
-    color: #0d6e63;
+    color: var(--ok);
   }
   .message.failed {
-    color: #9c2f2f;
+    color: var(--danger);
   }
   .status {
     margin-top: 2.5rem;
     padding-top: 1rem;
-    border-top: 1px solid #d9e0dd;
+    border-top: 1px solid var(--border);
     font-size: 0.85rem;
-    color: #6b7a77;
+    color: var(--muted);
   }
   .status + .status {
     margin-top: 0;
@@ -384,47 +372,6 @@
     font-size: 0.85rem;
   }
   a {
-    color: #0d6e63;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :global(body) {
-      background: #0f1615;
-      color: #e7edeb;
-    }
-    .role,
-    a {
-      color: #56b7a9;
-    }
-    .tagline {
-      color: #bac6c3;
-    }
-    h2,
-    dt,
-    label,
-    legend,
-    .note,
-    .status {
-      color: #8a9895;
-    }
-    .problem {
-      color: #e08b8b;
-    }
-    dl,
-    form,
-    fieldset,
-    input,
-    .status {
-      border-color: #2a3736;
-    }
-    input {
-      background: #16211f;
-    }
-    .message {
-      color: #56b7a9;
-    }
-    .message.failed {
-      color: #e08b8b;
-    }
+    color: var(--brand);
   }
 </style>

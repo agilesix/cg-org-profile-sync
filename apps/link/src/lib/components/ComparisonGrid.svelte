@@ -1,11 +1,20 @@
 <!--
-  One row per compared field, one column per system.
+  One row per compared field, one column per system this person has connected.
 
   The grid is the whole demo in one screen: where the systems agree, where they
   drift, and who has never heard of a field. Every value a source actually
   holds is a button, because picking one is how a correction starts — including
   on a row that already agrees, which is how the "FunderHub does not store
   socials" case gets demonstrated.
+
+  Columns grow with the connections rather than with the registry: a system
+  nobody has linked has no column. Three systems linked is three columns, and a
+  fourth is a fourth — nothing here is sized to the demo's current cast.
+
+  A single column has nothing to compare against, so it gets one empty column
+  inviting a second system. That invitation is for the empty case only: once
+  two systems are up there is a comparison on screen, and the way to a third is
+  the button above the grid rather than a column that never fills.
 
   `data-testid` hooks are deliberate. The Playwright specs select by them rather
   than by copy or column position, so restyling this file cannot break them.
@@ -22,11 +31,43 @@
     /** The value currently chosen, so its cell can be marked. */
     selection: Selection | null;
 
+    /**
+     * Whether any system is still unlinked, so the invitation has somewhere to
+     * lead. Whether it is *shown* is decided below — this only says it could be.
+     */
+    canAdd: boolean;
+
     /** Called when a cell's value is picked as the correct one. */
     onpick: (path: string, label: string, sourceId: string, value: JsonValue) => void;
+
+    /** Called when the invitation column is clicked, to open the picker. */
+    onadd: () => void;
   }
 
-  let { comparison, selection, onpick }: Props = $props();
+  let { comparison, selection, canAdd, onpick, onadd }: Props = $props();
+
+  /**
+   * The systems that get a column: the ones this person actually connected.
+   *
+   * The fan-out returns a row for every registered system whether or not it
+   * was asked, because a caller has to be able to tell "we never asked" from
+   * "asked and got nothing". That is the wrong shape for this screen: a column
+   * per registered system pre-announces systems nobody has linked and makes
+   * the grid as wide as the registry happens to be. The invitation column
+   * stands in for all of them instead.
+   */
+  const columns = $derived(
+    comparison.sources.filter((source) => source.connection !== "not-connected"),
+  );
+
+  /**
+   * Whether to offer the invitation column.
+   *
+   * Only while one system is connected: a lone column is a profile, not a
+   * comparison, and the column is what says so. From two columns on it would
+   * be a permanent empty gap between the values and the status.
+   */
+  const inviting = $derived(canAdd && columns.length < 2);
 
   /** Whether this cell holds the value the person has chosen to push. */
   function isPicked(path: string, sourceId: string): boolean {
@@ -52,7 +93,7 @@
   <thead>
     <tr>
       <th class="field-heading" scope="col">Field</th>
-      {#each comparison.sources as source (source.id)}
+      {#each columns as source (source.id)}
         <th
           scope="col"
           data-testid="source-{source.id}"
@@ -64,6 +105,13 @@
           {/if}
         </th>
       {/each}
+      {#if inviting}
+        <th class="invite" scope="col" data-testid="add-source">
+          <button type="button" data-testid="add-source-button" onclick={onadd}>
+            Connect another grant management system to compare
+          </button>
+        </th>
+      {/if}
       <th class="status-heading" scope="col">Status</th>
     </tr>
   </thead>
@@ -71,7 +119,7 @@
     {#each comparison.fields as field (field.path)}
       <tr data-testid="row-{field.path}" data-status={field.status} class={field.status}>
         <th class="field-heading" scope="row">{field.label}</th>
-        {#each comparison.sources as source (source.id)}
+        {#each columns as source (source.id)}
           {@const value = field.values[source.id]}
           <td
             data-testid="cell-{field.path}-{source.id}"
@@ -96,6 +144,9 @@
             {/if}
           </td>
         {/each}
+        {#if inviting}
+          <td class="invite"></td>
+        {/if}
         <td class="status" data-testid="status-{field.path}">{field.status}</td>
       </tr>
     {/each}
@@ -138,6 +189,27 @@
   }
   thead th[data-state="empty"] .source-note {
     color: #6b7a77;
+  }
+  .invite {
+    border-left: 1px dashed #c6d2cf;
+    width: 11rem;
+    /* Inherits from the table rather than from `thead th`, which is where the
+       uppercase monospace comes from. This one is a sentence, not a label. */
+    font-family: inherit;
+  }
+  .invite button {
+    margin: 0;
+    padding: 0;
+    font-size: 0.78rem;
+    letter-spacing: 0;
+    text-transform: none;
+    color: #6b7a77;
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+  .invite button:hover {
+    border-color: transparent;
+    color: #0d6e63;
   }
   .field-heading {
     width: 9rem;
@@ -218,6 +290,15 @@
     }
     .absent {
       color: #5b6b68;
+    }
+    .invite {
+      border-left-color: #3f5250;
+    }
+    .invite button {
+      color: #8a9895;
+    }
+    .invite button:hover {
+      color: #56b7a9;
     }
     button:hover {
       border-color: #3f5250;

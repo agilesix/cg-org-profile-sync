@@ -1,7 +1,8 @@
 # Demo script and route walkthrough
 
 Personal notes for running the demo by hand. The README is the overview; this is the click path,
-the `curl` block, and what to say while it runs. Everything assumes `pnpm dev` is up with the four
+the `curl` block, and what to say while it runs. The five-minute cut with a timed talk track is
+`demo-talk-track.md`. Everything assumes `pnpm dev` is up with the four
 `.env` files in place (see the README) — Link's included, since an unset `EMBED_ALLOWED_ORIGINS`
 means no portal may frame the widget and **Open Link** opens nothing.
 

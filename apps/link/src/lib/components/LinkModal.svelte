@@ -272,7 +272,7 @@
   <header>
     <h2 id="link-modal-title">
       {#if step === "pick"}
-        Select your grant management system
+        Select a grant management system
       {:else if step === "orgs"}
         Select your organization
       {:else if chosen}
