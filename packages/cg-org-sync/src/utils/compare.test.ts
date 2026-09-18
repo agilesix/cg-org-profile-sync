@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Organization } from "../schemas/index.js";
-import type { JsonObject } from "../types.js";
+import type { FieldChange, JsonObject } from "../types.js";
 import {
   buildMergePatch,
   compareProfiles,
@@ -186,25 +186,25 @@ describe("buildMergePatch", () => {
   it("wraps a nested path's value into an RFC 7396 body", () => {
     const address = { street1: "600 B Street", street2: "Suite 300" };
 
-    expect(buildMergePatch("addresses.primary", address)).toEqual({
+    expect(buildMergePatch([{ path: "addresses.primary", value: address }])).toEqual({
       addresses: { primary: { street1: "600 B Street", street2: "Suite 300" } },
     });
   });
 
   it("returns a flat body for a single-segment path", () => {
-    expect(buildMergePatch("name", "Agile Six Applications, Inc.")).toEqual({
+    expect(buildMergePatch([{ path: "name", value: "Agile Six Applications, Inc." }])).toEqual({
       name: "Agile Six Applications, Inc.",
     });
   });
 
   it("wraps a null value into an RFC 7396 deletion at the leaf", () => {
-    expect(buildMergePatch("socials.website", null)).toEqual({
+    expect(buildMergePatch([{ path: "socials.website", value: null }])).toEqual({
       socials: { website: null },
     });
   });
 
   it("keeps a path segment holding a colon as a single key", () => {
-    expect(buildMergePatch("identifiers.org:us:ein.id", "123456789")).toEqual({
+    expect(buildMergePatch([{ path: "identifiers.org:us:ein.id", value: "123456789" }])).toEqual({
       identifiers: { "org:us:ein": { id: "123456789" } },
     });
   });
@@ -214,7 +214,7 @@ describe("buildMergePatch", () => {
       addresses: { primary: { street1: "600 B Street", street2: "Suite 210" } },
     } as JsonObject;
 
-    const patch = buildMergePatch("addresses.primary", { street2: "Suite 300" });
+    const patch = buildMergePatch([{ path: "addresses.primary", value: { street2: "Suite 300" } }]);
 
     expect(applyMergePatch(profile, patch)).toEqual({
       addresses: { primary: { street1: "600 B Street", street2: "Suite 300" } },
@@ -227,11 +227,85 @@ describe("buildMergePatch", () => {
       socials: { website: "https://agile6.com", linkedin: "https://linkedin.test/agilesix" },
     } as JsonObject;
 
-    const patch = buildMergePatch("socials.website", null);
+    const patch = buildMergePatch([{ path: "socials.website", value: null }]);
 
     expect(applyMergePatch(profile, patch)).toEqual({
       name: "Agile Six Applications, Inc.",
       socials: { linkedin: "https://linkedin.test/agilesix" },
+    });
+  });
+
+  it("merges several changes under the same parent into one object", () => {
+    const changes: FieldChange[] = [
+      { path: "socials.website", value: "https://agile6.com" },
+      { path: "socials.linkedin", value: "https://linkedin.test/agilesix" },
+    ];
+
+    expect(buildMergePatch(changes)).toEqual({
+      socials: {
+        website: "https://agile6.com",
+        linkedin: "https://linkedin.test/agilesix",
+      },
+    });
+  });
+
+  it("lands changes under different parents side by side", () => {
+    const address = { street1: "600 B Street", street2: "Suite 300" };
+    const changes: FieldChange[] = [
+      { path: "name", value: "Agile Six Applications, Inc." },
+      { path: "addresses.primary", value: address },
+    ];
+
+    expect(buildMergePatch(changes)).toEqual({
+      name: "Agile Six Applications, Inc.",
+      addresses: { primary: address },
+    });
+  });
+
+  it("still clears a field with null when it is one of several changes", () => {
+    const changes: FieldChange[] = [
+      { path: "name", value: "Agile Six Applications, Inc." },
+      { path: "socials.website", value: null },
+    ];
+
+    expect(buildMergePatch(changes)).toEqual({
+      name: "Agile Six Applications, Inc.",
+      socials: { website: null },
+    });
+  });
+
+  it("rejects a duplicate path", () => {
+    const changes: FieldChange[] = [
+      { path: "name", value: "Agile Six Applications, Inc." },
+      { path: "name", value: "Something Else, Inc." },
+    ];
+
+    expect(() => buildMergePatch(changes)).toThrow(/duplicate/i);
+  });
+
+  it("rejects a path that is a prefix of another, in either order", () => {
+    const parentFirst: FieldChange[] = [
+      { path: "socials", value: { website: "https://agile6.com" } },
+      { path: "socials.website", value: "https://agile6.com" },
+    ];
+    const childFirst: FieldChange[] = [
+      { path: "socials.website", value: "https://agile6.com" },
+      { path: "socials", value: { website: "https://agile6.com" } },
+    ];
+
+    expect(() => buildMergePatch(parentFirst)).toThrow(/prefix|overlap/i);
+    expect(() => buildMergePatch(childFirst)).toThrow(/prefix|overlap/i);
+  });
+
+  it("does not treat a path as a prefix unless the overlap lands on a segment boundary", () => {
+    const changes: FieldChange[] = [
+      { path: "soc", value: "not a real field" },
+      { path: "socials", value: { website: "https://agile6.com" } },
+    ];
+
+    expect(buildMergePatch(changes)).toEqual({
+      soc: "not a real field",
+      socials: { website: "https://agile6.com" },
     });
   });
 });

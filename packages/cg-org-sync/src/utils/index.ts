@@ -15,4 +15,5 @@ export type { FieldSpec } from "./compare.js";
 export { capabilitiesOf, isConnectable } from "./sources.js";
 export { directionOf, syncTargets } from "./direction.js";
 export type { SyncDirection } from "./direction.js";
+export { blockedChanges, topLevelKey } from "./writability.js";
 export { originIfAllowed, parseOrigin, parseOriginList, sameOriginPath } from "./urls.js";

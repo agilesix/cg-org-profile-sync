@@ -15,8 +15,8 @@ import type { Organization } from "../schemas/index.js";
 import type {
   CompareResult,
   SourceConnection,
+  FieldChange,
   JsonObject,
-  JsonValue,
   OrgListResult,
   SourceConfig,
   SourceResolution,
@@ -26,6 +26,7 @@ import type {
 } from "../types.js";
 import {
   DEMO_FIELDS,
+  blockedChanges,
   buildMergePatch,
   capabilitiesOf,
   compareProfiles,
@@ -33,6 +34,7 @@ import {
   isConnectable,
   sameJsonValue,
   summarizeOrg,
+  topLevelKey,
 } from "../utils/index.js";
 import { NotConnectedError, OrgClient, OrgClientError } from "./org-client.js";
 
@@ -48,7 +50,7 @@ export interface FanoutOptions {
   fetch?: typeof globalThis.fetch;
 }
 
-/** One field's value, pushed to the systems the person chose. */
+/** The chosen values, pushed to the systems the person chose. */
 export interface SyncChange {
   /** Identifier registry the org is matched by across systems, e.g. `org:us:ein`. */
   registry: string;
@@ -56,11 +58,15 @@ export interface SyncChange {
   /** The org's id within that registry. */
   id: string;
 
-  /** Dot path of the single field being set. */
-  path: string;
-
-  /** The value to store. `null` clears the field, which RFC 7396 allows. */
-  value: JsonValue;
+  /**
+   * The fields to set, folded into one merge patch.
+   *
+   * A list rather than a single path because a person picks values row by row
+   * and then sends them once: one PATCH per target is one revision for what
+   * they did once, where a request per field would record several and could
+   * leave a target half-updated if one of them failed.
+   */
+  changes: readonly FieldChange[];
 
   /** `SourceConfig.id`s to write to. */
   targets: readonly string[];
@@ -121,6 +127,7 @@ export async function compareAcrossSources(
       error,
       connection,
       capabilities: capabilitiesOf(source),
+      unwritableFields: source.unwritableFields ?? [],
     };
   });
 
@@ -256,18 +263,22 @@ function connectionFrom(cause: unknown): SourceConnection {
 }
 
 /**
- * Push one field's value to each chosen target, reporting each one separately.
+ * Push the chosen values to each target, reporting each one separately.
  *
  * The patch is built once and sent unchanged to every target — the demo's whole
  * claim is that a single protocol-shaped change reaches several systems. Each
  * target is reported on its own: one system declining or falling over says
- * nothing about whether the others stored the value.
+ * nothing about whether the others stored the values.
+ *
+ * Rejects before contacting anything if the changes overlap, since
+ * `buildMergePatch` refuses to guess which of two collided paths wins. Link's
+ * route turns that into a 400.
  */
 export async function syncToTargets(
   change: SyncChange,
   options: FanoutOptions,
 ): Promise<SyncResult> {
-  const mergePatch = buildMergePatch(change.path, change.value);
+  const mergePatch = buildMergePatch(change.changes);
   const byId = new Map(enabledSources(options.sources).map((source) => [source.id, source]));
 
   const results = await Promise.all(
@@ -298,6 +309,29 @@ export async function syncToTargets(
           applied: false,
           status: null,
           message: `${source.label} does not accept changes.`,
+        };
+      }
+
+      // A field this target is known not to store stops the whole patch to it,
+      // rather than sending what it would keep. The changes were picked and
+      // sent as one thing, and a partial send is the surprise this guard
+      // exists to remove: the sender would be told "accepted" about a request
+      // that was never going to carry part of what they chose.
+      //
+      // The receiver's own rule is still the authoritative one — this list is
+      // the sending side's copy and can only over-block, so a field it does
+      // not name is still dropped and reported by the target itself.
+      const blocked = blockedChanges(change.changes, source);
+
+      if (blocked.length > 0) {
+        const fields = [...new Set(blocked.map((field) => topLevelKey(field.path)))];
+
+        return {
+          id,
+          ok: false,
+          applied: false,
+          status: null,
+          message: `${source.label} cannot store ${fields.join(", ")}, so nothing was sent to it.`,
         };
       }
 
@@ -339,11 +373,17 @@ async function patchOne(
 
     const { revision, message, status } = await client.patch(org.id, mergePatch);
 
-    // Read the value back out of what the target says it now holds, rather
+    // Read the values back out of what the target says it now holds, rather
     // than trusting the 200. A system that cannot store a field answers 200
     // with the field dropped — that is the protocol working as designed, and
     // it is indistinguishable from a stored change until you look.
-    const applied = sameJsonValue(getAtPath(revision.snapshot, change.path), change.value);
+    //
+    // Every change has to be there, not just one: the patch went as a unit, so
+    // a target that kept the address and dropped the website has not applied
+    // what it was sent, and a tick against the whole row would say it had.
+    const applied = change.changes.every((field) =>
+      sameJsonValue(getAtPath(revision.snapshot, field.path), field.value),
+    );
 
     return { id: source.id, ok: true, applied, status, message };
   } catch (cause) {

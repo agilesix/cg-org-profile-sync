@@ -5,7 +5,9 @@
   drift, and who has never heard of a field. Every value a source actually
   holds is a button, because picking one is how a correction starts — including
   on a row that already agrees, which is how the "FunderHub does not store
-  socials" case gets demonstrated.
+  socials" case gets demonstrated. One pick
+  per row, several rows at a time: picking again in a row replaces that row's
+  choice rather than adding to it.
 
   Columns grow with the connections rather than with the registry: a system
   nobody has linked has no column. Three systems linked is three columns, and a
@@ -28,8 +30,8 @@
     /** The latest fan-out read, in registry order. */
     comparison: CompareResult;
 
-    /** The value currently chosen, so its cell can be marked. */
-    selection: Selection | null;
+    /** The value chosen in each row, keyed by field path, so its cell can be marked. */
+    selections: Record<string, Selection>;
 
     /**
      * Whether any system is still unlinked, so the invitation has somewhere to
@@ -44,7 +46,7 @@
     onadd: () => void;
   }
 
-  let { comparison, selection, canAdd, onpick, onadd }: Props = $props();
+  let { comparison, selections, canAdd, onpick, onadd }: Props = $props();
 
   /**
    * The systems that get a column: the ones this person actually connected.
@@ -69,9 +71,9 @@
    */
   const inviting = $derived(canAdd && columns.length < 2);
 
-  /** Whether this cell holds the value the person has chosen to push. */
+  /** Whether this cell holds the value the person has chosen to push for its row. */
   function isPicked(path: string, sourceId: string): boolean {
-    return selection?.path === path && selection.sourceId === sourceId;
+    return selections[path]?.sourceId === sourceId;
   }
 
   /**

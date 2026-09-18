@@ -37,18 +37,20 @@ export const SOURCES: readonly SourceConfig[] = [
     authorizeUrl: "http://localhost:5174/oauth/authorize",
     tokenUrl: "http://localhost:5174/token",
     capabilities: { read: true, write: true },
-    // No `writableFields`, which means "this source accepts every field".
-    // FunderHub actually declines `socials`, `yearFounded` and `orgType`, but
-    // `SourceConfig.writableFields` is an allowlist, and an allowlist can only
-    // be written here by hand-inverting the schema's field set — a second list
-    // that drifts the moment the protocol adds a field. The authoritative
-    // signal is the sentence FunderHub returns on a patch, which `syncToTargets`
-    // already passes through verbatim.
+
+    // What FunderHub will not store, written out here by hand.
     //
-    // `capabilities` is the coarser statement — whether this system can be read
-    // from and written to at all — and is what the connect screen labels each
-    // source with. #1191-T2 is where a field-level "cannot store this" greys
-    // out the Sync button ahead of time.
+    // This is Link-level knowledge and a straight duplicate of the list
+    // FunderHub itself enforces — smoke and mirrors, honestly. The protocol
+    // does not define a way for a system to publish what it can store in
+    // v0.4.0, so the alternatives are to duplicate it or to let someone click
+    // Sync and be told afterwards that the field went nowhere.
+    //
+    // The duplication is safe because the server's rule remains the
+    // authoritative one: a field named here is never sent, and a field this
+    // list gets wrong can only ever over-block. Anything it misses is still
+    // dropped by FunderHub and named in the sentence it returns.
+    unwritableFields: ["socials", "yearFounded", "orgType"],
   },
 
   {
@@ -67,9 +69,15 @@ export const SOURCES: readonly SourceConfig[] = [
     // Writable as of #1190-T4. A push lands as a merge write against the
     // vendor's own API, which is the point the whole adapter is making: a
     // system nobody built for this contract can still receive a change through
-    // it. Two fields come back declined — see the adapter's `unwritableFields`
-    // — and the sender is told so rather than left to assume.
+    // it.
     capabilities: { read: true, write: true },
+
+    // The two the adapter declines, for the same reason FunderHub's are here:
+    // a funder cannot rename a grantee through the vendor's API, and the
+    // vendor has no field that maps to `orgType`. Kept in step with
+    // `apps/temelio-adapter/src/lib/server/store.ts` by hand, and safe the
+    // same way — the adapter still says so itself if this list is wrong.
+    unwritableFields: ["name", "orgType"],
   },
 
   // Named, not wired up. Every one of these is a real product, listed the way

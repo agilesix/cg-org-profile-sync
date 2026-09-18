@@ -82,15 +82,17 @@ export const actions: Actions = {
   default: async ({ params, request }) => {
     const data = await request.formData();
 
-    // The four paths have distinct first segments, so spreading the wrapped
-    // values is a correct merge. Two paths sharing a root would overwrite each
-    // other and want a deep merge, which this form has no use for.
-    const body: JsonObject = {
-      ...buildMergePatch("name", posted(data.get("name"))),
-      ...buildMergePatch("identifiers.org:us:ein.id", posted(data.get("ein"))),
-      ...buildMergePatch("addresses.primary", addressFrom(data)),
-      ...(editsWebsite ? buildMergePatch("socials.website", posted(data.get("website"))) : {}),
-    };
+    // One call over every change, so `buildMergePatch` does the merging: two
+    // paths sharing a root end up in one object rather than overwriting each
+    // other, and overlapping paths throw instead of resolving by order. The
+    // four here have distinct roots, but that is no longer this form's problem
+    // to keep true.
+    const body: JsonObject = buildMergePatch([
+      { path: "name", value: posted(data.get("name")) },
+      { path: "identifiers.org:us:ein.id", value: posted(data.get("ein")) },
+      { path: "addresses.primary", value: addressFrom(data) },
+      ...(editsWebsite ? [{ path: "socials.website", value: posted(data.get("website")) }] : []),
+    ]);
 
     const parsed = OrgPatchDataSchema.safeParse(body);
 

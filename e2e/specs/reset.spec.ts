@@ -21,8 +21,7 @@ test("a spec can move funderhub off its seed", async ({ api }) => {
   const before = rowFor(await api.compare(), "addresses.primary");
 
   await api.sync({
-    path: "addresses.primary",
-    value: valueHeldBy(before, "portal"),
+    changes: [{ path: "addresses.primary", value: valueHeldBy(before, "portal") }],
     targets: ["funderhub"],
   });
 

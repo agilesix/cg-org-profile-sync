@@ -333,7 +333,7 @@ describe("read", () => {
 
 describe("patch", () => {
   it("returns the revision and message from the update envelope", async () => {
-    const mergePatch = buildMergePatch("name", "Agile Six Applications, Inc.");
+    const mergePatch = buildMergePatch([{ path: "name", value: "Agile Six Applications, Inc." }]);
     const accepted = revision(mergePatch);
     const { fetch } = stubFetch(revisionEnvelope("Change applied", accepted));
     const client = new OrgClient({
@@ -355,7 +355,7 @@ describe("patch", () => {
     // The client does not decide what a source will store, so the source here
     // is the same one every other case uses; only the sentence coming back is
     // the subject. It is worded the way a declining system words it.
-    const mergePatch = buildMergePatch("yearFounded", 2015);
+    const mergePatch = buildMergePatch([{ path: "yearFounded", value: 2015 }]);
     const message = "Change applied. This system does not store yearFounded.";
     const { fetch } = stubFetch(revisionEnvelope(message, revision({})));
     const client = new OrgClient({
@@ -370,7 +370,7 @@ describe("patch", () => {
   });
 
   it("sends the merge patch as a PATCH request with the merge-patch content type and bearer token", async () => {
-    const mergePatch = buildMergePatch("name", "Agile Six Applications, Inc.");
+    const mergePatch = buildMergePatch([{ path: "name", value: "Agile Six Applications, Inc." }]);
     const { fetch, calls } = stubFetch(revisionEnvelope("Change applied", revision(mergePatch)));
     const client = new OrgClient({
       source: SOURCE,
@@ -394,7 +394,7 @@ describe("patch", () => {
   });
 
   it("rejects a revision missing a spec-required field", async () => {
-    const mergePatch = buildMergePatch("name", "Agile Six Applications, Inc.");
+    const mergePatch = buildMergePatch([{ path: "name", value: "Agile Six Applications, Inc." }]);
     const broken = revision(mergePatch) as Record<string, unknown>;
     delete broken.id;
     const { fetch } = stubFetch(revisionEnvelope("Change applied", broken as JsonObject));
@@ -415,7 +415,7 @@ describe("patch", () => {
   });
 
   it("rejects a revision whose status is not one of the recognized values", async () => {
-    const mergePatch = buildMergePatch("name", "Agile Six Applications, Inc.");
+    const mergePatch = buildMergePatch([{ path: "name", value: "Agile Six Applications, Inc." }]);
     const invalid = {
       ...revision(mergePatch),
       status: { value: "maybe", description: "Not a real status." },
@@ -431,7 +431,7 @@ describe("patch", () => {
   });
 
   it("reports the revision's schema issues when the message is missing too", async () => {
-    const mergePatch = buildMergePatch("name", "Agile Six Applications, Inc.");
+    const mergePatch = buildMergePatch([{ path: "name", value: "Agile Six Applications, Inc." }]);
     const withoutId = revision(mergePatch);
     delete withoutId["id"];
     const response = new Response(JSON.stringify({ status: 200, data: withoutId }), {
@@ -455,7 +455,7 @@ describe("patch", () => {
   });
 
   it("accepts a revision that omits the optional source, patch, and snapshot fields", async () => {
-    const mergePatch = buildMergePatch("name", "Agile Six Applications, Inc.");
+    const mergePatch = buildMergePatch([{ path: "name", value: "Agile Six Applications, Inc." }]);
     const now = new Date().toISOString();
     const minimal: JsonObject = {
       id: "018f2e77-1a2b-7c3d-8e4f-000000000099",
@@ -570,7 +570,7 @@ describe("OrgClientError", () => {
   });
 
   it("rejects a patch with the same typed error on an error envelope", async () => {
-    const mergePatch = buildMergePatch("name", "Agile Six Applications, Inc.");
+    const mergePatch = buildMergePatch([{ path: "name", value: "Agile Six Applications, Inc." }]);
     const { fetch } = stubFetch(
       errorEnvelope(400, "This patch is not a valid JSON Merge Patch.", []),
     );

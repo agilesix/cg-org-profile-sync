@@ -1600,7 +1600,7 @@ system silently drops the field.
 
 **Open questions**: none.
 
-### #1191-T1: Select several fields and sync them as one merge patch per target
+### #1191-T1: [✓] Select several fields and sync them as one merge patch per target
 
 - **Acceptance criteria**:
   - When `buildMergePatch` is given several `{ path, value }` changes, then it returns one nested
@@ -1641,7 +1641,7 @@ system silently drops the field.
 - **Trade-offs**: A breaking change to the `/api/sync` body. Its only consumers are the page and
   the e2e specs, which move in the same ticket.
 
-### #1191-T2: Grey out Sync and explain when a target cannot store a selected field
+### #1191-T2: [✓] Grey out Sync and explain when a target cannot store a selected field
 
 Depends on: #1191-T1
 

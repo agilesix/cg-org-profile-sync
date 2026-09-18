@@ -56,11 +56,12 @@ test("capture the picker, the grid, a sync, and the adapter's own page", async (
   await expect(page.getByTestId("row-addresses.primary")).toHaveAttribute("data-status", "agree");
   await page.screenshot({ path: `${SHOTS}/4-synced.png` });
 
-  // The field a system cannot store: accepted, dropped, and said out loud.
+  // The field a system cannot store, said before anything is sent: the button
+  // greys out and the line above it names the system and the field.
   await page.getByTestId("pick-socials.website-portal").click();
-  await page.getByTestId("sync").click();
-  await expect(page.getByTestId("sync-result-funderhub")).toBeVisible();
-  await page.screenshot({ path: `${SHOTS}/5-declined.png` });
+  await expect(page.getByTestId("blocked-funderhub")).toBeVisible();
+  await expect(page.getByTestId("sync")).toBeDisabled();
+  await page.screenshot({ path: `${SHOTS}/5-blocked.png` });
 
   // And the far side of the push, on the adapter's own page.
   await page.goto(TEMELIO_ORIGIN);

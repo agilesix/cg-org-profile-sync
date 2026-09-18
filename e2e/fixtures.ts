@@ -18,6 +18,7 @@ import {
 import type {
   CompareResult,
   FieldComparison,
+  FieldChange,
   JsonValue,
   SyncResult,
 } from "@cg-link/org-sync/types";
@@ -27,11 +28,13 @@ import { ADMIN_EMAIL, EIN_REGISTRY, LINK_ORIGIN, SYSTEM_ORIGINS } from "./env.js
 
 /** The body `POST /api/sync` takes, minus the registry and id the helper fills in. */
 export interface SyncRequest {
-  /** Dot path of the single field being set. One of `DEMO_FIELDS`. */
-  path: string;
-
-  /** The value to store. `null` is legal — it is how RFC 7396 clears a field. */
-  value: JsonValue;
+  /**
+   * The fields to set, sent as one patch per target.
+   *
+   * Each `path` is one of `DEMO_FIELDS`, and a `value` of `null` is legal —
+   * it is how RFC 7396 clears a field.
+   */
+  changes: FieldChange[];
 
   /** `SourceConfig.id`s to write to. */
   targets: string[];
@@ -84,7 +87,7 @@ export class LinkApi {
     return this.request.get("/api/compare", { params: query, headers: this.headers });
   }
 
-  /** `POST /api/sync` for one field, asserting it answered. */
+  /** `POST /api/sync` for one or more fields, asserting it answered. */
   async sync(change: SyncRequest): Promise<SyncResult> {
     const response = await this.rawSync({
       registry: EIN_REGISTRY,

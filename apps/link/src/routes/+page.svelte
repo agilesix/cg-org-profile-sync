@@ -15,6 +15,7 @@
 
 <script lang="ts">
   import { SOURCE_TOKENS_HEADER, sourceTokensHeader } from "@cg-link/org-sync/client";
+  import { blockedChanges } from "@cg-link/org-sync/utils";
   import { onMount, untrack } from "svelte";
   import type {
     ApiError,
@@ -93,7 +94,14 @@
 
   /** Null until at least one system is connected — there is nothing to read before that. */
   let comparison = $state.raw<CompareResult | null>(null);
-  let selection = $state<Selection | null>(null);
+  /**
+   * The value chosen in each row, keyed by field path.
+   *
+   * A map rather than a list so picking again in a row replaces that row's
+   * pick instead of adding a second one — two choices for one field would be
+   * a merge patch that means two things, which `buildMergePatch` refuses.
+   */
+  let selections = $state<Record<string, Selection>>({});
   let targets = $state<string[]>([]);
   let results = $state.raw<SyncTargetResult[] | null>(null);
 
@@ -252,9 +260,6 @@
    */
   const host = $derived(data.host?.id ?? null);
 
-  /** Which way the current pick travels: out of the host, or into it. */
-  const direction = $derived(selection === null ? null : directionOf(selection.sourceId, host));
-
   /**
    * Labels come from the registry, not the comparison.
    *
@@ -267,16 +272,40 @@
   );
 
   /**
+   * What is picked, in the order the grid shows the rows.
+   *
+   * Ordered by the comparison rather than by when each was clicked, so the
+   * panel reads down the grid the way the person just read it — and so the
+   * list does not reshuffle when someone changes their mind about one row.
+   */
+  const picks = $derived(
+    (comparison?.fields ?? [])
+      .map((field) => selections[field.path])
+      .filter((pick): pick is Selection => pick !== undefined),
+  );
+
+  /** Where the picked values came from, which is what decides the direction. */
+  const pickedSourceIds = $derived(picks.map((pick) => pick.sourceId));
+
+  /**
+   * Which way the picks travel: out of the host, or into it.
+   *
+   * One direction for the whole set. Picks from two systems have no single
+   * direction, and `directionOf` calls that a push — so the pull's "only the
+   * host" rule applies exactly when every pick came from one other system,
+   * which is the case where "bring this into the page I am on" means something.
+   */
+  const direction = $derived(picks.length === 0 ? null : directionOf(pickedSourceIds, host));
+
+  /**
    * The systems a change could actually reach, given what is picked.
    *
-   * `syncTargets` holds the rules — not the source it came from, nothing with
-   * an error or no record, nothing that declares `write: false`, and on a pull
-   * only the host. They live in the library because they decide where a change
-   * is sent, which is not a thing to leave untested in a template.
+   * `syncTargets` holds the rules — not a source every pick came from, nothing
+   * with an error or no record, nothing that declares `write: false`, and on a
+   * pull only the host. They live in the library because they decide where a
+   * change is sent, which is not a thing to leave untested in a template.
    */
-  const candidates = $derived(
-    selection === null ? [] : syncTargets(comparison?.sources ?? [], selection.sourceId, host),
-  );
+  const candidates = $derived(syncTargets(comparison?.sources ?? [], pickedSourceIds, host));
 
   /**
    * The targets a sync would actually go to.
@@ -291,7 +320,31 @@
     targets.filter((target) => candidates.some((source) => source.id === target)),
   );
 
-  const canSync = $derived(selection !== null && chosen.length > 0 && !busy);
+  /**
+   * The chosen targets that cannot store something picked, and what.
+   *
+   * Asked before anything is sent, which is the whole point of the ticket: a
+   * system that drops a field answers 200 and says so in its message, so
+   * without this the only way to find out is to click Sync and read the bad
+   * news afterwards. `blockedChanges` is the library's rule rather than a
+   * comparison written out here, so this and `syncToTargets`' own refusal
+   * cannot disagree about what is blocked.
+   *
+   * Only the targets actually checked count. Unchecking the blocking system,
+   * or removing the pick, is what clears it.
+   */
+  const blocked = $derived(
+    chosen
+      .map((id) => {
+        const source = comparison?.sources.find((row) => row.id === id);
+        const fields = source === undefined ? [] : blockedChanges(picks, source);
+
+        return { id, label: labels[id] ?? id, fields };
+      })
+      .filter((target) => target.fields.length > 0),
+  );
+
+  const canSync = $derived(picks.length > 0 && chosen.length > 0 && blocked.length === 0 && !busy);
 
   /** Every request to Link's own API carries the whole set of tokens, or none. */
   function authHeaders(): Record<string, string> {
@@ -529,11 +582,55 @@
    * failed row.
    */
   function pick(path: string, label: string, sourceId: string, value: JsonValue): void {
-    selection = { path, label, sourceId, value };
+    const offered = offeredTargets();
 
-    // `candidates` is derived from `selection`, and deriveds in Svelte 5 are
-    // recomputed on read, so this already reflects the line above.
-    targets = candidates.map((source) => source.id);
+    selections = { ...selections, [path]: { path, label, sourceId, value } };
+    retarget(offered);
+  }
+
+  /** Drop one row's pick, leaving the others alone. */
+  function unpick(path: string): void {
+    const offered = offeredTargets();
+    const remaining = { ...selections };
+    delete remaining[path];
+
+    selections = remaining;
+    retarget(offered);
+  }
+
+  /**
+   * The systems the panel is currently offering as targets.
+   *
+   * Empty before the first pick, because the fieldset is not rendered until
+   * something is chosen — so a system nobody has had the chance to uncheck yet
+   * counts as new rather than as deliberately left out.
+   */
+  function offeredTargets(): string[] {
+    return picks.length === 0 ? [] : candidates.map((source) => source.id);
+  }
+
+  /**
+   * Re-offer the reachable systems after the picks change, honouring the
+   * choices already made about them.
+   *
+   * A system the person just brought into range is checked, keeping the
+   * default from before multi-pick: the usual move is "this one is right, fix
+   * the rest". A system that was already on offer keeps whatever they left it
+   * on, because re-checking one they had deliberately unchecked would undo a
+   * decision on a click that had nothing to do with it — and with several rows
+   * in play that click now happens all the time.
+   *
+   * `candidates` is derived from `picks`, and deriveds in Svelte 5 are
+   * recomputed on read, so it already reflects the change just made; `offered`
+   * has to be captured by the caller *before* that change for the same reason.
+   * Both adding and removing a pick can move a system in or out of the list,
+   * which is why this is not only done on the way in.
+   */
+  function retarget(offered: readonly string[]): void {
+    targets = candidates
+      .map((source) => source.id)
+      .filter((id) => targets.includes(id) || !offered.includes(id));
+
     results = null;
     syncedDirection = null;
     problem = null;
@@ -651,7 +748,7 @@
    * otherwise the results would be describing a grid from before the change.
    */
   async function sync(): Promise<void> {
-    if (selection === null || chosen.length === 0 || busy) return;
+    if (!canSync) return;
 
     busy = true;
     results = null;
@@ -665,8 +762,7 @@
         body: JSON.stringify({
           registry,
           id,
-          path: selection.path,
-          value: selection.value,
+          changes: picks.map(({ path, value }) => ({ path, value })),
           targets: chosen,
         }),
       });
@@ -714,17 +810,29 @@
    * hides it is the whole reason this ticket exists.
    */
   const action = $derived.by(() => {
-    if (selection === null || direction === null) return null;
+    if (picks.length === 0 || direction === null) return null;
 
-    const from = labels[selection.sourceId] ?? selection.sourceId;
+    const origins = new Set(pickedSourceIds);
+    const only = picks.length === 1 ? picks[0] : undefined;
+
+    // One field is named; several are counted. Listing four labels in a
+    // sentence someone reads at a glance buries the verb, which is the one
+    // word this line exists to put in front of them.
+    const what = only ? only.label : `${picks.length} fields`;
+
+    // "from" only when the whole set came from one system. With picks from two
+    // it would have to name both, and a sentence saying a value came from the
+    // system it is about to be sent to is worse than one that stays quiet.
+    const sole = origins.size === 1 ? [...origins][0] : undefined;
+    const from = sole === undefined ? "" : ` from ${labels[sole] ?? sole}`;
     const into = chosen.map((id) => labels[id] ?? id).join(" and ");
 
     // Both branches name a target only when there is one. Naming the host on a
     // pull regardless would describe a change that unchecking it had already
     // called off — the exact implication this ticket exists to remove.
     return direction === "push"
-      ? `Push ${selection.label} from ${from}${into ? ` to ${into}` : ""}`
-      : `Pull ${selection.label} from ${from}${into ? ` into ${into}` : ""}`;
+      ? `Push ${what}${from}${into ? ` to ${into}` : ""}`
+      : `Pull ${what}${from}${into ? ` into ${into}` : ""}`;
   });
 
   /**
@@ -841,35 +949,52 @@
   {:else}
     <ComparisonGrid
       {comparison}
-      {selection}
+      {selections}
       canAdd={canAddSource}
       onpick={pick}
       onadd={openPicker}
     />
 
     <section class="panel" data-testid="panel">
-      {#if selection === null}
+      {#if picks.length === 0}
         <p class="prompt" data-testid="prompt">
-          Click the value a system holds to choose it as the correct one.
+          Click the value a system holds to choose it as the correct one. Pick as many fields as you
+          like — they travel together.
         </p>
       {:else}
-        <p class="chosen" data-testid="selection">
-          <span class="chosen-field">{selection.label}</span>
-          <span class="chosen-value">{formatFieldValue(selection.value) || "(empty)"}</span>
-          <span class="chosen-from">from {labels[selection.sourceId] ?? selection.sourceId}</span>
-        </p>
+        <ul class="picks" data-testid="selection">
+          {#each picks as choice (choice.path)}
+            <li class="chosen" data-testid="selected-{choice.path}">
+              <span class="chosen-field">{choice.label}</span>
+              <span class="chosen-value">{formatFieldValue(choice.value) || "(empty)"}</span>
+              <span class="chosen-from">from {labels[choice.sourceId] ?? choice.sourceId}</span>
+              <button
+                type="button"
+                class="unpick"
+                data-testid="unpick-{choice.path}"
+                onclick={() => unpick(choice.path)}
+              >
+                Remove
+              </button>
+            </li>
+          {/each}
+        </ul>
 
         <p class="direction" data-testid="direction" data-direction={direction}>{action}</p>
 
         {#if candidates.length === 0}
           <p class="prompt" data-testid="no-targets">
             {direction === "pull"
-              ? `${data.host?.label ?? "This page"} cannot accept this change, so there is nowhere to pull it into.`
-              : "No other system can accept this change, so there is nowhere to send it."}
+              ? `${data.host?.label ?? "This page"} cannot accept ${picks.length === 1 ? "this change" : "these changes"}, so there is nowhere to pull ${picks.length === 1 ? "it" : "them"} into.`
+              : `No other system can accept ${picks.length === 1 ? "this change" : "these changes"}, so there is nowhere to send ${picks.length === 1 ? "it" : "them"}.`}
           </p>
         {:else}
           <fieldset>
-            <legend>{direction === "pull" ? "Pull it into" : "Push it to"}</legend>
+            <legend>
+              {direction === "pull" ? "Pull" : "Push"}
+              {picks.length === 1 ? "it" : "them"}
+              {direction === "pull" ? "into" : "to"}
+            </legend>
             {#each candidates as source (source.id)}
               <label>
                 <input
@@ -883,6 +1008,14 @@
             {/each}
           </fieldset>
         {/if}
+
+        {#each blocked as target (target.id)}
+          <p class="blocked" role="status" data-testid="blocked-{target.id}">
+            {target.label} can't store {target.fields
+              .map((field) => selections[field.path]?.label ?? field.path)
+              .join(" or ")}. Unselect it or drop {target.label} as a target.
+          </p>
+        {/each}
 
         <button type="button" class="sync" data-testid="sync" disabled={!canSync} onclick={sync}>
           {busy ? "Sending…" : direction === "pull" ? "Pull" : "Push"}
@@ -1082,6 +1215,14 @@
   .panel .prompt {
     margin: 0;
   }
+  .picks {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
   .chosen {
     margin: 0;
     display: flex;
@@ -1107,6 +1248,25 @@
   }
   .chosen-from {
     color: #6b7a77;
+  }
+  .blocked {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #97590d;
+  }
+  .unpick {
+    font: inherit;
+    font-size: 0.75rem;
+    padding: 0.1rem 0.45rem;
+    color: #6b7a77;
+    background: none;
+    border: 1px solid #d9e0dd;
+    border-radius: 0.3rem;
+    cursor: pointer;
+  }
+  .unpick:hover {
+    color: #14201f;
+    border-color: #b7c4c1;
   }
   fieldset {
     margin: 0;
@@ -1181,8 +1341,19 @@
     .prompt,
     .chosen-field,
     .chosen-from,
+    .unpick,
     .linked-org-ein {
       color: #8a9895;
+    }
+    .blocked {
+      color: #e0ab5f;
+    }
+    .unpick {
+      border-color: #2a3736;
+    }
+    .unpick:hover {
+      color: #e7edeb;
+      border-color: #3f5250;
     }
     .banner {
       color: #a8ddd5;
