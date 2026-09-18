@@ -27,7 +27,8 @@ authorization server — `/oauth/authorize`, `/oauth/callback` and `POST /token`
 that delegates identity to Google or to a dev-only form, and mints a token scoped to the orgs that
 person may touch there. A person granted an org on GrantPortal and nothing on FunderHub is refused
 at FunderHub, which is the beat the demo turns on. All three systems also serve `/orgs/{orgId}`:
-that system's own copy of a profile, with the four demo fields editable on the two portals, saving
+that system's own copy of a profile, with the original four demo fields editable on the two portals
+(#1190-T7 adds the three #1190-T6 introduced), saving
 through the same `applyOrgPatch` its `PATCH` route goes through — so the demo can start where the
 data lives rather than in the widget, and an edit typed on a portal is the disagreement the widget
 then finds. Link uses it, and now in the Plaid shape: the widget opens on a title and one "Link
@@ -276,13 +277,18 @@ which _applies_ a patch to a value. `updateOrg` uses both: validate the incoming
 patch schema, apply it, then re-validate the result against `OrganizationBaseSchema` before storing.
 `id` is always forced back to the existing value — a patch can never move a record.
 
-**Comparison is a flat list of field specs.** `src/utils/compare.ts` holds `DEMO_FIELDS` — the four
+**Comparison is a flat list of field specs.** `src/utils/compare.ts` holds `DEMO_FIELDS` — the seven
 paths the demo compares — and `compareProfiles`, which returns one `FieldComparison` per field with
 the value each source holds. A source that lacks a field, holds `null`, or holds an empty string is
 absent from the row rather than counted as a disagreement, so a missing field never reads as a
 conflict. Values compare by canonical JSON with keys sorted, so two systems that serialize the same
 address in a different key order still agree. Adding a field to the demo is one entry in
-`DEMO_FIELDS`. `utils/direction.ts` holds the other half of what the widget does with a comparison:
+`DEMO_FIELDS`. The last three — `mission`, `emails.primary` and `phones.primary.number` — were
+chosen because every system can store them, and because each reads differently: the email is a
+disagreement FunderHub is the outlier on, the phone an agreement, the mission a gap FunderHub never
+filled in. The compared phone path is the leaf rather than `phones.primary`, since the portals seed
+an `isMobile` the adapter's mapping never produces and the object would otherwise land in a cell as
+raw JSON. `utils/direction.ts` holds the other half of what the widget does with a comparison:
 `directionOf(pickedSourceIds, hostId)` is `push` when there is no host, when every pick came from
 the host, or when the picks came from more than one system — mixed origins have no single direction
 and must not be narrowed by a pull's rule — and `pull` when every pick came from one other system.

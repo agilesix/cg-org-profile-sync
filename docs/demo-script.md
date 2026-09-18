@@ -13,7 +13,8 @@ the last step.
 
 1. **Start where the profile lives.** Open GrantPortal and follow the organization link to
    `/orgs/018f2e77-1a2b-7c3d-8e4f-000000000001`. This is the screen a nonprofit keeps their profile
-   on: the four fields the demo compares are editable, the rest is shown as GrantPortal stores it.
+   on: four of the seven fields the demo compares are editable, the rest is shown as GrantPortal
+   stores it. (#1190-T7 puts the other three on the form.)
    Note the address — Suite 300. FunderHub has the same page at `http://localhost:5174`, its copy
    says Suite 210, and it has no website box at all, because it does not store `socials`. Temelio
    holds a third copy, visible on the adapter's own page at `http://localhost:5175`: Suite 210 too,
@@ -51,12 +52,17 @@ the last step.
    the contract on its behalf. Nothing in the flow gives that away: the same sign-in, the same
    organization step, the same lock to the organization already linked.
 8. **Read the grid.** One column per system, one row per compared field, each system labelled with
-   what it allows — **pull and push** for all three. Two rows agree. The **Primary address** row is
-   marked as differing: GrantPortal holds what you just typed, while FunderHub and Temelio both say
-   Suite 210 — so the system holding the current address is the one outnumbered. The **Website**
-   row differs too: GrantPortal has the new value, Temelio still has the old `http://www.` form,
-   and FunderHub has nothing at all. That last one is a gap, not a conflict, and does not count as
-   a third opinion.
+   what it allows — **pull and push** for all three. Seven rows, four of which agree. The **Primary
+   address** row is marked as differing: GrantPortal holds what you just typed, while FunderHub and
+   Temelio both say Suite 210 — so the system holding the current address is the one outnumbered.
+   The **Website** row differs too: GrantPortal has the new value, Temelio still has the old
+   `http://www.` form, and FunderHub has nothing at all. That last one is a gap, not a conflict,
+   and does not count as a third opinion. The **Email** row is the third disagreement and the one
+   nobody staged — FunderHub was seeded with a mailbox that no longer routes anywhere, and this
+   time it is FunderHub that is outnumbered rather than GrantPortal. **Mission** is the website's
+   gap without the refusal on top of it: GrantPortal and Temelio hold one, FunderHub simply never
+   filled it in and _can_ store it. **Phone** agrees, which is worth pointing at — most fields do,
+   and a grid where everything conflicts would be a grid nobody believes.
 9. **Push the address out.** Click GrantPortal's address to choose it. The panel does not say
    "sync" — it says **Push Primary address from GrantPortal to FunderHub and Temelio**, because you
    are standing on GrantPortal and this value is leaving it. Pick several fields and the sentence

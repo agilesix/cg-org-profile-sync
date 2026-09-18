@@ -32,6 +32,24 @@ export const DEMO_FIELDS: readonly FieldSpec[] = [
   { path: "identifiers.org:us:ein.id", label: "EIN" },
   { path: "socials.website", label: "Website" },
   { path: "addresses.primary", label: "Primary address" },
+
+  // The three below were chosen because every system can store them, which is
+  // what makes them evidence rather than decoration: the adapter's claim is
+  // that a vendor nobody built for this contract still receives a correction
+  // through it, and the address was the only row all three would take.
+  //
+  // They also read differently from each other on purpose — the email is a
+  // disagreement, the phone an agreement, and the mission a gap — because the
+  // distinction between those three is the thing the grid exists to teach.
+  { path: "mission", label: "Mission" },
+  { path: "emails.primary", label: "Email" },
+
+  // The leaf, not `phones.primary`. `formatFieldValue` renders an address by
+  // shape and anything else unrecognised as raw JSON, so the whole object
+  // would land in a cell as `{"countryCode":"+1",...}`; and the two portals
+  // seed `isMobile: false` while the adapter's mapping never produces it, so
+  // comparing the object would report a disagreement about a key nobody typed.
+  { path: "phones.primary.number", label: "Phone" },
 ];
 
 /**

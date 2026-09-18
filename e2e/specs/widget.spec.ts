@@ -20,6 +20,7 @@ import {
   PORTAL_SEED,
   TEMELIO_ORG_ID,
 } from "@cg-link/seed";
+import { DEMO_FIELDS } from "@cg-link/org-sync/utils";
 import type { Page } from "@playwright/test";
 import { connect, expect, openWidget, test } from "../fixtures.js";
 import { ADMIN_EMAIL } from "../env.js";
@@ -63,7 +64,7 @@ async function openConnected(page: Page): Promise<void> {
   await connect(page, "funderhub", ADMIN_EMAIL, FUNDERHUB_ORG_ID);
 }
 
-test("the grid opens on the seeded org, with the address row marked as the disagreement", async ({
+test("the grid opens on the seeded org, with the address and email rows marked as the disagreements", async ({
   page,
 }) => {
   await openConnected(page);
@@ -77,10 +78,26 @@ test("the grid opens on the seeded org, with the address row marked as the disag
   await expect(page.getByTestId("source-portal")).toContainText("GrantPortal");
   await expect(page.getByTestId("source-funderhub")).toContainText("FunderHub");
 
-  // The one row that differs, and the three that do not.
+  // One row per compared field — counted off `DEMO_FIELDS` rather than
+  // written as 7, since the library's promise is that adding a field to the
+  // demo is one entry there and nothing else. Seven of them as of #1190-T6.
+  await expect(page.locator('[data-testid^="row-"]')).toHaveCount(DEMO_FIELDS.length);
+
+  // The ones that differ are the address and
+  // the email. GrantPortal holds the current suite and the working mailbox;
+  // FunderHub is a suite behind on one and pointing at a dead address on the
+  // other, so neither system is simply the right one.
   await expect(page.getByTestId("row-addresses.primary")).toHaveAttribute("data-status", "differs");
+  await expect(page.getByTestId("row-emails.primary")).toHaveAttribute("data-status", "differs");
   await expect(page.getByTestId("row-name")).toHaveAttribute("data-status", "agree");
   await expect(page.getByTestId("row-identifiers.org:us:ein.id")).toHaveAttribute(
+    "data-status",
+    "agree",
+  );
+
+  // Nothing was invented to make the phone drift, so it is the demo's example
+  // of a field two systems simply agree about.
+  await expect(page.getByTestId("row-phones.primary.number")).toHaveAttribute(
     "data-status",
     "agree",
   );
@@ -105,6 +122,11 @@ test("the grid opens on the seeded org, with the address row marked as the disag
     "data-held",
     "false",
   );
+
+  // The mission is the same gap without the write refusal on top of it:
+  // FunderHub can store one and simply never had it filled in.
+  await expect(page.getByTestId("row-mission")).toHaveAttribute("data-status", "agree");
+  await expect(page.getByTestId("cell-mission-funderhub")).toHaveAttribute("data-held", "false");
 
   // Nothing is chosen yet, so there is nothing to send.
   await expect(page.getByTestId("prompt")).toBeVisible();

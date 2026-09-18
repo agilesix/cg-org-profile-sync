@@ -229,6 +229,56 @@ test("two fields travel to one target in a single patch, and both land", async (
   expect(valueHeldBy(rowFor(after, "socials.website"), "temelio")).toEqual(website);
 });
 
+test("the three fields #1190-T6 added travel to both systems in one patch each", async ({
+  api,
+}) => {
+  const before = await api.compare();
+
+  // The three rows read differently on purpose, which is why pushing them
+  // together is worth a case: the email is a disagreement FunderHub is the
+  // outlier on, the mission is a gap FunderHub never filled in, and the phone
+  // is a field all three already agree about.
+  expect(rowFor(before, "emails.primary").status).toBe("differs");
+  expect(rowFor(before, "mission").values).not.toHaveProperty("funderhub");
+  expect(rowFor(before, "phones.primary.number").status).toBe("agree");
+
+  const changes = [
+    { path: "mission", value: valueHeldBy(rowFor(before, "mission"), "portal") },
+    { path: "emails.primary", value: valueHeldBy(rowFor(before, "emails.primary"), "portal") },
+    {
+      path: "phones.primary.number",
+      value: valueHeldBy(rowFor(before, "phones.primary.number"), "portal"),
+    },
+  ];
+
+  const sync = await api.sync({ changes, targets: ["funderhub", "temelio"] });
+
+  // Two rows for three fields: one patch per target, not one per field. And
+  // neither target is blocked — none of the three is in anybody's
+  // `unwritableFields`, which is the property that made them the ones to add.
+  expect(sync.results).toHaveLength(2);
+
+  for (const id of ["funderhub", "temelio"]) {
+    const result = resultFor(sync, id);
+    expect(result.ok, `${id}: ${result.message}`).toBe(true);
+    expect(result.status, `${id} was refused before a request was made`).toBe(200);
+    expect(result.applied, `${id}: ${result.message}`).toBe(true);
+  }
+
+  const after = await api.compare();
+  expect(valueHeldBy(rowFor(after, "emails.primary"), "funderhub")).toBe(
+    PORTAL_SEED.emails?.primary,
+  );
+  expect(valueHeldBy(rowFor(after, "mission"), "funderhub")).toBe(PORTAL_SEED.mission);
+
+  // The disagreement and the gap are both settled, and the phone is where it
+  // always was — a push of a value everybody already held changes nothing and
+  // must still be reported as accepted.
+  expect(rowFor(after, "emails.primary").status).toBe("agree");
+  expect(rowFor(after, "mission").status).toBe("agree");
+  expect(rowFor(after, "phones.primary.number").status).toBe("agree");
+});
+
 test("a target blocked on one of two picks is refused for both, not sent half of them", async ({
   api,
 }) => {
@@ -333,18 +383,22 @@ test("a target that is not in the registry fails on its own row", async ({ api }
 });
 
 test("a path outside DEMO_FIELDS is a 400", async ({ api }) => {
+  // `yearFounded` rather than `mission`, which was the example here until
+  // #1190-T6 put mission in the list. A real path the demo deliberately does
+  // not compare is what this case needs: an invented one would only prove that
+  // nonsense is refused, which is a weaker claim than the list being the rule.
   const response = await api.rawSync({
     registry: EIN_REGISTRY,
     id: AGILE_SIX_EIN,
-    changes: [{ path: "mission", value: "Anything at all." }],
+    changes: [{ path: "yearFounded", value: "1999" }],
     targets: ["funderhub"],
   });
 
   expect(response.status()).toBe(400);
 
   // And nothing moved.
-  const mission = (await api.compare()).fields.find((field) => field.path === "mission");
-  expect(mission).toBeUndefined();
+  const yearFounded = (await api.compare()).fields.find((field) => field.path === "yearFounded");
+  expect(yearFounded).toBeUndefined();
 });
 
 test("a body missing its targets is a 400", async ({ api }) => {
