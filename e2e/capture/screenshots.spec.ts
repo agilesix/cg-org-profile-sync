@@ -17,8 +17,19 @@ import { FUNDERHUB_ORG_ID, PORTAL_ORG_ID, TEMELIO_ORG_ID } from "@cg-link/seed";
 const SHOTS = "../docs/screenshots";
 
 // Wide enough for three columns without a horizontal scrollbar, and short
-// enough that the interesting part is not lost in whitespace.
+// enough that a modal is not lost in whitespace.
 test.use({ viewport: { width: 1280, height: 900 } });
+
+/**
+ * Screenshot options for a shot that has to show a whole page.
+ *
+ * `fullPage` rather than a taller viewport, because the right height is not a
+ * constant: the grid grew past the fold when #1190-T6 took the comparison to
+ * seven fields, and a fixed number would need revisiting at eight. This
+ * measures the content instead — and leaves the shots that frame a modal at
+ * the viewport, where a taller window would only add grey.
+ */
+const WHOLE_PAGE = { fullPage: true } as const;
 
 test("capture the picker, the grid, a sync, and the adapter's own page", async ({ page }) => {
   await openWidget(page);
@@ -47,26 +58,26 @@ test("capture the picker, the grid, a sync, and the adapter's own page", async (
 
   await expect(page.getByTestId("grid")).toBeVisible();
   await expect(page.getByTestId("row-addresses.primary")).toHaveAttribute("data-status", "differs");
-  await page.screenshot({ path: `${SHOTS}/3-compare.png` });
+  await page.screenshot({ path: `${SHOTS}/3-compare.png`, ...WHOLE_PAGE });
 
   await page.getByTestId("pick-addresses.primary-portal").click();
   await expect(page.getByTestId("target-temelio")).toBeChecked();
   await page.getByTestId("sync").click();
   await expect(page.getByTestId("sync-result-temelio")).toHaveAttribute("data-ok", "true");
   await expect(page.getByTestId("row-addresses.primary")).toHaveAttribute("data-status", "agree");
-  await page.screenshot({ path: `${SHOTS}/4-synced.png` });
+  await page.screenshot({ path: `${SHOTS}/4-synced.png`, ...WHOLE_PAGE });
 
   // The field a system cannot store, said before anything is sent: the button
   // greys out and the line above it names the system and the field.
   await page.getByTestId("pick-socials.website-portal").click();
   await expect(page.getByTestId("blocked-funderhub")).toBeVisible();
   await expect(page.getByTestId("sync")).toBeDisabled();
-  await page.screenshot({ path: `${SHOTS}/5-blocked.png` });
+  await page.screenshot({ path: `${SHOTS}/5-blocked.png`, ...WHOLE_PAGE });
 
   // And the far side of the push, on the adapter's own page.
   await page.goto(TEMELIO_ORIGIN);
   await expect(page.getByTestId("mode")).toBeVisible();
-  await page.screenshot({ path: `${SHOTS}/6-adapter.png` });
+  await page.screenshot({ path: `${SHOTS}/6-adapter.png`, ...WHOLE_PAGE });
 });
 
 test("capture the profile page, the overlay, and a pull", async ({ page }) => {
@@ -74,7 +85,7 @@ test("capture the profile page, the overlay, and a pull", async ({ page }) => {
   // now starts. Taken before anything is linked, so it is the seed.
   await page.goto(`${PORTAL_ORIGIN}/orgs/${PORTAL_ORG_ID}`);
   await expect(page.getByTestId("profile")).toHaveAttribute("data-ready", "true");
-  await page.screenshot({ path: `${SHOTS}/9-profile.png` });
+  await page.screenshot({ path: `${SHOTS}/9-profile.png`, ...WHOLE_PAGE });
 
   // The widget over that page, rather than in a tab of its own: the shape the
   // demo actually ships in, and the one the README leads with.

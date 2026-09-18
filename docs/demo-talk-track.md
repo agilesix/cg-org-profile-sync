@@ -82,11 +82,13 @@ ids."
 
 ### 1:35 — Read the grid
 
-**Do.** **Legal name**, **EIN** agree. **Primary address** reads **differs**. **Website** reads
-**agree** with the funder's cell **—**.
+**Do.** Seven rows. **Legal name**, **EIN**, **Phone** agree. **Primary address** and **Email**
+read **differs**. **Website** and **Mission** read **agree** with the funder's cell **—**.
 
-**Say.** "One row per field, one column per system. The address disagrees. The funder's system has
-no website field at all — a gap, not a conflict."
+**Say.** "One row per field, one column per system. Two things disagree: the address, and the email
+— the funder has a mailbox that stopped routing. Two more are blank on the funder's side, and
+that's a gap rather than a conflict: it has no website field at all, and nobody ever filled in the
+mission. And most of it simply agrees, which is what you'd hope."
 
 ### 1:55 — Change the address
 

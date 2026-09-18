@@ -48,6 +48,9 @@ const FUNDERHUB_STREET2 = required(
   FUNDERHUB_SEED.addresses?.primary?.street2,
   "funderhub's suite number",
 );
+const PORTAL_EMAIL = required(PORTAL_SEED.emails?.primary, "portal's email address");
+const PORTAL_MISSION = required(PORTAL_SEED.mission, "portal's mission");
+const PORTAL_PHONE = required(PORTAL_SEED.phones?.primary.number, "portal's phone number");
 
 /**
  * Open the widget and sign in to both systems as the admin.
@@ -62,6 +65,20 @@ async function openConnected(page: Page): Promise<void> {
   await openWidget(page);
   await connect(page, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
   await connect(page, "funderhub", ADMIN_EMAIL, FUNDERHUB_ORG_ID);
+}
+
+/**
+ * Sign in to all three systems.
+ *
+ * `openConnected` stops at two because most of the grid's beats are visible
+ * with two columns. The tests using this one are about a value reaching the
+ * vendor behind the adapter, so the third column has to be there.
+ */
+async function openAllThree(page: Page): Promise<void> {
+  await openWidget(page);
+  await connect(page, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
+  await connect(page, "funderhub", ADMIN_EMAIL, FUNDERHUB_ORG_ID);
+  await connect(page, "temelio", ADMIN_EMAIL, TEMELIO_ORG_ID);
 }
 
 test("the grid opens on the seeded org, with the address and email rows marked as the disagreements", async ({
@@ -181,10 +198,7 @@ test("choosing portal's address and syncing turns the row from differs to agree"
 });
 
 test("a vendor behind an adapter is offered as a target, and takes the push", async ({ page }) => {
-  await openWidget(page);
-  await connect(page, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
-  await connect(page, "funderhub", ADMIN_EMAIL, FUNDERHUB_ORG_ID);
-  await connect(page, "temelio", ADMIN_EMAIL, TEMELIO_ORG_ID);
+  await openAllThree(page);
 
   const row = page.getByTestId("row-addresses.primary");
   await expect(row).toHaveAttribute("data-status", "differs");
@@ -205,6 +219,146 @@ test("a vendor behind an adapter is offered as a target, and takes the push", as
   // All three now hold the address the person chose.
   await expect(row).toHaveAttribute("data-status", "agree");
   await expect(page.getByTestId("cell-addresses.primary-temelio")).toContainText(PORTAL_STREET2);
+});
+
+test("pushing portal's email settles the disagreement at both other systems", async ({ page }) => {
+  await openAllThree(page);
+
+  // The second disagreement in the seed, and the one nobody staged: FunderHub
+  // holds a mailbox that no longer routes anywhere, so here it is the outlier
+  // rather than GrantPortal.
+  const row = page.getByTestId("row-emails.primary");
+  await expect(row).toHaveAttribute("data-status", "differs");
+  await expect(page.getByTestId("cell-emails.primary-funderhub")).toContainText(
+    required(FUNDERHUB_SEED.emails?.primary, "funderhub's email address"),
+  );
+
+  await page.getByTestId("pick-emails.primary-portal").click();
+  await page.getByTestId("sync").click();
+
+  await expect(page.getByTestId("sync-result-funderhub")).toHaveAttribute("data-ok", "true");
+  await expect(page.getByTestId("problem")).toHaveCount(0);
+
+  // Temelio already agreed with GrantPortal, so it is not offered as a target
+  // — but the row can only agree once FunderHub has taken the value.
+  await expect(row).toHaveAttribute("data-status", "agree");
+  await expect(page.getByTestId("cell-emails.primary-funderhub")).toContainText(PORTAL_EMAIL);
+});
+
+test("pushing portal's mission fills the gap at funderhub", async ({ page }) => {
+  await openAllThree(page);
+
+  // A gap rather than a drift: FunderHub can store a mission and simply never
+  // had one filled in, so the row reads agree before the push as well as
+  // after. What changes is that a third system holds it.
+  const row = page.getByTestId("row-mission");
+  await expect(row).toHaveAttribute("data-status", "agree");
+  await expect(page.getByTestId("cell-mission-funderhub")).toHaveAttribute("data-held", "false");
+
+  await page.getByTestId("pick-mission-portal").click();
+  await page.getByTestId("sync").click();
+
+  await expect(page.getByTestId("sync-result-funderhub")).toHaveAttribute("data-ok", "true");
+
+  // The cell, not the row's status: the row read `agree` before the push too,
+  // so asserting it again afterwards would pass whether or not anything moved.
+  // What changed is that FunderHub now holds a value where it held none.
+  await expect(page.getByTestId("cell-mission-funderhub")).toContainText(PORTAL_MISSION);
+  await expect(page.getByTestId("cell-mission-funderhub")).toHaveAttribute("data-held", "true");
+});
+
+test("the three fields #1190-T6 added all reach a vendor's own system from one Sync", async ({
+  page,
+}) => {
+  await openAllThree(page);
+
+  // The shape a presenter actually uses: several rows picked, one Sync. What
+  // this can pin from a browser is that all three land at both targets and
+  // none clobbers another on the way — which for Temelio means its adapter
+  // folded three keys of one merge patch into the vendor's own call correctly.
+  //
+  // It cannot count the patches: the browser only ever sees Link's own
+  // `/api/sync`, and the fan-out to each system happens server-side. That
+  // "one PATCH per target, not one per field" claim is pinned where it is
+  // visible — `api-sync.spec.ts` asserts two result rows for three fields, and
+  // `client/fanout.test.ts` asserts it against a stubbed transport.
+  await page.getByTestId("pick-mission-portal").click();
+  await page.getByTestId("pick-emails.primary-portal").click();
+  await page.getByTestId("pick-phones.primary.number-portal").click();
+
+  // None of the three is in any system's `unwritableFields`, which is why they
+  // were the three to add — so nothing is blocked and Sync stays live.
+  await expect(page.getByTestId("blocked-funderhub")).toHaveCount(0);
+  await expect(page.getByTestId("blocked-temelio")).toHaveCount(0);
+  await expect(page.getByTestId("sync")).toBeEnabled();
+
+  await page.getByTestId("sync").click();
+
+  await expect(page.getByTestId("sync-result-funderhub")).toHaveAttribute("data-ok", "true");
+  await expect(page.getByTestId("sync-result-temelio")).toHaveAttribute("data-ok", "true");
+  await expect(page.getByTestId("problem")).toHaveCount(0);
+
+  // And every one of the three is in the target's own column afterwards.
+  await expect(page.getByTestId("cell-mission-funderhub")).toContainText(PORTAL_MISSION);
+  await expect(page.getByTestId("cell-emails.primary-funderhub")).toContainText(PORTAL_EMAIL);
+  await expect(page.getByTestId("cell-phones.primary.number-funderhub")).toContainText(
+    PORTAL_PHONE,
+  );
+  await expect(page.getByTestId("cell-mission-temelio")).toContainText(PORTAL_MISSION);
+  await expect(page.getByTestId("cell-emails.primary-temelio")).toContainText(PORTAL_EMAIL);
+  await expect(page.getByTestId("cell-phones.primary.number-temelio")).toContainText(PORTAL_PHONE);
+
+  for (const path of ["mission", "emails.primary", "phones.primary.number"]) {
+    await expect(page.getByTestId(`row-${path}`)).toHaveAttribute("data-status", "agree");
+  }
+});
+
+test("the grid scrolls inside a fixed height, keeping its column headings in view", async ({
+  page,
+}) => {
+  await openAllThree(page);
+
+  const scroller = page.getByTestId("grid-scroller");
+
+  // It really is scrolling rather than merely having the style: seven fields
+  // against three systems overflows 26rem, and if it ever stopped doing so
+  // this spec should say it rather than pass on a grid that simply fits.
+  const { clientHeight, scrollHeight } = await scroller.evaluate((el) => ({
+    clientHeight: el.clientHeight,
+    scrollHeight: el.scrollHeight,
+  }));
+
+  expect(scrollHeight).toBeGreaterThan(clientHeight);
+
+  await scroller.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+
+  // Both claims are about geometry inside the scroller, not about the browser
+  // viewport: a row scrolled out of a container is still "visible" to
+  // Playwright, and the whole grid may itself sit below the fold of the page.
+  const geometry = await scroller.evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    const rowOf = (path: string) =>
+      el.querySelector(`[data-testid="row-${path}"]`)?.getBoundingClientRect();
+
+    return {
+      top: box.top,
+      bottom: box.bottom,
+      scrolled: el.scrollTop,
+      lastRowTop: rowOf("phones.primary.number")?.top,
+      headingTop: el.querySelector('[data-testid="source-temelio"]')?.getBoundingClientRect().top,
+    };
+  });
+
+  // It moved, and the row that was below the fold is now inside the box.
+  expect(geometry.scrolled).toBeGreaterThan(0);
+  expect(geometry.lastRowTop, "no phone row in the grid").toBeDefined();
+  expect(geometry.lastRowTop!).toBeGreaterThanOrEqual(geometry.top);
+  expect(geometry.lastRowTop!).toBeLessThan(geometry.bottom);
+
+  // And the heading stayed at the top of the box rather than scrolling away
+  // with the rows, which is the point of making it sticky.
+  expect(geometry.headingTop, "no Temelio column heading").toBeDefined();
+  expect(Math.abs(geometry.headingTop! - geometry.top)).toBeLessThan(2);
 });
 
 test("pushing portal's website to funderhub is blocked before send", async ({ page }) => {

@@ -301,6 +301,47 @@ Going straight at the vendor's own API works too, and is sometimes what you want
 is the thing under suspicion. Those endpoint shapes are in the internal spec and in the adapter's
 gitignored findings file, not here.
 
+## The sandbox pass, by hand
+
+The suite is insulated from the vendor on purpose — `playwright.config.ts` pins
+`TEMELIO_MODE=fixture` on the adapter it starts, so `pnpm e2e` proves the adapter's translation and
+the three-way fan-out without ever touching Temelio. What it cannot prove is that the vendor
+accepts these writes. That is this pass, and it is by hand because it edits a live system shared
+with other foundations.
+
+Run it after anything that changes what the adapter sends: the mapping, the writable set, or the
+compared fields. Findings go in `apps/temelio-adapter/SANDBOX-FINDINGS.local.md` (gitignored).
+
+1. **Point the adapter at the vendor.** In `apps/temelio-adapter/.env`, set `TEMELIO_MODE=sandbox`,
+   and check `TEMELIO_API_ORIGIN`, `TEMELIO_FOUNDATION_ID`, `TEMELIO_API_TOKEN` and
+   `TEMELIO_ORG_ALLOWLIST`. The allowlist is the guardrail: it is the only record the adapter will
+   write to, so a mistake elsewhere in the demo cannot reach another foundation's grantee. Restart
+   the adapter and confirm its landing page at http://localhost:5175 says `sandbox` — the log says
+   so too, one line at start-up.
+2. **Stop any other dev server first.** `reuseExistingServer` joins an adapter that is already up,
+   so a suite started against a sandbox-mode adapter runs against the real vendor and its reset
+   answers 409 with a sentence saying exactly this.
+3. **Record the starting point.** Read the grantee through the adapter and keep the response:
+   `curl -s -H "authorization: Bearer $CG_ACCESS_TOKEN" \
+'http://localhost:5175/common-grants/orgs?registry=org:us:ein&id=123456789'`. This is what you
+   put back in step 6, and `POST /__test/reset` will not do it for you — in sandbox mode it
+   refuses, because the records are not ours to re-seed.
+4. **Push each of the three through the widget**, one at a time, from GrantPortal to Temelio:
+   **Mission**, **Email**, **Phone**. Each should report `pushed to Temelio`. Then confirm on the
+   vendor's own record rather than through the adapter that just wrote it: open Temelio's own
+   interface at https://app.trytemelio.com and find the grantee there. The adapter's landing page
+   will not take you to it — in sandbox mode it deliberately withholds the record and its ids,
+   since that page is a real organization's data and not ours to print.
+5. **Check the grantee is still findable by EIN.** Re-run the `curl` from step 3. This is the
+   failure worth looking for: every write must restate `ein`, which `toMetadataPatch` does, but a
+   write that dropped it would leave a record that still exists and that the EIN search no longer
+   returns — invisible to the widget and to the demo, with nothing saying why.
+6. **Put the seed values back**, so the next run of the demo starts where this one did. Push each
+   field again from the values recorded in step 3, or `PATCH` the adapter directly with them.
+7. **Write down what merged**, field by field, in the findings file: what was sent, what the vendor
+   stored, and anything it silently normalized. A field the vendor accepts and quietly rewrites is
+   the thing this pass exists to catch — it answers 200 either way.
+
 ## If something is off
 
 - **Every column says a system is not connected**: nothing has been connected yet. Use the
