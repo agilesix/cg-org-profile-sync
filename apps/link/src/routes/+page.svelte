@@ -1055,8 +1055,8 @@
     <section class="panel" data-testid="panel">
       {#if picks.length === 0}
         <p class="prompt" data-testid="prompt">
-          Click the value a system holds to choose it as the correct one, and click it again to take
-          it back. Pick as many fields as you like — they travel together.
+          Click a value to choose it, and again to take it back. Pick as many fields as you like —
+          they travel together.
         </p>
       {:else}
         <ul class="picks" data-testid="selection">
