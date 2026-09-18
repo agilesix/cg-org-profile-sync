@@ -36,7 +36,7 @@ flagged. A field one system simply does not have shows as a gap, not a conflict.
 system and it is held to the organization you already chose — matched by EIN, since no two systems
 agree on ids.
 
-![The comparison grid: three systems side by side, with the website and address rows flagged as differing, the mission missing at FunderHub, and more rows below the fold of a scrollable table](docs/screenshots/3-compare.png)
+![The comparison grid: three systems side by side over seven fields, with the website, address and email rows flagged as differing and the mission missing at FunderHub](docs/screenshots/3-compare.png)
 
 **Fix a field everywhere in one click.** Click the value that is right, pick which systems should
 receive it, and push. Each system gets a JSON Merge Patch that changes only that field.

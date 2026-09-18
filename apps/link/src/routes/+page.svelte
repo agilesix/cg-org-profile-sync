@@ -1203,6 +1203,12 @@
     margin: 0 0 0.9rem;
     font-size: 1.3rem;
   }
+  /* A flex column stretches its children across the cross axis, which turned
+     this button into a full-width bar. The grid and the panel do want the whole
+     width; a button wants to be the size of its label. */
+  main[data-embedded="true"] .link-system {
+    align-self: flex-start;
+  }
   main[data-embedded="true"] .banner {
     margin-top: 0.9rem;
   }

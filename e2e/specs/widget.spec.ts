@@ -313,28 +313,36 @@ test("the three fields #1190-T6 added all reach a vendor's own system from one S
   }
 });
 
-test("the grid scrolls inside a fixed height, keeping its column headings in view", async ({
+test("the grid is capped at a fixed height, and its headings stick when it scrolls", async ({
   page,
 }) => {
   await openAllThree(page);
 
   const scroller = page.getByTestId("grid-scroller");
 
-  // It really is scrolling rather than merely having the style: seven fields
-  // against three systems overflows 26rem, and if it ever stopped doing so
-  // this spec should say it rather than pass on a grid that simply fits.
-  const { clientHeight, scrollHeight } = await scroller.evaluate((el) => ({
-    clientHeight: el.clientHeight,
-    scrollHeight: el.scrollHeight,
-  }));
+  // Seven fields against three systems fit inside the cap today, which is why
+  // this does not assert that the grid is scrolling: it asserts the cap is
+  // real and the grid is inside it. The scrolling case is pinned where it
+  // actually happens — `embedded.spec.ts`, in an overlay that cannot grow.
+  const capped = await scroller.evaluate((el) => {
+    const max = getComputedStyle(el).maxHeight;
 
-  expect(scrollHeight).toBeGreaterThan(clientHeight);
+    return {
+      max,
+      maxPx: Number.parseFloat(max),
+      height: el.clientHeight,
+      overflows: el.scrollHeight > el.clientHeight,
+    };
+  });
 
+  expect(capped.max, "the grid has no fixed height at all").not.toBe("none");
+  expect(capped.height).toBeLessThanOrEqual(capped.maxPx);
+
+  // Scrolled to the bottom whether or not there is anywhere to go. If the
+  // comparison ever outgrows the cap this still holds, and the heading check
+  // below is then doing real work rather than reading an unscrolled table.
   await scroller.evaluate((el) => el.scrollTo(0, el.scrollHeight));
 
-  // Both claims are about geometry inside the scroller, not about the browser
-  // viewport: a row scrolled out of a container is still "visible" to
-  // Playwright, and the whole grid may itself sit below the fold of the page.
   const geometry = await scroller.evaluate((el) => {
     const box = el.getBoundingClientRect();
     const rowOf = (path: string) =>
@@ -343,20 +351,19 @@ test("the grid scrolls inside a fixed height, keeping its column headings in vie
     return {
       top: box.top,
       bottom: box.bottom,
-      scrolled: el.scrollTop,
-      lastRowTop: rowOf("phones.primary.number")?.top,
+      lastRowBottom: rowOf("phones.primary.number")?.bottom,
       headingTop: el.querySelector('[data-testid="source-temelio"]')?.getBoundingClientRect().top,
     };
   });
 
-  // It moved, and the row that was below the fold is now inside the box.
-  expect(geometry.scrolled).toBeGreaterThan(0);
-  expect(geometry.lastRowTop, "no phone row in the grid").toBeDefined();
-  expect(geometry.lastRowTop!).toBeGreaterThanOrEqual(geometry.top);
-  expect(geometry.lastRowTop!).toBeLessThan(geometry.bottom);
+  // The last row is inside the box — reachable, by scrolling or because it
+  // already fits. Geometry rather than visibility: a row scrolled out of a
+  // container is still "visible" to Playwright.
+  expect(geometry.lastRowBottom, "no phone row in the grid").toBeDefined();
+  expect(geometry.lastRowBottom!).toBeLessThanOrEqual(geometry.bottom + 1);
 
-  // And the heading stayed at the top of the box rather than scrolling away
-  // with the rows, which is the point of making it sticky.
+  // And the heading is at the top of the box rather than scrolled away with
+  // the rows, which is the point of making it sticky.
   expect(geometry.headingTop, "no Temelio column heading").toBeDefined();
   expect(Math.abs(geometry.headingTop! - geometry.top)).toBeLessThan(2);
 });

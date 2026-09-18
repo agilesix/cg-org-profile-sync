@@ -185,11 +185,10 @@
      losing the column headings on the way down.
   */
   .grid-frame {
-    position: relative;
     border-bottom: 1px solid #d9e0dd;
   }
   .scroller {
-    max-height: 26rem;
+    max-height: 36rem;
     overflow-y: auto;
   }
 
@@ -200,9 +199,13 @@
     flex: 1 1 auto;
 
     /* A floor rather than `0`: the grid should yield space to the panel, but a
-       comparison squeezed to two rows is not one anybody can read. Past this
-       the column outgrows the frame and scrolls — which costs the chrome above,
-       not the grid, and the Sync button is pinned either way. */
+       comparison squeezed to two rows is not one anybody can read.
+
+       Deliberately low. It is a minimum, not the height — with a short panel
+       the grid gets whatever the column has left over, which is more than this.
+       Raising it does not make the usual case taller; it only makes the column
+       outgrow the frame sooner, and the frame scrolling as well as the grid is
+       the thing this layout exists to avoid. */
     min-height: 12rem;
     display: flex;
     flex-direction: column;
@@ -213,36 +216,6 @@
     max-height: none;
   }
 
-  /*
-     A fade over the last visible row, so a row the fold happens to cut through
-     reads as "there is more below" rather than as a rendering fault. Sized in
-     `lh` so it covers about a line of text whatever the row height. Hidden
-     unless the grid actually scrolls — `animation-timeline: scroll()` runs an
-     animation against scroll position, and a container with nothing to scroll
-     has no such timeline, so the fade never appears on a short grid.
-  */
-  .grid-frame::after {
-    content: "";
-    position: absolute;
-    inset: auto 0 0;
-    height: 2lh;
-    background: linear-gradient(to bottom, rgb(245 247 246 / 0%), rgb(245 247 246 / 95%));
-    pointer-events: none;
-  }
-  @supports (animation-timeline: scroll()) {
-    .grid-frame::after {
-      /* Fades itself out as the grid reaches the bottom: once the last row is
-         on screen there is nothing more to hint at. */
-      animation: fade-out-at-end linear both;
-      animation-timeline: scroll(nearest block);
-      animation-range: contain 100% contain 100%;
-    }
-  }
-  @keyframes fade-out-at-end {
-    to {
-      opacity: 0;
-    }
-  }
   table {
     width: 100%;
 
@@ -370,9 +343,6 @@
     }
     .grid-frame {
       border-bottom-color: #2a3736;
-    }
-    .grid-frame::after {
-      background: linear-gradient(to bottom, rgb(15 22 21 / 0%), rgb(15 22 21 / 95%));
     }
     thead th {
       /* The sticky header needs an opaque background in both schemes, or the
