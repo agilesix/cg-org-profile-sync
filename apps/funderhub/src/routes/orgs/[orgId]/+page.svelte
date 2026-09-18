@@ -16,9 +16,6 @@
   const readOnly = [
     { label: "Record id", path: "id" },
     { label: "UEI", path: "identifiers.org:us:uei.id" },
-    { label: "Mission", path: "mission" },
-    { label: "Email", path: "emails.primary" },
-    { label: "Phone", path: "phones.primary.number" },
     { label: "Year founded", path: "yearFounded" },
     { label: "LinkedIn", path: "socials.linkedin" },
   ];
@@ -140,8 +137,8 @@
   <p class="role">Organization profile</p>
   <h1>{org.name}</h1>
   <p class="tagline">
-    This system's own copy. The four fields the demo compares are editable here; everything else is
-    shown as it is stored.
+    This system's own copy. The fields the demo compares are editable here; everything else is shown
+    as it is stored.
   </p>
 
   {#if canOpenLink}
@@ -169,18 +166,22 @@
 
   <h2>Edit</h2>
   <form method="POST">
-    <label for="input-name">Legal name</label>
-    <input id="input-name" data-testid="input-name" name="name" value={org.name} />
+    {#if data.edits.name}
+      <label for="input-name">Legal name</label>
+      <input id="input-name" data-testid="input-name" name="name" value={org.name} />
+    {/if}
 
-    <label for="input-ein">EIN</label>
-    <input
-      id="input-ein"
-      data-testid="input-ein"
-      name="ein"
-      value={org.identifiers?.["org:us:ein"]?.id ?? ""}
-    />
+    {#if data.edits.ein}
+      <label for="input-ein">EIN</label>
+      <input
+        id="input-ein"
+        data-testid="input-ein"
+        name="ein"
+        value={org.identifiers?.["org:us:ein"]?.id ?? ""}
+      />
+    {/if}
 
-    {#if data.editsWebsite}
+    {#if data.edits.website}
       <label for="input-website">Website</label>
       <input
         id="input-website"
@@ -190,18 +191,55 @@
       />
     {/if}
 
-    <fieldset>
-      <legend>Primary address</legend>
-      {#each addressFields as field (field.name)}
-        <label for="input-{field.name}">{field.label}</label>
-        <input
-          id="input-{field.name}"
-          data-testid="input-{field.name}"
-          name={field.name}
-          value={address?.[field.name] ?? ""}
-        />
-      {/each}
-    </fieldset>
+    {#if data.edits.mission}
+      <label for="input-mission">Mission</label>
+      <textarea
+        id="input-mission"
+        data-testid="input-mission"
+        name="mission"
+        rows="3"
+        value={org.mission ?? ""}></textarea>
+    {/if}
+
+    {#if data.edits.email}
+      <label for="input-email">Email</label>
+      <input
+        id="input-email"
+        data-testid="input-email"
+        name="email"
+        value={org.emails?.primary ?? ""}
+      />
+    {/if}
+
+    {#if data.edits.phone}
+      <!--
+        The number only. The country code is this system's to keep: a merge
+        patch leaves the siblings it does not name alone, so editing the number
+        here cannot strip the `+1` off a record.
+      -->
+      <label for="input-phone">Phone</label>
+      <input
+        id="input-phone"
+        data-testid="input-phone"
+        name="phone"
+        value={org.phones?.primary.number ?? ""}
+      />
+    {/if}
+
+    {#if data.edits.address}
+      <fieldset>
+        <legend>Primary address</legend>
+        {#each addressFields as field (field.name)}
+          <label for="input-{field.name}">{field.label}</label>
+          <input
+            id="input-{field.name}"
+            data-testid="input-{field.name}"
+            name={field.name}
+            value={address?.[field.name] ?? ""}
+          />
+        {/each}
+      </fieldset>
+    {/if}
 
     <div class="save">
       <button type="submit" data-testid="save">Save</button>
@@ -284,7 +322,8 @@
     color: var(--muted);
     margin-bottom: 0.2rem;
   }
-  input {
+  input,
+  textarea {
     display: block;
     width: 100%;
     box-sizing: border-box;
@@ -297,7 +336,8 @@
     border: 1px solid var(--border);
     border-radius: 0.25rem;
   }
-  input:focus-visible {
+  input:focus-visible,
+  textarea:focus-visible {
     outline: 2px solid var(--brand);
     outline-offset: 1px;
   }

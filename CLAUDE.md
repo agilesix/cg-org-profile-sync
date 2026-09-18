@@ -27,8 +27,8 @@ authorization server — `/oauth/authorize`, `/oauth/callback` and `POST /token`
 that delegates identity to Google or to a dev-only form, and mints a token scoped to the orgs that
 person may touch there. A person granted an org on GrantPortal and nothing on FunderHub is refused
 at FunderHub, which is the beat the demo turns on. All three systems also serve `/orgs/{orgId}`:
-that system's own copy of a profile, with the original four demo fields editable on the two portals
-(#1190-T7 adds the three #1190-T6 introduced), saving
+that system's own copy of a profile, with every demo field editable on the two portals — bar the
+website box, which FunderHub does not offer because it does not store `socials` — saving
 through the same `applyOrgPatch` its `PATCH` route goes through — so the demo can start where the
 data lives rather than in the widget, and an edit typed on a portal is the disagreement the widget
 then finds. Link uses it, and now in the Plaid shape: the widget opens on a title and one "Link

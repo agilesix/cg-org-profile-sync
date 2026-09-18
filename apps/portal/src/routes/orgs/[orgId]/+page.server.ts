@@ -2,7 +2,7 @@ import { error, fail } from "@sveltejs/kit";
 import { env } from "$env/dynamic/private";
 import { applyOrgPatch } from "@cg-link/org-sync/server";
 import { OrgPatchDataSchema } from "@cg-link/org-sync/schemas";
-import { EIN_REGISTRY, buildMergePatch, parseOrigin } from "@cg-link/org-sync/utils";
+import { EIN_REGISTRY, buildMergePatch, parseOrigin, topLevelKey } from "@cg-link/org-sync/utils";
 import type { JsonObject, JsonValue } from "@cg-link/org-sync/types";
 import { SYSTEM_ID, store, unscopedRoutes } from "$lib/server/store.js";
 import type { Actions, PageServerLoad } from "./$types.js";
@@ -17,17 +17,42 @@ const ADDRESS_PARTS = [
   "postalCode",
 ] as const;
 
+/** Every path the form can set, by the name of the input that carries it. */
+const EDITABLE_PATHS = {
+  name: "name",
+  ein: "identifiers.org:us:ein.id",
+  website: "socials.website",
+  mission: "mission",
+  email: "emails.primary",
+  phone: "phones.primary.number",
+  address: "addresses.primary",
+} as const;
+
+type FormField = keyof typeof EDITABLE_PATHS;
+
 /**
- * Whether this system can store a website, and so whether the form offers one.
+ * Which boxes this system's form offers.
  *
  * Read off this system's own `unwritableFields` rather than hardcoded, which
  * is what lets the two apps hold the identical copy of this file: FunderHub
  * declines `socials` and its page has no website field, GrantPortal declines
- * nothing and its page does. A patch it declined would be accepted and dropped
- * rather than refused, so leaving the input out is not about avoiding an error
- * — it is about not offering someone a box whose contents go nowhere.
+ * nothing and its page has them all. A patch it declined would be accepted and
+ * dropped rather than refused, so leaving the input out is not about avoiding
+ * an error — it is about not offering someone a box whose contents go nowhere.
+ *
+ * Derived over every field rather than asked about one of them, because the
+ * form and the patch below both read it: a box this page offers is a value it
+ * sends, and a rule applied to only some fields is one that silently stops
+ * holding the day a system declines a different field.
  */
-const editsWebsite = !(unscopedRoutes.unwritableFields ?? []).includes("socials");
+const unwritable = new Set(unscopedRoutes.unwritableFields ?? []);
+
+const edits = Object.fromEntries(
+  Object.entries(EDITABLE_PATHS).map(([field, path]) => [
+    field,
+    !unwritable.has(topLevelKey(path)),
+  ]),
+) as Record<FormField, boolean>;
 
 /**
  * This system's copy of one profile.
@@ -44,7 +69,7 @@ export const load: PageServerLoad = async ({ params }) => {
 
   return {
     org,
-    editsWebsite,
+    edits,
 
     /** This system's id, which the widget is told so it can name its host. */
     system: SYSTEM_ID,
@@ -71,7 +96,7 @@ export const load: PageServerLoad = async ({ params }) => {
 
 export const actions: Actions = {
   /**
-   * Save the four demo fields as one merge patch.
+   * Save the fields this page offers as one merge patch.
    *
    * The only real work here is turning inputs into a patch; every rule about
    * what a change may do lives in `applyOrgPatch`, which is the same function
@@ -84,15 +109,15 @@ export const actions: Actions = {
 
     // One call over every change, so `buildMergePatch` does the merging: two
     // paths sharing a root end up in one object rather than overwriting each
-    // other, and overlapping paths throw instead of resolving by order. The
-    // four here have distinct roots, but that is no longer this form's problem
-    // to keep true.
-    const body: JsonObject = buildMergePatch([
-      { path: "name", value: posted(data.get("name")) },
-      { path: "identifiers.org:us:ein.id", value: posted(data.get("ein")) },
-      { path: "addresses.primary", value: addressFrom(data) },
-      ...(editsWebsite ? [{ path: "socials.website", value: posted(data.get("website")) }] : []),
-    ]);
+    // other, and overlapping paths throw instead of resolving by order. These
+    // all have distinct roots, but that is no longer this form's problem to
+    // keep true.
+    const body: JsonObject = buildMergePatch(
+      offeredFields().map((field) => ({
+        path: EDITABLE_PATHS[field],
+        value: valueOf(field, data),
+      })),
+    );
 
     const parsed = OrgPatchDataSchema.safeParse(body);
 
@@ -130,6 +155,24 @@ function posted(value: FormDataEntryValue | null): JsonValue {
   const text = typeof value === "string" ? value.trim() : "";
 
   return text === "" ? null : text;
+}
+
+/** The fields this system will store, in the order they are declared above. */
+function offeredFields(): FormField[] {
+  return (Object.keys(EDITABLE_PATHS) as FormField[]).filter((field) => edits[field]);
+}
+
+/**
+ * One offered field as its patch value.
+ *
+ * The address is the one field built from several inputs; every other box is a
+ * single value. The phone posts the number alone, not the whole
+ * `phones.primary` — a merge patch keeps the siblings it does not name, so the
+ * country code this system already holds survives an edit to the number, which
+ * is also why the compared path is that leaf rather than the object around it.
+ */
+function valueOf(field: FormField, data: FormData): JsonValue {
+  return field === "address" ? addressFrom(data) : posted(data.get(field));
 }
 
 /**

@@ -171,7 +171,15 @@ test("an edit on GrantPortal, pushed from the frame, lands on FunderHub's own pa
   page,
 }) => {
   // 1. The presenter changes the suite number where they keep their profile.
+  //
+  // Waiting for `data-ready` before typing, not out of habit: the page is
+  // server-rendered and SvelteKit's router hydrates over it, so a submit
+  // clicked in that window starts a navigation the router then takes over
+  // mid-flight and the save goes missing. `openLinkOver` below waits for the
+  // same attribute for the same reason; this save happens before it is called.
   await page.goto(PROFILE.portal);
+  await expect(page.getByTestId("profile")).toHaveAttribute("data-ready", "true");
+
   await page.getByTestId("input-street2").fill(NEW_SUITE);
   await page.getByTestId("save").click();
   await expect(page.getByTestId("save-message")).toContainText("Change applied");

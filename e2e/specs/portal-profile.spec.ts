@@ -8,7 +8,7 @@
  */
 
 import type { Page } from "@playwright/test";
-import { FUNDERHUB_ORG_ID, PORTAL_ORG_ID, PORTAL_SEED } from "@cg-link/seed";
+import { FUNDERHUB_ORG_ID, FUNDERHUB_SEED, PORTAL_ORG_ID, PORTAL_SEED } from "@cg-link/seed";
 import { FUNDERHUB_ORIGIN, PORTAL_ORIGIN } from "../env.js";
 import { expect, rowFor, test, valueHeldBy } from "../fixtures.js";
 
@@ -110,4 +110,82 @@ test("each system's landing page links to the seeded profile", async ({ page }) 
     await expect(page.getByTestId("profile")).toHaveAttribute("data-ready", "true");
     await expect(page.getByTestId("input-name")).toHaveValue(PORTAL_SEED.name);
   }
+});
+
+/**
+ * #1190-T7 moves Mission, Email and Phone out of the read-only list and into
+ * the form on both portals, so a disagreement in one of them can be fixed from
+ * the page that holds it rather than only through the widget.
+ */
+test("Mission, Email and Phone are editable on both portals, and none is still in the read-only list", async ({
+  page,
+}) => {
+  const systems = [
+    { origin: PORTAL_ORIGIN, orgId: PORTAL_ORG_ID, seed: PORTAL_SEED },
+    { origin: FUNDERHUB_ORIGIN, orgId: FUNDERHUB_ORG_ID, seed: FUNDERHUB_SEED },
+  ];
+
+  for (const { origin, orgId, seed } of systems) {
+    await openProfile(page, `${origin}/orgs/${orgId}`);
+
+    // FunderHub's seed holds no mission at all — the box has to exist and be
+    // empty, not be skipped, or "editable" is only true of the system that
+    // happens to already have a value in it.
+    await expect(page.getByTestId("input-mission")).toHaveValue(seed.mission ?? "");
+    await expect(page.getByTestId("input-email")).toHaveValue(seed.emails?.primary ?? "");
+    await expect(page.getByTestId("input-phone")).toHaveValue(seed.phones?.primary?.number ?? "");
+
+    await expect(page.getByTestId("field-mission")).toHaveCount(0);
+    await expect(page.getByTestId("field-emails.primary")).toHaveCount(0);
+    await expect(page.getByTestId("field-phones.primary.number")).toHaveCount(0);
+  }
+});
+
+test("an edit on FunderHub's page is what Link's comparison then reads", async ({ page, api }) => {
+  await openProfile(page, `${FUNDERHUB_ORIGIN}/orgs/${FUNDERHUB_ORG_ID}`);
+
+  await page.getByTestId("input-email").fill("changed@agile6.com");
+  await page.getByTestId("save").click();
+
+  // The system's own sentence, and the re-render showing what it stored.
+  await expect(page.getByTestId("save-message")).toContainText("Change applied");
+  await expect(page.getByTestId("input-email")).toHaveValue("changed@agile6.com");
+
+  const row = rowFor(await api.compare(), "emails.primary");
+
+  expect(valueHeldBy(row, "funderhub")).toBe("changed@agile6.com");
+});
+
+test("clearing the email is refused, because a profile cannot hold an empty one", async ({
+  page,
+}) => {
+  // Emptying a box posts `""`, which the action maps to `null` — an RFC 7396
+  // delete. For `mission` that clears the field; for this one it cannot.
+  // `emails.primary` is *required* inside an optional collection, so deleting
+  // the leaf leaves `emails` present and incomplete, and the whole patch is
+  // refused. Same outcome as emptying the legal name, reached down a different
+  // path — a nested required field rather than a top-level one — which is why
+  // it is worth its own case rather than assumed from that one.
+  await openProfile(page, PORTAL_PROFILE);
+
+  await page.getByTestId("input-email").fill("");
+  await page.getByTestId("save").click();
+
+  await expect(page.getByTestId("save-message")).toContainText("invalid");
+  await expect(page.getByTestId("input-email")).toHaveValue(PORTAL_SEED.emails?.primary ?? "");
+});
+
+test("a malformed email is refused with the field and the reason, and stores nothing", async ({
+  page,
+}) => {
+  // `emails.primary` is `z.email()`-validated, so this is a change the schema
+  // declines before the store is touched — the same beat as the empty-name
+  // case above, but on a field that now lives in the form because of #1190-T7.
+  await openProfile(page, PORTAL_PROFILE);
+
+  await page.getByTestId("input-email").fill("not-an-email");
+  await page.getByTestId("save").click();
+
+  await expect(page.getByTestId("save-message")).toContainText("emails.primary");
+  await expect(page.getByTestId("input-email")).toHaveValue(PORTAL_SEED.emails?.primary ?? "");
 });

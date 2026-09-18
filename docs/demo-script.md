@@ -13,8 +13,7 @@ the last step.
 
 1. **Start where the profile lives.** Open GrantPortal and follow the organization link to
    `/orgs/018f2e77-1a2b-7c3d-8e4f-000000000001`. This is the screen a nonprofit keeps their profile
-   on: four of the seven fields the demo compares are editable, the rest is shown as GrantPortal
-   stores it. (#1190-T7 puts the other three on the form.)
+   on: every field the demo compares is editable, and the rest is shown as GrantPortal stores it.
    Note the address — Suite 300. FunderHub has the same page at `http://localhost:5174`, its copy
    says Suite 210, and it has no website box at all, because it does not store `socials`. Temelio
    holds a third copy, visible on the adapter's own page at `http://localhost:5175`: Suite 210 too,
