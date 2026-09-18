@@ -953,6 +953,7 @@
       canAdd={canAddSource}
       onpick={pick}
       onadd={openPicker}
+      fill={embedded}
     />
 
     <section class="panel" data-testid="panel">
@@ -1138,6 +1139,79 @@
     max-width: 56rem;
     margin: 0 auto;
     padding: 4rem 1.5rem;
+  }
+
+  /*
+     Embedded, the widget is a column in a fixed box rather than a page that
+     runs as long as it likes. `embed.js` sizes the overlay at
+     `min(46rem, 92vh)` and cannot grow, so a document taller than that used to
+     scroll the iframe — and once the grid gained a scroller of its own, that
+     became scrolling the frame and *then* scrolling the grid to reach a row.
+
+     So: the chrome keeps its natural height, the grid takes what is left, and
+     the panel stays on screen. The Sync button is the last thing anyone does
+     here, and having to scroll to find it is the thing this layout removes.
+  */
+  main[data-embedded="true"] {
+    display: flex;
+    flex-direction: column;
+
+    /* `border-box`, or the padding is added to `100dvh` and the column ends up
+       taller than the frame it is meant to fit — which puts the panel, and the
+       Sync button in it, just below the fold. */
+    box-sizing: border-box;
+    height: 100dvh;
+    max-width: none;
+    padding: 2.5rem 1.5rem 1.5rem;
+
+    /* `auto`, not `hidden`. This layout is built so everything fits, but a
+       person with a long list of picks and a set of results under them can
+       still outgrow the frame — and scrolling the widget is what this used to
+       do anyway, where clipping would lose the controls outright. */
+    overflow: auto;
+  }
+  main[data-embedded="true"] > :not(.panel) {
+    flex: none;
+  }
+
+  /*
+     The panel keeps its natural height and the grid takes what is left, rather
+     than the other way round: a grid one row shorter costs a scroll in a thing
+     that already scrolls, where a panel that shrinks hides controls.
+  */
+  main[data-embedded="true"] > .panel {
+    flex: 0 0 auto;
+    margin-top: 1.25rem;
+  }
+
+  /*
+     Condensed chrome, so there is something left for the grid to absorb.
+     Making the column flex is only half the fix: the title block, the tagline
+     and the spacing between the chips came to roughly 650px of a 736px frame,
+     which left the grid a row and a half however the height was divided.
+
+     What goes is what the overlay already says another way. The host bar names
+     the system whose page this is, and someone who clicked **Open Link** on
+     their own profile does not need the standalone page's onboarding copy.
+     Nothing here is hidden that cannot be read on the widget's own page.
+  */
+  main[data-embedded="true"] .role,
+  main[data-embedded="true"] .tagline {
+    display: none;
+  }
+  main[data-embedded="true"] h1 {
+    margin: 0 0 0.9rem;
+    font-size: 1.3rem;
+  }
+  main[data-embedded="true"] .banner {
+    margin-top: 0.9rem;
+  }
+  main[data-embedded="true"] .linked-org {
+    margin-top: 1rem;
+  }
+  main[data-embedded="true"] .chips {
+    margin: 1rem 0 1.25rem;
+    gap: 0.3rem;
   }
   .role {
     margin: 0 0 0.5rem;

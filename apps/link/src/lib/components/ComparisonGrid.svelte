@@ -44,9 +44,21 @@
 
     /** Called when the invitation column is clicked, to open the picker. */
     onadd: () => void;
+
+    /**
+     * Take the height a flex parent gives us instead of capping our own.
+     *
+     * Embedded, the widget is a column inside an overlay iframe and the grid is
+     * the part that should absorb whatever is left over — so the fixed
+     * `max-height` that keeps a standalone grid from running off the page is
+     * the wrong rule there, and would make the frame scroll *and then* the grid.
+     * A prop rather than the page reaching in through `:global`, so the two
+     * ways this grid can be sized are both stated here.
+     */
+    fill?: boolean;
   }
 
-  let { comparison, selections, canAdd, onpick, onadd }: Props = $props();
+  let { comparison, selections, canAdd, onpick, onadd, fill = false }: Props = $props();
 
   /**
    * The systems that get a column: the ones this person actually connected.
@@ -91,7 +103,7 @@
   }
 </script>
 
-<div class="grid-frame">
+<div class="grid-frame" class:fill>
   <div class="scroller" data-testid="grid-scroller">
     <table data-testid="grid">
       <thead>
@@ -179,6 +191,26 @@
   .scroller {
     max-height: 26rem;
     overflow-y: auto;
+  }
+
+  /* `min-height: 0` on both: a flex item's default floor is its content, which
+     for a table is every row — without this the grid refuses to shrink and
+     pushes the panel below it off the bottom of the frame. */
+  .grid-frame.fill {
+    flex: 1 1 auto;
+
+    /* A floor rather than `0`: the grid should yield space to the panel, but a
+       comparison squeezed to two rows is not one anybody can read. Past this
+       the column outgrows the frame and scrolls — which costs the chrome above,
+       not the grid, and the Sync button is pinned either way. */
+    min-height: 12rem;
+    display: flex;
+    flex-direction: column;
+  }
+  .grid-frame.fill .scroller {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
   }
 
   /*

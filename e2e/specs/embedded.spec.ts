@@ -167,6 +167,52 @@ test("a sync inside the frame updates the host page without reloading it", async
   );
 });
 
+test("embedded, the grid is the only thing that scrolls", async ({ page }) => {
+  // The overlay cannot grow — `embed.js` sizes it at `min(46rem, 92vh)` — so
+  // something has to give when seven compared fields will not fit. The answer
+  // is the grid, which has a scroller of its own. What must *not* happen is
+  // both: scrolling the frame to reach the grid and then scrolling the grid to
+  // reach a row is two gestures for one lookup, and it is what this layout
+  // exists to remove.
+  await page.goto(PROFILE.portal);
+  await expect(page.getByTestId("profile")).toHaveAttribute("data-ready", "true");
+
+  const widget = await openLinkOver(page);
+
+  await connectInFrame(page, widget, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
+  await connectInFrame(page, widget, "funderhub", ADMIN_EMAIL, FUNDERHUB_ORG_ID);
+  await expect(widget.getByTestId("grid")).toBeVisible();
+
+  const layout = await widget.locator("body").evaluate(() => {
+    const scrolls = (el: Element | null) => (el ? el.scrollHeight > el.clientHeight + 1 : null);
+    const main = document.querySelector('[data-testid="widget"]');
+
+    return {
+      embedded: main?.getAttribute("data-embedded"),
+      columnScrolls: scrolls(main),
+      gridScrolls: scrolls(document.querySelector('[data-testid="grid-scroller"]')),
+      panelVisible:
+        (document.querySelector('[data-testid="panel"]')?.getBoundingClientRect().bottom ??
+          Infinity) <= window.innerHeight,
+    };
+  });
+
+  // Standalone none of this applies, so the whole test would be vacuous.
+  expect(layout.embedded, "the widget does not know it is embedded").toBe("true");
+
+  // Which of the two scrolls is the entire point, and both halves are load-
+  // bearing: before this layout the grid ran to its full height and the *frame*
+  // took the overflow, so a row cost one scroll; after the grid gained a
+  // scroller of its own it briefly cost two. The grid scrolls, the column does
+  // not.
+  expect(layout.gridScrolls, "the grid is not the scroller").toBe(true);
+  expect(layout.columnScrolls, "the frame scrolls as well as the grid").toBe(false);
+
+  // And the panel under the grid — where Sync lives — is on screen rather than
+  // pushed below the fold by a grid that took all the room.
+  expect(layout.panelVisible, "the panel is below the fold of the overlay").toBe(true);
+});
+
 test("an edit on GrantPortal, pushed from the frame, lands on FunderHub's own page", async ({
   page,
 }) => {
