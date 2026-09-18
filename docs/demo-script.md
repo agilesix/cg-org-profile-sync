@@ -83,8 +83,9 @@ the last step.
     lists two picks — the address from the last step and the website — each with its own
     **Remove**, and they go together: one patch per target, not one per field. (Re-sending the
     address is a harmless no-op; **Remove** it first if you would rather show only the website
-    moving.) Clicking a second value in a row you have already picked replaces that row's choice
-    rather than adding to it, since one field cannot have two values.
+    moving.) Clicking a _different_ value in a row you have already picked replaces that row's choice
+    rather than adding to it, since one field cannot have two values; clicking the one already
+    chosen takes it back, so **Remove** and a second click do the same thing.
 
     Now the beat worth slowing down for: a line above the button reads "FunderHub does not store
     Website. Everything else will be sent." The widget knows before asking — but it does not stop

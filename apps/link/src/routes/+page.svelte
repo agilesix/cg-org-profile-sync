@@ -648,7 +648,14 @@
   }
 
   /**
-   * Take a source's value as the correct one.
+   * Take a source's value as the correct one, or take the choice back.
+   *
+   * Clicking the cell that is already chosen unpicks it. The cells carry
+   * `aria-pressed`, so they describe themselves as toggles to anyone not
+   * looking at the highlight — and a control that says it is pressed but
+   * cannot be unpressed is lying about what a second click will do. Picking a
+   * *different* cell in the same row still replaces that row's choice rather
+   * than adding to it: one field cannot travel with two values.
    *
    * Every other system that holds a record is checked by default: the demo's
    * usual move is "this one is right, fix the rest", and unchecking is cheaper
@@ -657,6 +664,11 @@
    * failed row.
    */
   function pick(path: string, label: string, sourceId: string, value: JsonValue): void {
+    if (selections[path]?.sourceId === sourceId) {
+      unpick(path);
+      return;
+    }
+
     const offered = offeredTargets();
 
     selections = { ...selections, [path]: { path, label, sourceId, value } };
@@ -1043,8 +1055,8 @@
     <section class="panel" data-testid="panel">
       {#if picks.length === 0}
         <p class="prompt" data-testid="prompt">
-          Click the value a system holds to choose it as the correct one. Pick as many fields as you
-          like — they travel together.
+          Click the value a system holds to choose it as the correct one, and click it again to take
+          it back. Pick as many fields as you like — they travel together.
         </p>
       {:else}
         <ul class="picks" data-testid="selection">

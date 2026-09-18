@@ -494,6 +494,50 @@ test("picking two rows sends them together, and each pick can be taken back", as
   await expect(page.getByTestId("cell-socials.website-temelio")).toContainText(PORTAL_WEBSITE);
 });
 
+test("clicking the cell that is already chosen takes the choice back", async ({ page }) => {
+  await openConnected(page);
+
+  const cell = page.getByTestId("cell-addresses.primary-portal");
+
+  await page.getByTestId("pick-addresses.primary-portal").click();
+  await expect(cell).toHaveAttribute("data-selected", "true");
+  await expect(page.getByTestId("selected-addresses.primary")).toBeVisible();
+
+  // The same cell again. It carries `aria-pressed`, so it describes itself as
+  // a toggle to anyone not looking at the highlight — a second click has to
+  // undo the first rather than re-assert it.
+  await page.getByTestId("pick-addresses.primary-portal").click();
+  await expect(cell).toHaveAttribute("data-selected", "false");
+  await expect(page.getByTestId("selected-addresses.primary")).toHaveCount(0);
+
+  // Back to nothing chosen, so the panel is offering nothing to send.
+  await expect(page.getByTestId("prompt")).toBeVisible();
+  await expect(page.getByTestId("sync")).toBeHidden();
+});
+
+test("clicking a different cell in a chosen row replaces the choice rather than clearing it", async ({
+  page,
+}) => {
+  await openConnected(page);
+
+  await page.getByTestId("pick-addresses.primary-portal").click();
+
+  // A different system in the same row is a change of mind, not a toggle: one
+  // field cannot travel with two values, and clearing the row here would make
+  // switching between two candidates a two-click operation.
+  await page.getByTestId("pick-addresses.primary-funderhub").click();
+
+  await expect(page.getByTestId("selected-addresses.primary")).toContainText(FUNDERHUB_STREET2);
+  await expect(page.getByTestId("cell-addresses.primary-portal")).toHaveAttribute(
+    "data-selected",
+    "false",
+  );
+  await expect(page.getByTestId("cell-addresses.primary-funderhub")).toHaveAttribute(
+    "data-selected",
+    "true",
+  );
+});
+
 test("unchecking a target survives a later pick in another row", async ({ page }) => {
   await openConnected(page);
 
