@@ -1447,7 +1447,7 @@ Depends on: #1190-T3 for the reads and, if it lands, #1190-T4 for the push.
   only the by-hand run proves the sandbox. That is the honest split for a shared external sandbox
   that CI cannot reset.
 
-### #1190-T6: Compare three more fields, chosen so Temelio can store them
+### #1190-T6: [✓] Compare three more fields, chosen so Temelio can store them
 
 The demo compares four fields and Temelio can store two of them: it declines `name` (the vendor
 answers 200 to a new `legalName` and stores nothing) and FunderHub declines `socials`, so the
