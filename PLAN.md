@@ -1521,7 +1521,7 @@ rather than only in the seed.
   Accepted because the three new rows are each a different shape — a disagreement, an agreement and
   a gap — which is the distinction the demo exists to teach.
 
-### #1190-T7: Make the three fields editable on both portals
+### #1190-T7: [✓] Make the three fields editable on both portals
 
 Depends on: #1190-T6.
 
