@@ -97,7 +97,13 @@ stand-in and needs nothing else; `sandbox` talks to the vendor), `TEMELIO_API_OR
 `TEMELIO_FOUNDATION_ID`, `TEMELIO_API_TOKEN` (a funder API key, sent as `X-API-Key`), and
 `TEMELIO_ORG_ALLOWLIST` — the only records it serves, and the only ones it will ever write to. In
 sandbox mode `POST /__test/reset` answers 409 rather than resetting, since the records live in a
-system shared with other people. `pnpm e2e` needs the adapter's `.env` with `TEMELIO_MODE=fixture`.
+system shared with other people. The demo's own checkout runs `sandbox`, so connecting Temelio in
+the widget edits the real record; `pnpm e2e` is insulated from that by
+`playwright.config.ts`, which sets `TEMELIO_MODE=fixture` in the adapter `webServer`'s environment —
+an environment variable beats the `.env` file, so a suite that starts the adapter always gets the
+fake whatever the checkout is set to. The gap is an adapter already running in sandbox mode:
+`reuseExistingServer` joins it, and the reset then 409s with a sentence saying to stop that dev
+server and let the suite start its own.
 
 The guard fails closed: a system with neither credential configured 401s every request. All three
 are read through `$env/dynamic/private`, so `svelte-check` does not need them present. Keep

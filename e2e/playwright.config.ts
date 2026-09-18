@@ -73,6 +73,17 @@ export default defineConfig({
       timeout: 120_000,
       stdout: "pipe",
       stderr: "pipe",
+
+      // The one server whose configuration this suite will not take from a
+      // `.env`. The adapter's other mode writes to Temelio's own API — a live
+      // system holding other foundations' data — and a test suite must never
+      // be one flag away from editing it. An environment variable beats the
+      // `.env` file, so this pins the fake whatever the demo's checkout is set
+      // to, and the demo can stay in sandbox mode without the suite following
+      // it there. It applies only to a server Playwright starts; one it joins
+      // is refused by the reset fixture instead, which is the case this cannot
+      // reach.
+      env: { TEMELIO_MODE: "fixture" },
     },
     {
       command: "pnpm --filter @cg-link/link dev",
