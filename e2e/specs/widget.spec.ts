@@ -368,40 +368,78 @@ test("the grid is capped at a fixed height, and its headings stick when it scrol
   expect(Math.abs(geometry.headingTop! - geometry.top)).toBeLessThan(2);
 });
 
-test("pushing portal's website to funderhub is blocked before send", async ({ page }) => {
+test("pushing portal's website to funderhub is sent, and reported as not stored", async ({
+  page,
+}) => {
   await openConnected(page);
 
   await page.getByTestId("pick-socials.website-portal").click();
 
-  // Said up front, not after the fact. Before #1191-T2 this was a click, a
-  // request, and a line explaining that the field had gone nowhere — the
-  // system got the last word about a change the person had already committed
-  // to. Now the widget knows FunderHub will not keep `socials` and says so
-  // while the button is still grey.
-  const blocked = page.getByTestId("blocked-funderhub");
-  await expect(blocked).toBeVisible();
-  await expect(blocked).toContainText("FunderHub");
-  await expect(blocked).toContainText("Website");
-  await expect(page.getByTestId("sync")).toBeDisabled();
+  // Warned up front, but not stopped. The widget knows FunderHub will not keep
+  // `socials` and says so while there is still time to change your mind —
+  // #1191-T2 used to disable Sync here, which meant unpicking the value or
+  // dropping the system to send anything else at all.
+  const warning = page.getByTestId("blocked-funderhub");
+  await expect(warning).toBeVisible();
+  await expect(warning).toContainText("FunderHub");
+  await expect(warning).toContainText("Website");
+  await expect(page.getByTestId("sync")).toBeEnabled();
 
-  // Nothing was sent, so there is no result line and nothing moved.
-  await expect(page.getByTestId("sync-result-funderhub")).toHaveCount(0);
+  await page.getByTestId("sync").click();
+
+  // It was sent, and FunderHub answered. The verdict follows what is actually
+  // stored rather than the status code — a system that drops a field still
+  // answers 200, which is the silent success this widget exists to expose.
+  // Nothing landed here — one pick, and FunderHub could not keep it — so this
+  // is the outright case rather than the partial one.
+  const result = page.getByTestId("sync-result-funderhub");
+  await expect(result).toHaveAttribute("data-ok", "true");
+  await expect(result).toHaveAttribute("data-applied", "false");
+  await expect(result).toHaveAttribute("data-partial", "false");
+  await expect(result).toContainText("not stored");
+
+  // Named in the row's own words. FunderHub's message says `socials`; the
+  // person clicked "Website", and that is what they should be told about.
+  const notStored = page.getByTestId("not-stored-funderhub");
+  await expect(notStored).toBeVisible();
+  await expect(notStored).toContainText("FunderHub");
+  await expect(notStored).toContainText("Website");
+
+  // And the value really did go nowhere.
   await expect(page.getByTestId("cell-socials.website-portal")).toContainText(PORTAL_WEBSITE);
   await expect(page.getByTestId("cell-socials.website-funderhub")).toHaveAttribute(
     "data-held",
     "false",
   );
+});
 
-  // Either way out of it re-enables the button: drop the pick, or drop the
-  // system that cannot take it.
-  await page.getByTestId("unpick-socials.website").click();
-  await expect(page.getByTestId("blocked-funderhub")).toHaveCount(0);
+test("a pick a target cannot store no longer costs the picks it can", async ({ page }) => {
+  await openConnected(page);
 
+  // The beat that was impossible before: two picks, one of which FunderHub
+  // will not keep. It used to refuse both.
+  await page.getByTestId("pick-addresses.primary-portal").click();
   await page.getByTestId("pick-socials.website-portal").click();
-  await expect(page.getByTestId("sync")).toBeDisabled();
 
-  await page.getByTestId("target-funderhub").uncheck();
-  await expect(page.getByTestId("blocked-funderhub")).toHaveCount(0);
+  await expect(page.getByTestId("sync")).toBeEnabled();
+  await page.getByTestId("sync").click();
+
+  // "Partly stored", not "not stored": FunderHub kept the address. A blanket
+  // refusal here would be as wrong as a tick, and the whole point of this
+  // change is that a target can now keep some of what it was sent.
+  const result = page.getByTestId("sync-result-funderhub");
+  await expect(result).toHaveAttribute("data-ok", "true");
+  await expect(result).toHaveAttribute("data-partial", "true");
+  await expect(result).toContainText("partly stored");
+  await expect(page.getByTestId("not-stored-funderhub")).toContainText("Website");
+
+  // The address landed; only the website did not.
+  await expect(page.getByTestId("row-addresses.primary")).toHaveAttribute("data-status", "agree");
+  await expect(page.getByTestId("cell-addresses.primary-funderhub")).toContainText(PORTAL_STREET2);
+  await expect(page.getByTestId("cell-socials.website-funderhub")).toHaveAttribute(
+    "data-held",
+    "false",
+  );
 });
 
 test("picking two rows sends them together, and each pick can be taken back", async ({ page }) => {

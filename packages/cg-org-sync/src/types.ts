@@ -276,7 +276,8 @@ export interface SyncTargetResult {
    *
    * All-or-nothing across the changes in one sync, because they travelled as
    * one patch: a target that kept the address and dropped the website has not
-   * applied what it was sent.
+   * applied what it was sent. `notStored` below says which ones, so a caller
+   * can name them instead of only reporting that something went missing.
    *
    * Established by reading the value back out of the post-change snapshot the
    * target returned, not by parsing its message — a receiver is free to word
@@ -284,6 +285,23 @@ export interface SyncTargetResult {
    * for this to work.
    */
   applied: boolean;
+
+  /**
+   * The paths this target was sent and did not keep.
+   *
+   * Empty when everything landed, and empty when nothing was sent at all — a
+   * target that was never asked has not declined anything, and `ok` with the
+   * message is what explains those. It is the 200-with-a-field-dropped case
+   * this exists for, which is the one a status code cannot describe.
+   *
+   * Read out of the post-change snapshot, so it is the receiver's account of
+   * what it stored rather than the sender's guess from a denylist. That
+   * matters now that a blocked field is sent rather than withheld: the
+   * sending side's list is hand-kept and can over-block, and a field it wrongly
+   * names would otherwise be reported as refused by a system that would have
+   * taken it.
+   */
+  notStored: readonly string[];
 
   /** The status the target responded with; `null` if it never responded. */
   status: number | null;

@@ -671,8 +671,22 @@ describe("syncToTargets", () => {
       // FunderHub's snapshot here is `FUNDERHUB_SEED` unchanged, which does not
       // model `socials` at all — so even though it answered 200, the value
       // never landed there.
-      { id: "portal", ok: true, status: 200, message: "Change applied", applied: true },
-      { id: "funderhub", ok: true, status: 200, message: "Change applied", applied: false },
+      {
+        id: "portal",
+        ok: true,
+        status: 200,
+        message: "Change applied",
+        applied: true,
+        notStored: [],
+      },
+      {
+        id: "funderhub",
+        ok: true,
+        status: 200,
+        message: "Change applied",
+        applied: false,
+        notStored: ["socials.website"],
+      },
     ]);
 
     const portalPatch = calls.find(
@@ -707,7 +721,14 @@ describe("syncToTargets", () => {
     // FunderHub's own message says it did not store `socials`; its snapshot
     // agrees — `FUNDERHUB_SEED` unchanged holds no `socials` at all.
     expect(result.results).toEqual([
-      { id: "funderhub", ok: true, status: 200, message, applied: false },
+      {
+        id: "funderhub",
+        ok: true,
+        status: 200,
+        message,
+        applied: false,
+        notStored: ["socials.website"],
+      },
     ]);
   });
 
@@ -759,6 +780,7 @@ describe("syncToTargets", () => {
       status: 200,
       message: "Change applied",
       applied: false,
+      notStored: ["socials.website"],
     });
   });
 
@@ -788,7 +810,14 @@ describe("syncToTargets", () => {
     const portalPatches = calls.filter((request) => request.method === "PATCH");
     expect(portalPatches).toHaveLength(1);
     expect(result.results).toEqual([
-      { id: "portal", ok: true, status: 200, message: "Change applied", applied: true },
+      {
+        id: "portal",
+        ok: true,
+        status: 200,
+        message: "Change applied",
+        applied: true,
+        notStored: [],
+      },
     ]);
   });
 
@@ -813,6 +842,7 @@ describe("syncToTargets", () => {
         status: null,
         message: "No enabled source is configured with the id temelio.",
         applied: false,
+        notStored: [],
       },
     ]);
     expect(calls).toHaveLength(0);
@@ -888,6 +918,7 @@ describe("syncToTargets", () => {
       status: 200,
       message: "Change applied",
       applied: false,
+      notStored: ["socials.website"],
     });
 
     expect(calls.some((request) => request.url.startsWith("https://portal.example.com"))).toBe(
@@ -946,8 +977,22 @@ describe("syncToTargets with several changes", () => {
     );
 
     expect(result.results).toEqual([
-      { id: "portal", ok: true, applied: true, status: 200, message: "Change applied" },
-      { id: "funderhub", ok: true, applied: true, status: 200, message: "Change applied" },
+      {
+        id: "portal",
+        ok: true,
+        applied: true,
+        notStored: [],
+        status: 200,
+        message: "Change applied",
+      },
+      {
+        id: "funderhub",
+        ok: true,
+        applied: true,
+        notStored: [],
+        status: 200,
+        message: "Change applied",
+      },
     ]);
 
     const portalPatches = calls.filter(
@@ -1106,14 +1151,29 @@ describe("syncToTargets and capabilities", () => {
   });
 });
 
-describe("syncToTargets and unwritableFields", () => {
-  it("refuses a target whose unwritableFields include a picked change's top-level key, without sending it anything", async () => {
+describe("syncToTargets and a target that cannot store a field", () => {
+  it("sends the patch anyway and reports the dropped field in notStored", async () => {
+    // The target's own `unwritableFields` no longer stop the request. It is
+    // asked, it keeps what it can, and what it dropped comes back named — so
+    // nobody has to unpick a value to send the rest of their choices.
     const declinesSocials: SourceConfig = {
       ...FUNDERHUB_SOURCE,
       unwritableFields: ["socials"],
     };
+    const mergePatch = buildMergePatch([{ path: "socials.website", value: "https://agile6.com" }]);
     const { fetch, calls } = captureFetch(
-      stubFetchByOrigin({ "https://funderhub.example.com": listEnvelope([FUNDERHUB_SEED]) }),
+      stubFetchByOrigin({
+        "https://funderhub.example.com": respondByMethod({
+          get: () => listEnvelope([FUNDERHUB_SEED]),
+          // FunderHub models no `socials` at all, so its snapshot comes back
+          // unchanged — which is the whole 200-that-stored-nothing case.
+          patch: () =>
+            revisionEnvelope(
+              "Change applied. This system does not store socials.",
+              revision(FUNDERHUB_SOURCE, mergePatch, FUNDERHUB_SEED),
+            ),
+        }),
+      }),
     );
 
     const { results } = await syncToTargets(
@@ -1130,22 +1190,42 @@ describe("syncToTargets and unwritableFields", () => {
       },
     );
 
-    expect(results[0]).toMatchObject({ id: "funderhub", ok: false, status: null });
+    // Reached and answered, rather than refused here: `ok` is about the
+    // request, `applied` about the outcome, and this is the case where they
+    // come apart.
+    expect(results[0]).toMatchObject({ id: "funderhub", ok: true, status: 200 });
     expect(results[0]?.applied).toBe(false);
-    expect(results[0]?.message).toContain("FunderHub");
-    expect(results[0]?.message).toContain("socials");
+    expect(results[0]?.notStored).toEqual(["socials.website"]);
 
-    // Refused before even the identifier lookup, so the origin sees nothing at all.
-    expect(calls).toHaveLength(0);
+    // And it really was sent, which is what changed.
+    expect(calls.some((request) => request.method === "PATCH")).toBe(true);
   });
 
-  it("blocks the whole target when only one of several picks is blocked, rather than sending the rest", async () => {
+  it("keeps the fields a target can store when only one of several picks is dropped", async () => {
+    // The beat that used to be impossible: one unwritable field no longer
+    // costs the person the rest of their picks.
     const declinesSocials: SourceConfig = {
       ...FUNDERHUB_SOURCE,
       unwritableFields: ["socials"],
     };
-    const { fetch, calls } = captureFetch(
-      stubFetchByOrigin({ "https://funderhub.example.com": listEnvelope([FUNDERHUB_SEED]) }),
+    const name = "Agile Six Applications, LLC";
+    const mergePatch = buildMergePatch([
+      { path: "name", value: name },
+      { path: "socials.website", value: "https://agile6.com" },
+    ]);
+    const { fetch } = captureFetch(
+      stubFetchByOrigin({
+        "https://funderhub.example.com": respondByMethod({
+          get: () => listEnvelope([FUNDERHUB_SEED]),
+          // The name lands; `socials` does not, because FunderHub has nowhere
+          // to put it.
+          patch: () =>
+            revisionEnvelope(
+              "Change applied. This system does not store socials.",
+              revision(FUNDERHUB_SOURCE, mergePatch, { ...FUNDERHUB_SEED, name }),
+            ),
+        }),
+      }),
     );
 
     const { results } = await syncToTargets(
@@ -1153,7 +1233,7 @@ describe("syncToTargets and unwritableFields", () => {
         registry: "org:us:ein",
         id: AGILE_SIX_EIN,
         changes: [
-          { path: "name", value: "Agile Six Applications, LLC" },
+          { path: "name", value: name },
           { path: "socials.website", value: "https://agile6.com" },
         ],
         targets: ["funderhub"],
@@ -1165,59 +1245,77 @@ describe("syncToTargets and unwritableFields", () => {
       },
     );
 
-    expect(results[0]).toMatchObject({ id: "funderhub", ok: false, status: null });
-    expect(calls).toHaveLength(0);
+    // Only the one that went nowhere is named. `applied` stays false because
+    // not everything landed, and the two together are what let a caller say
+    // which half happened.
+    expect(results[0]?.notStored).toEqual(["socials.website"]);
+    expect(results[0]?.applied).toBe(false);
+    expect(results[0]?.ok).toBe(true);
   });
 
-  it("refuses only the blocked target, while a second target with no such restriction is still patched", async () => {
+  it("reports nothing in notStored for a target that stored everything", async () => {
     const mergePatch = buildMergePatch([{ path: "socials.website", value: "https://agile6.com" }]);
-    const declinesSocials: SourceConfig = {
-      ...FUNDERHUB_SOURCE,
-      unwritableFields: ["socials"],
+    const stored: Organization = {
+      ...PORTAL_SEED,
+      socials: { ...PORTAL_SEED.socials, website: "https://agile6.com" },
     };
-    const { fetch, calls } = captureFetch(
+    const { fetch } = captureFetch(
       stubFetchByOrigin({
         "https://portal.example.com": respondByMethod({
           get: () => listEnvelope([PORTAL_SEED]),
           patch: () =>
-            revisionEnvelope("Change applied", revision(PORTAL_SOURCE, mergePatch, PORTAL_SEED)),
+            revisionEnvelope("Change applied", revision(PORTAL_SOURCE, mergePatch, stored)),
         }),
       }),
     );
-    const tokens = new StaticTokenProvider({
-      portal: "portal-token",
-      funderhub: "funderhub-token",
-    });
 
     const { results } = await syncToTargets(
       {
         registry: "org:us:ein",
         id: AGILE_SIX_EIN,
         changes: [{ path: "socials.website", value: "https://agile6.com" }],
-        targets: ["portal", "funderhub"],
+        targets: ["portal"],
       },
-      { sources: [PORTAL_SOURCE, declinesSocials], tokens, fetch },
+      {
+        sources: [PORTAL_SOURCE],
+        tokens: new StaticTokenProvider({ portal: "portal-token" }),
+        fetch,
+      },
     );
 
-    const funderhub = results.find((entry) => entry.id === "funderhub");
-    expect(funderhub).toMatchObject({ ok: false, status: null });
-    expect(funderhub?.message).toContain("FunderHub");
-    expect(funderhub?.message).toContain("socials");
+    expect(results[0]?.notStored).toEqual([]);
+    expect(results[0]?.applied).toBe(true);
+  });
 
-    // Portal declares no unwritableFields at all, so it is patched as today —
-    // one target's restriction costs only that target.
-    const portal = results.find((entry) => entry.id === "portal");
-    expect(portal).toEqual({
-      id: "portal",
-      ok: true,
-      status: 200,
-      message: "Change applied",
-      applied: true,
-    });
+  it("still refuses a target that declares write: false, without sending it anything", async () => {
+    // Untouched by this change, and the distinction is deliberate: a
+    // `write: false` capability is the system saying it takes no changes at
+    // all, where `unwritableFields` is a statement about one field. The first
+    // is a reason not to ask; the second is something only the answer can
+    // settle.
+    const readOnly: SourceConfig = {
+      ...FUNDERHUB_SOURCE,
+      capabilities: { read: true, write: false },
+    };
+    const { fetch, calls } = captureFetch(stubFetchByOrigin({}));
 
-    expect(calls.some((request) => request.url.startsWith("https://funderhub.example.com"))).toBe(
-      false,
+    const { results } = await syncToTargets(
+      {
+        registry: "org:us:ein",
+        id: AGILE_SIX_EIN,
+        changes: [{ path: "socials.website", value: "https://agile6.com" }],
+        targets: ["funderhub"],
+      },
+      {
+        sources: [readOnly],
+        tokens: new StaticTokenProvider({ funderhub: "funderhub-token" }),
+        fetch,
+      },
     );
+
+    expect(results[0]).toMatchObject({ id: "funderhub", ok: false, status: null });
+    expect(results[0]?.notStored).toEqual([]);
+    expect(calls).toHaveLength(0);
   });
 });
 
@@ -1249,7 +1347,14 @@ describe("syncToTargets and applied", () => {
     );
 
     expect(result.results).toEqual([
-      { id: "portal", ok: true, status: 200, message: "Change applied", applied: true },
+      {
+        id: "portal",
+        ok: true,
+        status: 200,
+        message: "Change applied",
+        applied: true,
+        notStored: [],
+      },
     ]);
   });
 
@@ -1281,7 +1386,14 @@ describe("syncToTargets and applied", () => {
     );
 
     expect(result.results).toEqual([
-      { id: "funderhub", ok: true, status: 200, message: "Change applied", applied: false },
+      {
+        id: "funderhub",
+        ok: true,
+        status: 200,
+        message: "Change applied",
+        applied: false,
+        notStored: ["addresses.primary"],
+      },
     ]);
   });
 
@@ -1324,7 +1436,14 @@ describe("syncToTargets and applied", () => {
     );
 
     expect(result.results).toEqual([
-      { id: "portal", ok: true, status: 200, message: "Change applied", applied: true },
+      {
+        id: "portal",
+        ok: true,
+        status: 200,
+        message: "Change applied",
+        applied: true,
+        notStored: [],
+      },
     ]);
   });
 
@@ -1359,7 +1478,14 @@ describe("syncToTargets and applied", () => {
     );
 
     expect(result.results).toEqual([
-      { id: "portal", ok: true, status: 200, message: "Change applied", applied: true },
+      {
+        id: "portal",
+        ok: true,
+        status: 200,
+        message: "Change applied",
+        applied: true,
+        notStored: [],
+      },
     ]);
   });
 

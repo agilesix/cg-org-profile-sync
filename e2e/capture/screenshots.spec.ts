@@ -67,11 +67,14 @@ test("capture the picker, the grid, a sync, and the adapter's own page", async (
   await expect(page.getByTestId("row-addresses.primary")).toHaveAttribute("data-status", "agree");
   await page.screenshot({ path: `${SHOTS}/4-synced.png`, ...WHOLE_PAGE });
 
-  // The field a system cannot store, said before anything is sent: the button
-  // greys out and the line above it names the system and the field.
+  // The field a system cannot store: warned about before it is sent, then
+  // reported as not stored after. The shot is the second half, because that is
+  // the part only this widget does — the warning is a nicety, the verdict read
+  // back out of the target's own snapshot is the claim.
   await page.getByTestId("pick-socials.website-portal").click();
   await expect(page.getByTestId("blocked-funderhub")).toBeVisible();
-  await expect(page.getByTestId("sync")).toBeDisabled();
+  await page.getByTestId("sync").click();
+  await expect(page.getByTestId("not-stored-funderhub")).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/5-blocked.png`, ...WHOLE_PAGE });
 
   // And the far side of the push, on the adapter's own page.

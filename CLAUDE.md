@@ -75,9 +75,14 @@ picks one value per row across as many rows as they like, they travel as one pat
 the direction is the set's — every pick from the host is a push, every pick from one other system is
 a pull, and picks from two systems have no single direction and read as a push, so a pull's
 "only the host" rule is never applied to a set it cannot describe. A field a chosen target cannot
-store greys out Sync and says which system and which field before anything is sent
+store is **warned about and sent anyway**: the widget names the system and the field before Sync
 (`utils/writability.ts`'s `blockedChanges`, the sending side's copy of a rule the receiver still
-enforces — so it can over-block and never under-block). `README.md` is the short overview for someone new —
+enforces), the patch goes, and the target's own post-change snapshot decides the verdict.
+`SyncTargetResult.notStored` carries the paths that did not land, so the widget can say "FunderHub
+does not store Website" in the row's words rather than the `socials` its API uses. This replaced a
+block-before-send guard: refusing the whole target meant one unstorable field cost every other pick
+in the set, and made a hand-kept denylist load-bearing — wrongly naming a field there used to make
+it unsendable, where now it can only produce a warning the receiver goes on to contradict. `README.md` is the short overview for someone new —
 why the project exists, what the widget does with screenshots, and setup. `docs/demo-script.md`
 is the presenter's runbook: the click path, the `curl` block per system, and what to check when
 something is off. Keep both in step with the code.
@@ -372,13 +377,13 @@ gets `orgId: null` with no `error`, because "no record of you" must not render a
 `syncToTargets` builds the merge patch once from every change the person picked — one PATCH per
 target, not one per field — resolves each target's own org id (no two systems agree
 on ids), and dedupes repeated targets so one change is not recorded twice. A target whose
-`unwritableFields` name any picked field is refused the same way a `write: false` one is — before a
-request, and all-or-nothing, since a partial send is the surprise that guard exists to remove. It
-reports each target separately as `{ ok, applied, status, message }` — passing the target's own sentence through
+`unwritableFields` name a picked field is still sent to — only `write: false` is refused without a
+request, because that is the system saying it takes no changes at all rather than a statement about
+one field. It reports each target separately as `{ ok, applied, notStored, status, message }` — passing the target's own sentence through
 untouched, since that is where a system says which fields it declined. `applied` is read back out
 of the post-change snapshot rather than parsed from that sentence, and is all-or-nothing across one
-sync's changes: they travelled as a single patch, so a target that kept the address and dropped the
-website has not stored what it was sent. `null` is a legal value throughout: it is how
+sync's changes: a target that kept the address and dropped the website has not stored what it was
+sent. `notStored` is the same read, kept per path, so the half that did go missing can be named. `null` is a legal value throughout: it is how
 RFC 7396 spells clearing a field.
 
 **Link forwards tokens; it never holds or verifies them.** `SOURCE_TOKENS_HEADER`

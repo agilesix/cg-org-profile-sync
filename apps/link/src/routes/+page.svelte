@@ -409,7 +409,17 @@
       .filter((target) => target.fields.length > 0),
   );
 
-  const canSync = $derived(picks.length > 0 && chosen.length > 0 && blocked.length === 0 && !busy);
+  const canSync = $derived(picks.length > 0 && chosen.length > 0 && !busy);
+
+  /**
+   * Field path to the heading the grid shows for it.
+   *
+   * Taken from the picks rather than from `DEMO_FIELDS` so a result can name
+   * "Website" where a system's own message says `socials` — the sender chose a
+   * row, and the row is what they should be told about. Captured when a sync
+   * starts, because the picks are cleared by the time the results render.
+   */
+  let fieldLabels = $state<Record<string, string>>({});
 
   /** Every request to Link's own API carries the whole set of tokens, or none. */
   function authHeaders(): Record<string, string> {
@@ -819,6 +829,7 @@
     results = null;
     syncedDirection = null;
     problem = null;
+    fieldLabels = Object.fromEntries(picks.map((choice) => [choice.path, choice.label]));
 
     try {
       const response = await fetch("/api/sync", {
@@ -1083,11 +1094,18 @@
           </fieldset>
         {/if}
 
+        <!--
+          A heads-up, not a barrier. The widget knows this target will drop the
+          field, and says so while there is still time to change your mind —
+          but it no longer refuses to send: the rest of the picks are still
+          worth sending, and what actually happened comes back from the target
+          itself in the results below.
+        -->
         {#each blocked as target (target.id)}
           <p class="blocked" role="status" data-testid="blocked-{target.id}">
-            {target.label} can't store {target.fields
+            {target.label} does not store {target.fields
               .map((field) => selections[field.path]?.label ?? field.path)
-              .join(" or ")}. Unselect it or drop {target.label} as a target.
+              .join(" or ")}. Everything else will be sent.
           </p>
         {/each}
 
@@ -1097,7 +1115,7 @@
       {/if}
 
       {#if results && syncedDirection}
-        <SyncResults {results} {labels} direction={syncedDirection} />
+        <SyncResults {results} {labels} {fieldLabels} direction={syncedDirection} />
       {/if}
     </section>
   {/if}

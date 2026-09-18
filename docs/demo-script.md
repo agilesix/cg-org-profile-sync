@@ -86,16 +86,18 @@ the last step.
     moving.) Clicking a second value in a row you have already picked replaces that row's choice
     rather than adding to it, since one field cannot have two values.
 
-    Now the beat worth slowing down for: **Push** greys out, and a line above it reads "FunderHub
-    can't store Website. Unselect it or drop FunderHub as a target." The widget knows before
-    asking. Uncheck **FunderHub** and the button comes back. Click **Push**. Temelio takes both,
-    the grid re-reads, and the website now agrees between GrantPortal and Temelio while FunderHub
-    still holds nothing — untouched, because nothing was sent to it.
+    Now the beat worth slowing down for: a line above the button reads "FunderHub does not store
+    Website. Everything else will be sent." The widget knows before asking — but it does not stop
+    you, and it does not make you unpick anything. Click **Push**. FunderHub takes the address and
+    says **not stored** for the website, in the row's own words rather than as `socials`; Temelio
+    takes both; the grid re-reads, and the website agrees between GrantPortal and Temelio while
+    FunderHub still holds nothing.
 
-    Worth saying out loud: that list is Link's own copy of what FunderHub will not keep, and
+    Worth saying out loud: the warning is Link's own copy of what FunderHub will not keep, and
     duplicating it is not the real answer — a system publishing its own capabilities is, and the
-    protocol does not define that yet. It is safe to duplicate only because FunderHub still
-    enforces the rule itself, so this copy can over-block and never under-block.
+    protocol does not define that yet. It is only a warning, which is what makes the copy safe to
+    be wrong: the verdict underneath comes from reading the record back afterwards, so a field this
+    list names in error is still sent, and still reported honestly by the system that took it.
 
 11. **Now pull one in.** Reset FunderHub (`curl -X POST http://localhost:5174/__test/reset`) and
     re-read the grid, so the address disagrees once more. Then click **FunderHub's** address

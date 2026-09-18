@@ -50,7 +50,7 @@ test("pushing portal's address to funderhub settles that disagreement", async ({
   expect(after.distinctCount).toBe(2);
 });
 
-test("pushing portal's website to funderhub is refused before anything is sent", async ({
+test("pushing portal's website to funderhub is sent, and comes back as not stored", async ({
   api,
 }) => {
   const before = rowFor(await api.compare(), "socials.website");
@@ -62,16 +62,20 @@ test("pushing portal's website to funderhub is refused before anything is sent",
     targets: ["funderhub"],
   });
 
-  // `ok: false` with no status at all, because no request was made. Before
-  // #1191-T2 this came back as a 200 whose message carried the bad news — an
-  // improvement on silence, but still an answer that arrives after the sender
-  // has been told their change was sent.
+  // Asked and answered, rather than refused here. `ok` is about the request
+  // and `applied` about the outcome, and a system that cannot store a field
+  // answers 200 having stored nothing — so this is exactly where the two come
+  // apart, and `notStored` is what names the field it dropped.
+  //
+  // #1191-T2 used to refuse this before sending, which meant unpicking the
+  // value or dropping the system to send anything else. The guard was right
+  // that a silent partial send is a surprise; the cure cost more than it saved.
   const funderhub = resultFor(sync, "funderhub");
-  expect(funderhub.ok).toBe(false);
+  expect(funderhub.ok).toBe(true);
+  expect(funderhub.status).toBe(200);
   expect(funderhub.applied).toBe(false);
-  expect(funderhub.status).toBeNull();
+  expect(funderhub.notStored).toEqual(["socials.website"]);
   expect(funderhub.message).toContain("socials");
-  expect(funderhub.message).toContain("FunderHub");
 
   // And the value really did go no further.
   const after = rowFor(await api.compare(), "socials.website");
@@ -136,21 +140,34 @@ test("pushing a value a system already holds is accepted, so a demo can be run t
   expect(valueHeldBy(after, "temelio")).toEqual(chosen);
 });
 
-test("pushing the legal name to temelio is refused before anything is sent", async ({ api }) => {
+test("pushing a changed legal name to temelio comes back as not stored", async ({ api }) => {
   const name = rowFor(await api.compare(), "name");
-  const chosen = valueHeldBy(name, "portal");
+  const held = valueHeldBy(name, "portal");
 
-  const sync = await api.sync({ changes: [{ path: "name", value: chosen }], targets: ["temelio"] });
+  // A *different* name, deliberately. All three systems already agree on this
+  // one, so pushing it unchanged would land trivially — the snapshot would
+  // hold the value whether or not the vendor took the write, and the case
+  // would pass while proving nothing.
+  const renamed = `${String(held)} (renamed)`;
 
-  // A funder cannot rename a grantee through the vendor's API, so this is the
-  // same beat as FunderHub and `socials`: the widget knows before asking, and
-  // the sender is told while they can still do something about it rather than
-  // after a request that was never going to carry the change.
+  const sync = await api.sync({
+    changes: [{ path: "name", value: renamed }],
+    targets: ["temelio"],
+  });
+
+  // A funder cannot rename a grantee through the vendor's API. The adapter is
+  // asked anyway and reports what happened, which is the same beat as
+  // FunderHub and `socials` — and it is the adapter's own answer rather than
+  // Link's prediction, which matters most here: the vendor answers 200 to a
+  // rename and stores nothing, so only reading the record back can tell.
   const result = resultFor(sync, "temelio");
-  expect(result.ok).toBe(false);
-  expect(result.status).toBeNull();
+  expect(result.ok).toBe(true);
+  expect(result.applied).toBe(false);
+  expect(result.notStored).toEqual(["name"]);
   expect(result.message).toContain("name");
-  expect(result.message).toContain("Temelio");
+
+  // And the rename really went nowhere.
+  expect(valueHeldBy(rowFor(await api.compare(), "name"), "temelio")).toBe(held);
 });
 
 test("the adapter still declines a rename itself when patched directly", async ({
@@ -279,9 +296,7 @@ test("the three fields #1190-T6 added travel to both systems in one patch each",
   expect(rowFor(after, "phones.primary.number").status).toBe("agree");
 });
 
-test("a target blocked on one of two picks is refused for both, not sent half of them", async ({
-  api,
-}) => {
+test("a target that cannot store one of two picks still keeps the other", async ({ api }) => {
   const before = await api.compare();
   const address = valueHeldBy(rowFor(before, "addresses.primary"), "portal");
   const website = valueHeldBy(rowFor(before, "socials.website"), "portal");
@@ -295,15 +310,22 @@ test("a target blocked on one of two picks is refused for both, not sent half of
     targets: ["funderhub"],
   });
 
-  // FunderHub would have kept the address. It gets neither, because a partial
-  // send is the surprise this guard exists to remove — the sender picked two
-  // things and would have been told the request was accepted.
+  // FunderHub keeps the address and drops the website, and says which. This
+  // used to cost the sender both: one unstorable field refused the whole
+  // patch, and the only way to move the address was to unpick the website
+  // first. `applied: false` still says "not everything landed" — `notStored`
+  // is what turns that into something a person can read.
   const funderhub = resultFor(sync, "funderhub");
-  expect(funderhub.ok).toBe(false);
-  expect(funderhub.status).toBeNull();
+  expect(funderhub.ok).toBe(true);
+  expect(funderhub.applied).toBe(false);
+  expect(funderhub.notStored).toEqual(["socials.website"]);
 
   const after = await api.compare();
-  expect(valueHeldBy(rowFor(after, "addresses.primary"), "funderhub")).toEqual(funderhubAddress);
+  expect(valueHeldBy(rowFor(after, "addresses.primary"), "funderhub")).toEqual(address);
+  expect(valueHeldBy(rowFor(after, "addresses.primary"), "funderhub")).not.toEqual(
+    funderhubAddress,
+  );
+  expect(rowFor(after, "socials.website").values).not.toHaveProperty("funderhub");
 });
 
 test("the server still drops socials itself when patched directly, which is the authoritative rule", async ({

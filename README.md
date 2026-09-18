@@ -43,10 +43,11 @@ receive it, and push. Each system gets a JSON Merge Patch that changes only that
 
 ![After pushing GrantPortal's address to both other systems, the row agrees across all three and each target reports separately](docs/screenshots/4-synced.png)
 
-**Find out what a system could not store, before you send it.** A system that does not model a
-field is named on screen and Sync greys out, so a change never goes out believing it will land.
+**Find out what a system did not store.** A system that does not model a field is named before you
+send — and named again afterwards, in the words of the row you clicked rather than the key its API
+uses. The rest of your picks still go, so one field a funder cannot keep never costs you the others.
 
-![Pushing the website: Sync is disabled and a line reads that FunderHub cannot store Website](docs/screenshots/5-blocked.png)
+![After pushing the website to FunderHub: the result reads NOT STORED and a line says FunderHub does not store Website](docs/screenshots/5-blocked.png)
 
 **Reach a system that never implemented the protocol.** The third system in the picker is Temelio,
 a real grants platform with its own API and no knowledge of CommonGrants. An adapter sits in front
