@@ -70,10 +70,12 @@ export interface SourceConfig {
    * What this source allows. Omitted means both.
    *
    * The permissive default is the compatible one: the demo's systems declare
-   * nothing and have to keep working. `write: false` is enforced —
-   * `syncToTargets` refuses such a target without sending it anything. `read`
-   * is so far only a label on the connect screen; #1189-T3 is where direction
-   * becomes something the comparison itself acts on.
+   * nothing and have to keep working. Both are enforced rather than advisory:
+   * `syncToTargets` refuses a `write: false` target without sending it
+   * anything, `listOrgsAt` refuses to read a `read: false` one, and
+   * `utils/direction.ts`'s `syncTargets` keeps an unwritable source out of the
+   * targets the widget offers in the first place. Every `SourceResolution`
+   * carries the resolved pair, so the browser knows it too.
    */
   capabilities?: SourceCapabilities;
 
@@ -176,9 +178,24 @@ export interface SourceResolution {
   connection: SourceConnection;
 
   /**
+   * What this source allows, with the default already applied.
+   *
+   * Carried on the row rather than left in the registry because the registry
+   * is server-side and the widget is where it matters: a read-only system must
+   * never be offered as a sync target, and the direction a change travels —
+   * pushed out of the page you are on, or pulled into it — is decided from
+   * this. Present even on a row that contributed nothing, so a system that is
+   * merely down does not read as one that refuses writes.
+   */
+  capabilities: SourceCapabilities;
+
+  /**
    * This source's own `SourceConfig.unwritableFields`, copied verbatim so the
    * page can grey out a row without a second request. `[]` when the source
    * declares none, never `undefined` — every resolution carries the field.
+   *
+   * The finer-grained half of `capabilities`: that says whether this source can
+   * be written to at all, this says which fields it would decline if it were.
    */
   unwritableFields: readonly string[];
 }
@@ -259,7 +276,8 @@ export interface SyncTargetResult {
    *
    * All-or-nothing across the changes in one sync, because they travelled as
    * one patch: a target that kept the address and dropped the website has not
-   * applied what it was sent.
+   * applied what it was sent. `notStored` below says which ones, so a caller
+   * can name them instead of only reporting that something went missing.
    *
    * Established by reading the value back out of the post-change snapshot the
    * target returned, not by parsing its message — a receiver is free to word
@@ -267,6 +285,23 @@ export interface SyncTargetResult {
    * for this to work.
    */
   applied: boolean;
+
+  /**
+   * The paths this target was sent and did not keep.
+   *
+   * Empty when everything landed, and empty when nothing was sent at all — a
+   * target that was never asked has not declined anything, and `ok` with the
+   * message is what explains those. It is the 200-with-a-field-dropped case
+   * this exists for, which is the one a status code cannot describe.
+   *
+   * Read out of the post-change snapshot, so it is the receiver's account of
+   * what it stored rather than the sender's guess from a denylist. That
+   * matters now that a blocked field is sent rather than withheld: the
+   * sending side's list is hand-kept and can over-block, and a field it wrongly
+   * names would otherwise be reported as refused by a system that would have
+   * taken it.
+   */
+  notStored: readonly string[];
 
   /** The status the target responded with; `null` if it never responded. */
   status: number | null;

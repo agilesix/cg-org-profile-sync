@@ -56,18 +56,52 @@ test("the picker lists every system, and names the ones it cannot connect", asyn
   await expect(page.getByTestId("pick-system-simpler-grants")).toHaveCount(0);
 });
 
-test("connecting one system shows its values and says the other is not connected", async ({
+test("connecting one system shows its values and invites another", async ({ page }) => {
+  await openWidget(page);
+  await connect(page, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
+
+  // GrantPortal's column fills in. The systems nobody has linked get no column
+  // between them — a column per registered system would pre-announce systems
+  // this person may never connect, and would look like agreement besides.
+  await expect(page.getByTestId("connected-portal")).toBeVisible();
+  await expect(page.getByTestId("connected-funderhub")).toHaveCount(0);
+  await expect(page.getByTestId("grid")).toContainText(PORTAL_SEED.name);
+  await expect(page.getByTestId("source-portal")).toBeVisible();
+  await expect(page.getByTestId("source-funderhub")).toHaveCount(0);
+
+  // One empty column stands in for all of them, and it is the way to another.
+  await expect(page.getByTestId("add-source")).toContainText(
+    "Connect another grant management system to compare",
+  );
+
+  await page.getByTestId("add-source-button").click();
+  await expect(page.getByTestId("link-modal")).toBeVisible();
+});
+
+test("a column appears per system connected, and the invitation goes once two are", async ({
   page,
 }) => {
   await openWidget(page);
   await connect(page, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
 
-  // GrantPortal's column fills in; FunderHub's says why it is empty rather
-  // than looking like a system that agrees.
-  await expect(page.getByTestId("connected-portal")).toBeVisible();
-  await expect(page.getByTestId("connected-funderhub")).toHaveCount(0);
-  await expect(page.getByTestId("grid")).toContainText(PORTAL_SEED.name);
-  await expect(page.getByTestId("grid")).toContainText("not connected");
+  // Field, GrantPortal, the invitation, Status.
+  await expect(page.getByTestId("grid").locator("thead th")).toHaveCount(4);
+
+  // The second system is a second column rather than one that was already
+  // waiting for it — and now that there is something to compare, the
+  // invitation goes rather than sitting there as a permanent empty column.
+  await connect(page, "funderhub", ADMIN_EMAIL, FUNDERHUB_ORG_ID);
+
+  await expect(page.getByTestId("source-funderhub")).toBeVisible();
+  await expect(page.getByTestId("add-source")).toHaveCount(0);
+  await expect(page.getByTestId("grid").locator("thead th")).toHaveCount(4);
+
+  // A third is a third column, from the button above the grid.
+  await connect(page, "temelio", ADMIN_EMAIL, TEMELIO_ORG_ID);
+
+  await expect(page.getByTestId("source-temelio")).toBeVisible();
+  await expect(page.getByTestId("add-source")).toHaveCount(0);
+  await expect(page.getByTestId("grid").locator("thead th")).toHaveCount(5);
 });
 
 test("a person with no grant on a system is refused by that system alone", async ({ page }) => {
@@ -295,6 +329,49 @@ test("the adapter refuses someone it grants nothing, exactly as a native system 
   // anybody else, so this person is turned away at Temelio's own door rather
   // than by Link deciding on its behalf.
   await connectExpectingDenial(page, "temelio", PORTAL_ONLY_EMAIL);
+});
+
+test("the modal's dismiss button stays reachable when the organization list scrolls", async ({
+  page,
+}) => {
+  // A short viewport, because that is the condition — a `<dialog>` scrolls
+  // itself past the UA's `max-height`, and the organization step has no cap of
+  // its own. Before the header was sticky the only visible way out scrolled
+  // off the top, which on a projector is a modal a presenter cannot leave.
+  await page.setViewportSize({ width: 1280, height: 400 });
+
+  await openWidget(page);
+  await signInVia(page, "portal", ADMIN_EMAIL);
+  await expect(page.getByTestId("confirm-org")).toBeVisible();
+
+  const modal = page.getByTestId("link-modal");
+
+  // Guard the premise: if the modal ever stopped overflowing at this size the
+  // assertions below would pass without testing anything.
+  const scrollable = await modal.evaluate((el) => el.scrollHeight > el.clientHeight);
+  expect(scrollable, "the modal does not scroll at this viewport").toBe(true);
+
+  await modal.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+
+  // Still pinned to the top of the dialog rather than carried away with the
+  // rows. Geometry, not visibility: an element scrolled out of a container is
+  // still "visible" to Playwright.
+  const offset = await modal.evaluate((el) => {
+    const dismiss = el.querySelector('[data-testid="close-modal"]');
+
+    return dismiss ? dismiss.getBoundingClientRect().top - el.getBoundingClientRect().top : null;
+  });
+
+  // Both bounds matter. Without `position: sticky` the header scrolls up and
+  // out, which puts its offset far *below* zero — so an upper bound alone
+  // passes on exactly the broken case this test exists for.
+  expect(offset, "no dismiss button in the modal").not.toBeNull();
+  expect(offset!).toBeGreaterThanOrEqual(-1);
+  expect(offset!).toBeLessThan(40);
+
+  // And it still does what it is for.
+  await page.getByTestId("close-modal").click();
+  await expect(page.getByTestId("link-modal")).toBeHidden();
 });
 
 test("closing the modal before choosing leaves the system signed in, not linked", async ({

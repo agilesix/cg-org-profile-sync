@@ -106,9 +106,41 @@ describe("compareProfiles", () => {
     } as Organization;
 
     const rows = compareProfiles({ portal });
+    const heldPaths = new Set(["name", "socials.website", "addresses.primary"]);
 
-    expect(rows.map((row) => row.status)).toEqual(["agree", "agree", "agree", "agree"]);
-    expect(rows.map((row) => row.distinctCount)).toEqual([1, 0, 1, 1]);
+    // Every row is agree with a single source, regardless of which fields
+    // DEMO_FIELDS carries — derived off it rather than a fixed-length array so
+    // adding a field to the demo doesn't also break this fixture's assertion.
+    expect(rows.map((row) => row.status)).toEqual(DEMO_FIELDS.map(() => "agree"));
+    expect(rows.map((row) => row.distinctCount)).toEqual(
+      DEMO_FIELDS.map((field) => (heldPaths.has(field.path) ? 1 : 0)),
+    );
+  });
+
+  it("agrees on a field held by two sources and missing at a third", () => {
+    // #1190-T6: a field two systems hold and a third simply has no record of
+    // must read as agree, not as a disagreement the absent source never made.
+    const portal = { mission: "Connect veterans to the benefits they've earned." } as Organization;
+    const funderhub = {
+      mission: "Connect veterans to the benefits they've earned.",
+    } as Organization;
+    const temelio = {} as Organization;
+
+    const [missionRow] = compareProfiles({ portal, funderhub, temelio }, [
+      { path: "mission", label: "Mission" },
+    ]);
+
+    expect(missionRow?.values).toEqual({
+      portal: "Connect veterans to the benefits they've earned.",
+      funderhub: "Connect veterans to the benefits they've earned.",
+    });
+
+    // Not merely `undefined` under that key: `toEqual` reads an undefined
+    // property and an absent one as the same thing, and the widget renders a
+    // cell for every key it finds.
+    expect(missionRow?.values).not.toHaveProperty("temelio");
+    expect(missionRow?.distinctCount).toBe(1);
+    expect(missionRow?.status).toBe("agree");
   });
 
   it("marks a field agree when structurally equal objects hold their keys in a different order", () => {
@@ -306,6 +338,23 @@ describe("buildMergePatch", () => {
     expect(buildMergePatch(changes)).toEqual({
       soc: "not a real field",
       socials: { website: "https://agile6.com" },
+    });
+  });
+
+  it("builds one body with three roots over the three fields #1190-T6 adds", () => {
+    const changes: FieldChange[] = [
+      { path: "mission", value: "Connect veterans to the benefits they've earned." },
+      { path: "emails.primary", value: "info@riversidechc.test" },
+      { path: "phones.primary.number", value: "555-0100" },
+    ];
+
+    const body = buildMergePatch(changes);
+
+    expect(Object.keys(body)).toHaveLength(3);
+    expect(body).toEqual({
+      mission: "Connect veterans to the benefits they've earned.",
+      emails: { primary: "info@riversidechc.test" },
+      phones: { primary: { number: "555-0100" } },
     });
   });
 });

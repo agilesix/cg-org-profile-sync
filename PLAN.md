@@ -927,7 +927,7 @@ pull from a named portal, and only portals whose configuration allows writes are
 - Whether a pull may target more than the host. Plan says no: pull is "into the host" only.
 - Whether the portals' profile pages should sit behind the #1188 login too. Not for Sept 18.
 
-### #1189-T1: Add an editable org profile page to GrantPortal and FunderHub
+### #1189-T1: [✓] Add an editable org profile page to GrantPortal and FunderHub
 
 - **Acceptance criteria**:
   - When `/orgs/{orgId}` loads in either app, then it renders that system's copy of the org:
@@ -972,13 +972,13 @@ pull from a named portal, and only portals whose configuration allows writes are
   which the apps cannot unit-test. Kept to that mapping; every rule stays in the library. Two
   copies of the page, one per app, on purpose.
 
-### #1189-T2: Embed Link in the portals as an iframe with a postMessage bridge
+### #1189-T2: [✓] Embed Link in the portals as an iframe with a postMessage bridge
 
 Depends on: #1189-T1
 
 - **Acceptance criteria**:
-  - When "Sync profile" is clicked on a profile page, then Link renders in an overlay iframe on
-    that page, already looking up the same org (EIN in the URL) and knowing which system it is hosted
+  - When "Open Link" is clicked on a profile page, then Link renders in an overlay iframe on that
+    page, already looking up the same org (EIN in the URL) and knowing which system it is hosted
     in (`?host=portal`).
   - When a sync completes inside the frame, then Link posts a `synced` message to the host page,
     which re-reads the org and updates the displayed values without a full reload.
@@ -1003,7 +1003,7 @@ host, onSynced, onClose })` builds the overlay and iframe (`data-testid="cg-link
      `{ type: "cg-link:synced", targets, results }` to `parent`; a Close button posts
      `{ type: "cg-link:close" }`. Both only when `window.parent !== window`.
   4. Profile pages in both apps: include the loader from `PUBLIC_LINK_ORIGIN` (add to each app's
-     `.env.example`, read via `$env/dynamic/public`), a "Sync profile" button
+     `.env.example`, read via `$env/dynamic/public`), an "Open Link" button
      (`data-testid="open-link"`), `onSynced` → `invalidateAll()`.
   5. `e2e/specs/embedded.spec.ts`: drives the frame with `page.frameLocator` and the widget's
      existing `data-testid`s. No Playwright config change; all servers already boot.
@@ -1020,7 +1020,7 @@ host, onSynced, onClose })` builds the overlay and iframe (`data-testid="cg-link
   `link-initialize.js` is included from their origin. Enough for the demo; packaging is a later
   concern. Dev-only `http://` origins in the allow-list.
 
-### #1189-T3: Make direction explicit: push to, pull from, driven by capabilities
+### #1189-T3: [✓] Make direction explicit: push to, pull from, driven by capabilities
 
 Depends on: #1189-T2, #1188-T1 (for `SourceConfig.capabilities`)
 
@@ -1446,6 +1446,145 @@ Depends on: #1190-T3 for the reads and, if it lands, #1190-T4 for the push.
 - **Trade-offs**: Fixture mode proves the adapter's translation and the widget's three-way fan-out;
   only the by-hand run proves the sandbox. That is the honest split for a shared external sandbox
   that CI cannot reset.
+
+### #1190-T6: [✓] Compare three more fields, chosen so Temelio can store them
+
+The demo compares four fields and Temelio can store two of them: it declines `name` (the vendor
+answers 200 to a new `legalName` and stores nothing) and FunderHub declines `socials`, so the
+address is the only row all three systems will take. The adapter's claim is that a system nobody
+built for this contract can still receive a correction through it, and one example is thin. The
+three fields below are already in the mapping's writable set and already round-trip, so this is a
+list change rather than vendor work: `mission`, `emails.primary` and `phones.primary.number`.
+
+They were picked so each new row reads differently. `emails.primary` is already drifted in the seed
+— GrantPortal and Temelio hold `hello@agile6.com`, FunderHub `grants@agile6.com` — so adding it is
+what makes a second disagreement visible, with no invented seed value. `phones.primary.number` is
+identical everywhere, so it stays an agreement. `mission` is held by GrantPortal and Temelio and was
+never filled in at FunderHub, so it reads as a gap: a second example of the website beat without the
+write refusal on top of it.
+
+The compared path is the leaf `phones.primary.number`, not `phones.primary`. `formatFieldValue`
+renders an address by shape and anything else unrecognised as raw JSON, so the object lands in a
+grid cell as `{"countryCode":"+1","number":"619-555-0142"}`; and the two portals seed
+`isMobile: false` while the adapter's mapping never produces `isMobile`, so comparing the object
+would report a disagreement about a key nobody typed.
+
+Written before #1191 landed and revised after. Three things changed underneath it, all in this
+work's favour. A push now carries several fields at once, so the three new rows can go in one
+patch rather than three — which is what makes seven rows a richer demo rather than a longer one.
+`buildMergePatch` takes a list and merges siblings itself, so the note this ticket used to carry
+about the portals' shallow spread is gone: the form actions already pass a list, and overlapping
+paths throw rather than resolving by order. And `blockedChanges` greys out Sync when a target
+cannot store a picked field, which is worth checking against the new rows — none of the three is in
+any system's `unwritableFields`, so none of them blocks, and that is now visible on the screen
+rather than only in the seed.
+
+- **Acceptance criteria**:
+  - When the widget opens on Agile Six, then it shows seven rows: the email row differs with
+    FunderHub the outlier, the phone row agrees, and the mission row agrees with FunderHub's cell
+    empty.
+  - When a value from any of the three rows is pushed, then `POST /api/sync` accepts the path and
+    the target's own page holds the new value; a path outside `DEMO_FIELDS` is still a 400.
+  - When all three new rows are picked at once, then they travel as one patch per target, and Sync
+    is never blocked on their account.
+  - When the seed comparison runs, then two rows differ — the address and the email — and each
+    names which system is the outlier.
+- **Implementation plan**: three entries in `DEMO_FIELDS`
+  (`packages/cg-org-sync/src/utils/compare.ts`), labelled Mission, Email and Phone and placed after
+  the address so the opening row order is unchanged. Then the assertions that were written
+  positionally against four fields: the status and `distinctCount` arrays in
+  `utils/compare.test.ts`, and "the primary address is the only disagreement" in
+  `packages/seed/src/compare.test.ts`. `packages/seed/src/other-orgs.test.ts` asserts every row
+  agrees for the invented org pairs — both copies derive from one shared description so they should
+  still agree, but confirm rather than assume. `e2e/specs/api-sync.spec.ts` uses `mission` as its
+  example of a path outside the list, which inverts the moment mission joins it; `yearFounded` is
+  the natural replacement, a real path the demo deliberately does not compare. Row assertions for
+  the three new fields go beside the address and website cases in `e2e/specs/api-compare.spec.ts`.
+  Nothing else in the library changes: `compareProfiles`, `getAtPath`, `buildMergePatch`,
+  `syncToTargets`, `blockedChanges`, Link's `isDemoFieldPath` validator and the adapter's own
+  landing page all derive from the list.
+- **Edge cases**: a patch on `phones.primary.number` against a record holding no `phones` merges to
+  `{phones:{primary:{number}}}`, which fails `OrganizationBaseSchema` because `countryCode` is
+  required — a 400 rather than a silent miss. Not reachable in the demo, where all three systems
+  hold a phone, but it is what a future seed without one would hit. `emails.primary` is
+  `z.email()`-validated, so a malformed address is refused by every system rather than only the
+  sender. The adapter's `toPhone` drops a number with no leading `+NN`; writes always send
+  `` `${countryCode} ${number}` ``, so a round trip is safe, but a vendor value typed without a
+  country code reads as absent. `buildMergePatch` refuses a body whose paths overlap, and
+  `/api/sync` turns that into a 400: none of the three new paths is a prefix of an existing one, but
+  a later `phones.primary` or `emails` alongside these leaves would be, so the next field added here
+  has a rule to check that it did not before.
+- **Unit tests**: the seed comparison reports the address and the email as the two disagreements,
+  and names the outlier on each; a field held by two systems and missing at the third is `agree`,
+  not `differs`; `buildMergePatch` over the three new paths produces one body with three roots.
+- **Trade-offs**: seven rows makes the grid taller and the presenter's "read the grid" beat longer.
+  Accepted because the three new rows are each a different shape — a disagreement, an agreement and
+  a gap — which is the distinction the demo exists to teach.
+
+### #1190-T7: [✓] Make the three fields editable on both portals
+
+Depends on: #1190-T6.
+
+The demo starts where the data lives: someone types the drift on a portal's own profile page and the
+widget then finds it. That only works for fields the page can edit, so the three new fields move out
+of the read-only list and into the form, saving through `applyOrgPatch` like the four already there.
+
+- **Acceptance criteria**:
+  - When GrantPortal's or FunderHub's profile page is open, then Mission, Email and Phone are
+    editable, and none of the three is still in the read-only list.
+  - When a new email is typed on FunderHub and saved, then the widget's FunderHub column holds it.
+  - When a malformed email is saved, then the page names the field and the reason, the way it
+    already does for the existing fields.
+- **Implementation plan**: in each app's `src/routes/orgs/[orgId]/+page.svelte`, three inputs added
+  to the form and the three paths removed from the read-only list; in each `+page.server.ts`, three
+  more entries in the list `buildMergePatch` is already given. The phone input posts the number
+  only, so the country code survives the merge. Since #1191 that list is merged by the library
+  rather than spread by the caller, so two paths sharing a root are combined instead of overwriting
+  each other and overlapping ones throw — the caveat this ticket carried before that merge is gone. The taglines and the action's docstring both say "the four fields the
+  demo compares", in both trees. `e2e/specs/portal-profile.spec.ts` gains a FunderHub email edit
+  read back through Link's comparison, mirroring the existing suite-number case.
+- **Edge cases**: the two app trees are identical here but for one link label, so the change lands
+  in both or the pages diverge silently. Clearing mission posts `""`, which the action maps to
+  `null` — an RFC 7396 delete — and the result must still validate. Whether a field is offered is
+  read off that system's own `unwritableFields`, the way the website box already is; none of the
+  three is in FunderHub's list, but read it rather than hardcoding that.
+- **Unit tests**: none — the apps have no harness; the `portal-profile.spec.ts` cases above are the
+  coverage.
+- **Trade-offs**: three more duplicated literals in each of two app trees. Consistent with the
+  two-tree decision; deriving the form from `DEMO_FIELDS` instead would couple each system's own
+  screen to the widget's list, which is the coupling this repo has avoided throughout.
+
+### #1190-T8: Prove the three land in Temelio, and refresh the story
+
+Depends on: #1190-T6, #1190-T7.
+
+- **Acceptance criteria**:
+  - When `pnpm e2e` runs, then a spec pushes the new fields from GrantPortal to FunderHub and
+    Temelio and finds each value in the target's own column afterwards, in fixture mode.
+  - When the by-hand sandbox pass runs with `TEMELIO_MODE=sandbox`, then each of the three lands on
+    the vendor's own record, the grantee is still findable by EIN afterwards, and what merged is
+    recorded in `SANDBOX-FINDINGS.local.md`.
+  - When the docs are read, then nothing says the demo compares four fields, and the screenshots
+    show what the apps currently look like.
+- **Implementation plan**: extend `e2e/specs/widget.spec.ts` with a push of the email and one of
+  mission or phone, and — since #1191 — one case picking all three at once, which is the shape a
+  presenter will actually use and the one that proves three fields reach a vendor in a single patch. Run the sandbox pass by hand — flip the
+  adapter's `.env`, push each field through the widget, confirm on Temelio's record, push the seed
+  values back. Then the prose that hardcodes the count: `README.md`, `CLAUDE.md`,
+  `docs/demo-script.md` and the row-by-row reads in `docs/demo-talk-track.md`. Regenerate
+  `docs/screenshots/*` with `e2e/capture/screenshots.spec.ts`; they are already stale on a second
+  count, since the portals were re-themed after they were taken and every one still shows the old
+  palette — including `4-synced.png` and `5-blocked.png`, which the #1191 merge took from the other
+  branch and which predate the re-theme too.
+- **Edge cases**: the sandbox pass writes to a live system shared with other foundations. It is
+  confined by `TEMELIO_ORG_ALLOWLIST` to the grantee we created, and every write must restate `ein`
+  — `toMetadataPatch` already does, but that is the failure that makes a record invisible, so check
+  the EIN search still finds it. `pnpm e2e` must stay on the fake: the config pins
+  `TEMELIO_MODE=fixture` on an adapter it starts, but one already running in sandbox mode is joined
+  rather than replaced, and the reset then 409s.
+- **Unit tests**: none — the e2e specs and the by-hand pass are the coverage.
+- **Trade-offs**: the screenshot refresh is manual and will go stale again. Worth it here because
+  they are the README's only evidence and they are currently wrong twice over.
 
 ## #1191: Multi-field patch support and unsupported-field guardrails (nice-to-have)
 

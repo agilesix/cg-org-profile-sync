@@ -26,7 +26,6 @@ import type {
 } from "../types.js";
 import {
   DEMO_FIELDS,
-  blockedChanges,
   buildMergePatch,
   capabilitiesOf,
   compareProfiles,
@@ -34,7 +33,6 @@ import {
   isConnectable,
   sameJsonValue,
   summarizeOrg,
-  topLevelKey,
 } from "../utils/index.js";
 import { NotConnectedError, OrgClient, OrgClientError } from "./org-client.js";
 
@@ -126,6 +124,7 @@ export async function compareAcrossSources(
       orgId: org?.id ?? null,
       error,
       connection,
+      capabilities: capabilitiesOf(source),
       unwritableFields: source.unwritableFields ?? [],
     };
   });
@@ -293,6 +292,7 @@ export async function syncToTargets(
           ok: false,
           applied: false,
           status: null,
+          notStored: [],
           message: `No enabled source is configured with the id ${id}.`,
         };
       }
@@ -307,33 +307,26 @@ export async function syncToTargets(
           ok: false,
           applied: false,
           status: null,
+          notStored: [],
           message: `${source.label} does not accept changes.`,
         };
       }
 
-      // A field this target is known not to store stops the whole patch to it,
-      // rather than sending what it would keep. The changes were picked and
-      // sent as one thing, and a partial send is the surprise this guard
-      // exists to remove: the sender would be told "accepted" about a request
-      // that was never going to carry part of what they chose.
+      // A field this target is known not to store no longer stops the patch.
+      // The change is sent, the target keeps what it can, and the fields it
+      // dropped come back in `notStored` for the caller to name.
       //
-      // The receiver's own rule is still the authoritative one — this list is
-      // the sending side's copy and can only over-block, so a field it does
-      // not name is still dropped and reported by the target itself.
-      const blocked = blockedChanges(change.changes, source);
-
-      if (blocked.length > 0) {
-        const fields = [...new Set(blocked.map((field) => topLevelKey(field.path)))];
-
-        return {
-          id,
-          ok: false,
-          applied: false,
-          status: null,
-          message: `${source.label} cannot store ${fields.join(", ")}, so nothing was sent to it.`,
-        };
-      }
-
+      // This used to refuse the whole target, on the reasoning that a partial
+      // send is a surprise. The surprise is real but the cure was worse: it
+      // made a person unpick a value, or drop a system, to send the rest —
+      // work the widget was in a position to do for them. Sending and
+      // reporting keeps the choice with the person and the verdict with the
+      // receiver, which is also the only place it is actually known.
+      //
+      // `blockedChanges` stays for the sending side to *warn* with. It is a
+      // hand-kept copy and can over-block, which is survivable as a warning
+      // and was not as a refusal — a field wrongly named here used to be a
+      // field nobody could send.
       return patchOne(source, change, mergePatch, options);
     }),
   );
@@ -366,6 +359,7 @@ async function patchOne(
         ok: false,
         applied: false,
         status: null,
+        notStored: [],
         message: `${source.label} holds no organization matching ${change.registry} ${change.id}, so there was nothing to change.`,
       };
     }
@@ -380,16 +374,27 @@ async function patchOne(
     // Every change has to be there, not just one: the patch went as a unit, so
     // a target that kept the address and dropped the website has not applied
     // what it was sent, and a tick against the whole row would say it had.
-    const applied = change.changes.every((field) =>
-      sameJsonValue(getAtPath(revision.snapshot, field.path), field.value),
-    );
+    // Which ones went missing is worth keeping rather than recomputing: it is
+    // what lets a caller say "Website was not stored" instead of leaving
+    // someone to diff the grid themselves.
+    const notStored = change.changes
+      .filter((field) => !sameJsonValue(getAtPath(revision.snapshot, field.path), field.value))
+      .map((field) => field.path);
 
-    return { id: source.id, ok: true, applied, status, message };
+    return {
+      id: source.id,
+      ok: true,
+      applied: notStored.length === 0,
+      notStored,
+      status,
+      message,
+    };
   } catch (cause) {
     return {
       id: source.id,
       ok: false,
       applied: false,
+      notStored: [],
       status: cause instanceof OrgClientError ? (cause.status ?? null) : null,
       message: reasonFor(cause, source),
     };

@@ -1,4 +1,9 @@
 <script lang="ts">
+  import { resolve } from "$app/paths";
+  import type { PageData } from "./$types.js";
+
+  let { data }: { data: PageData } = $props();
+
   const routes = [
     {
       verb: "GET",
@@ -26,6 +31,16 @@
     coverage.
   </p>
 
+  {#if data.profile}
+    <h2>Profile</h2>
+    <p class="profile">
+      <a href={resolve("/orgs/[orgId]", { orgId: data.profile.id })} data-testid="profile-link"
+        >{data.profile.name}</a
+      >
+      <span class="note">this system's copy, editable</span>
+    </p>
+  {/if}
+
   <h2>Routes</h2>
   <ul>
     <!-- Keyed on verb and path together. The path alone is not unique — two
@@ -50,22 +65,10 @@
 </main>
 
 <style>
-  :global(body) {
-    margin: 0;
-    background: #f5f7f6;
-    color: #14201f;
-    font-family:
-      ui-sans-serif,
-      system-ui,
-      -apple-system,
-      "Segoe UI",
-      sans-serif;
-    line-height: 1.6;
-  }
   main {
     max-width: 46rem;
     margin: 0 auto;
-    padding: 4rem 1.5rem;
+    padding: 2.5rem 1.5rem 4rem;
   }
   .role {
     margin: 0 0 0.5rem;
@@ -73,7 +76,7 @@
     font-size: 0.72rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: #0d6e63;
+    color: var(--brand);
   }
   h1 {
     margin: 0 0 0.75rem;
@@ -83,7 +86,7 @@
   .tagline {
     margin: 0 0 2.5rem;
     font-size: 1.1rem;
-    color: #3b4a48;
+    color: var(--ink-soft);
     max-width: 34rem;
   }
   h2 {
@@ -92,7 +95,7 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: #6b7a77;
+    color: var(--muted);
   }
   ul {
     margin: 0;
@@ -101,7 +104,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
-    border-top: 1px solid #d9e0dd;
+    border-top: 1px solid var(--border);
     padding-top: 0.9rem;
   }
   li {
@@ -115,53 +118,40 @@
     font-size: 0.85rem;
   }
   .verb {
-    color: #0d6e63;
+    color: var(--brand);
     font-weight: 600;
+  }
+  .profile {
+    margin: 0 0 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.9rem;
+    align-items: baseline;
+    border-top: 1px solid var(--border);
+    padding-top: 0.9rem;
+  }
+  .profile a {
+    color: var(--brand);
   }
   .note {
     font-size: 0.85rem;
-    color: #6b7a77;
+    color: var(--muted);
   }
   .pending {
     font-size: 0.7rem;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: #8a9895;
-    border: 1px solid #d9e0dd;
+    color: var(--muted);
+    border: 1px solid var(--border);
     border-radius: 0.2rem;
     padding: 0 0.35rem;
   }
   .status {
     margin-top: 2.5rem;
     padding-top: 1rem;
-    border-top: 1px solid #d9e0dd;
+    border-top: 1px solid var(--border);
     font-size: 0.85rem;
-    color: #6b7a77;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :global(body) {
-      background: #0f1615;
-      color: #e7edeb;
-    }
-    .role,
-    .verb {
-      color: #56b7a9;
-    }
-    .tagline {
-      color: #bac6c3;
-    }
-    h2,
-    .note,
-    .pending,
-    .status {
-      color: #8a9895;
-    }
-    ul,
-    .pending,
-    .status {
-      border-color: #2a3736;
-    }
+    color: var(--muted);
   }
 </style>

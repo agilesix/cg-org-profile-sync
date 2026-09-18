@@ -32,9 +32,12 @@
   import SyncResults from "$lib/components/SyncResults.svelte";
   import {
     EIN_REGISTRY,
+    directionOf,
     formatFieldValue,
+    syncTargets,
     type ConnectOutcome,
     type Selection,
+    type SyncDirection,
     type SystemView,
   } from "$lib/demo.js";
   import {
@@ -102,6 +105,16 @@
   let targets = $state<string[]>([]);
   let results = $state.raw<SyncTargetResult[] | null>(null);
 
+  /**
+   * The direction the published results describe.
+   *
+   * Captured when the change is sent rather than read off the current pick:
+   * the grid re-reads afterwards and a pick can change under the result lines,
+   * and a line that said "pulled into" about a push would be worse than one
+   * that said nothing.
+   */
+  let syncedDirection = $state<SyncDirection | null>(null);
+
   /** One flag for both requests: neither should overlap itself or the other. */
   let busy = $state(false);
 
@@ -142,6 +155,19 @@
   let ready = $state(false);
 
   /**
+   * Whether the widget is running inside somebody else's page.
+   *
+   * Two conditions, both required: the deployment has to allow the origin that
+   * claims to be framing us (`data.parentOrigin`, decided on the server), and
+   * we have to actually be in a frame. The second is what keeps a standalone
+   * Link opened with a stray `?parent=` from growing a Close button that
+   * closes nothing, and it can only be answered in the browser.
+   */
+  let framed = $state(false);
+
+  const embedded = $derived(framed && data.parentOrigin !== null);
+
+  /**
    * The popup being waited on, so closing it by hand is not silence.
    *
    * A window someone shut is not a refusal and not an error; without this the
@@ -152,6 +178,7 @@
   onMount(() => {
     tokens = readTokens();
     denied = readDenied();
+    framed = window.self !== window.top;
     linkedSources = readLinkedSources();
     linkedOrg = adoptLinkedOrg();
     resumeFromUrl();
@@ -179,13 +206,78 @@
       void reload();
     });
 
+    // Only now, with the listener below attached: the host answers this with
+    // a token, and a reply that arrived earlier would land on nothing.
+    const stopHost = listenForHostToken();
+
+    postToHost({ type: "cg-link:ready" });
+
     void reload();
 
     return () => {
       stopWatching();
       stop();
+      stopHost();
     };
   });
+
+  /**
+   * Take the access token the host page offers for its own system.
+   *
+   * The widget is embedded on the system it is about, so the host is in a
+   * position to vouch for the person in front of it, and making them sign in
+   * to the page they are already on proves nothing. Every other system still
+   * signs in for itself — which is the beat the demo turns on, and this does
+   * not touch it.
+   *
+   * Three checks before the token is kept, and none is redundant: `message`
+   * fires for anything any window posts, so the origin check is what stops a
+   * page other than our host speaking; `window.parent` is what stops a sibling
+   * frame on that origin speaking for it; and `data.host` is what stops a
+   * host handing us a token for a system it is not — otherwise the page we are
+   * framed by could put a credential of its choosing in the column of any
+   * system in the registry.
+   */
+  function listenForHostToken(): () => void {
+    const handler = (event: MessageEvent) => {
+      if (data.parentOrigin === null || event.origin !== data.parentOrigin) return;
+      if (event.source !== window.parent) return;
+
+      const message = event.data as { type?: string; token?: unknown } | null;
+
+      if (message?.type !== "cg-link:host-token") return;
+      if (typeof message.token !== "string" || message.token === "") return;
+      if (data.host === null) return;
+
+      adoptHostToken(data.host.id, message.token);
+    };
+
+    window.addEventListener("message", handler);
+
+    return () => window.removeEventListener("message", handler);
+  }
+
+  /**
+   * Connect the host system with a token it issued itself.
+   *
+   * Recorded as a linked source as well as a token holder. The organization
+   * step is what normally moves a system from "signed in" to "linked", and
+   * there is nothing to choose here: the frame was opened at one organization
+   * and `adoptLinkedOrg` has already taken it from the URL. Without this the
+   * host would sit on a "Choose an organization" button for a choice of one.
+   */
+  function adoptHostToken(sourceId: string, token: string): void {
+    if (tokens[sourceId] === token) return;
+
+    rememberToken(sourceId, token);
+    rememberLinkedSource(sourceId);
+
+    tokens = { ...tokens, [sourceId]: token };
+    linkedSources = [...new Set([...linkedSources, sourceId])];
+    denied = denied.filter((candidate) => candidate !== sourceId);
+
+    void reload();
+  }
 
   /** Systems Link can talk to, each with what it allows and where it stands. */
   const sourceStates = $derived(
@@ -215,6 +307,25 @@
   const connectedCount = $derived(Object.keys(tokens).length);
 
   /**
+   * Whether there is a system left to link.
+   *
+   * The grid's invitation column asks for another one, so it has to disappear
+   * once there is no other one to ask for — an invitation that opens a picker
+   * with nothing choosable in it is worse than no invitation.
+   */
+  const canAddSource = $derived(
+    sourceStates.some((source) => source.connection === "not-connected"),
+  );
+
+  /**
+   * The system whose page we are embedded in, or `null` standalone.
+   *
+   * Already validated server-side against the registry, so an unrecognised
+   * `?host=` arrives as `null` and everything below reads as standalone.
+   */
+  const host = $derived(data.host?.id ?? null);
+
+  /**
    * Labels come from the registry, not the comparison.
    *
    * The comparison is null until something is connected, and a source that is
@@ -238,22 +349,28 @@
       .filter((pick): pick is Selection => pick !== undefined),
   );
 
+  /** Where the picked values came from, which is what decides the direction. */
+  const pickedSourceIds = $derived(picks.map((pick) => pick.sourceId));
+
+  /**
+   * Which way the picks travel: out of the host, or into it.
+   *
+   * One direction for the whole set. Picks from two systems have no single
+   * direction, and `directionOf` calls that a push — so the pull's "only the
+   * host" rule applies exactly when every pick came from one other system,
+   * which is the case where "bring this into the page I am on" means something.
+   */
+  const direction = $derived(picks.length === 0 ? null : directionOf(pickedSourceIds, host));
+
   /**
    * The systems a change could actually reach, given what is picked.
    *
-   * A source is only ruled out as a target when *every* pick came from it —
-   * it already holds all of them, so there would be nothing to send. With
-   * picks from two systems each is still a target for the other's value, and
-   * both changes travel in the one patch.
+   * `syncTargets` holds the rules — not a source every pick came from, nothing
+   * with an error or no record, nothing that declares `write: false`, and on a
+   * pull only the host. They live in the library because they decide where a
+   * change is sent, which is not a thing to leave untested in a template.
    */
-  const candidates = $derived(
-    (comparison?.sources ?? []).filter(
-      (source) =>
-        source.orgId !== null &&
-        !source.error &&
-        !(picks.length > 0 && picks.every((pick) => pick.sourceId === source.id)),
-    ),
-  );
+  const candidates = $derived(syncTargets(comparison?.sources ?? [], pickedSourceIds, host));
 
   /**
    * The targets a sync would actually go to.
@@ -292,7 +409,17 @@
       .filter((target) => target.fields.length > 0),
   );
 
-  const canSync = $derived(picks.length > 0 && chosen.length > 0 && blocked.length === 0 && !busy);
+  const canSync = $derived(picks.length > 0 && chosen.length > 0 && !busy);
+
+  /**
+   * Field path to the heading the grid shows for it.
+   *
+   * Taken from the picks rather than from `DEMO_FIELDS` so a result can name
+   * "Website" where a system's own message says `socials` — the sender chose a
+   * row, and the row is what they should be told about. Captured when a sync
+   * starts, because the picks are cleared by the time the results render.
+   */
+  let fieldLabels = $state<Record<string, string>>({});
 
   /** Every request to Link's own API carries the whole set of tokens, or none. */
   function authHeaders(): Record<string, string> {
@@ -521,7 +648,14 @@
   }
 
   /**
-   * Take a source's value as the correct one.
+   * Take a source's value as the correct one, or take the choice back.
+   *
+   * Clicking the cell that is already chosen unpicks it. The cells carry
+   * `aria-pressed`, so they describe themselves as toggles to anyone not
+   * looking at the highlight — and a control that says it is pressed but
+   * cannot be unpressed is lying about what a second click will do. Picking a
+   * *different* cell in the same row still replaces that row's choice rather
+   * than adding to it: one field cannot travel with two values.
    *
    * Every other system that holds a record is checked by default: the demo's
    * usual move is "this one is right, fix the rest", and unchecking is cheaper
@@ -530,6 +664,11 @@
    * failed row.
    */
   function pick(path: string, label: string, sourceId: string, value: JsonValue): void {
+    if (selections[path]?.sourceId === sourceId) {
+      unpick(path);
+      return;
+    }
+
     const offered = offeredTargets();
 
     selections = { ...selections, [path]: { path, label, sourceId, value } };
@@ -580,6 +719,7 @@
       .filter((id) => targets.includes(id) || !offered.includes(id));
 
     results = null;
+    syncedDirection = null;
     problem = null;
   }
 
@@ -667,6 +807,25 @@
   }
 
   /**
+   * Tell the host page something happened, if there is a host to tell.
+   *
+   * Always targeted at `data.parentOrigin` rather than `"*"`: the message
+   * names the systems a change reached, and a wildcard target would hand that
+   * to whatever page happened to be framing us instead of to the one the
+   * deployment allows.
+   */
+  function postToHost(message: { type: string; [key: string]: unknown }): void {
+    if (!embedded || data.parentOrigin === null) return;
+
+    window.parent.postMessage(message, data.parentOrigin);
+  }
+
+  /** Ask the host to take the frame away. It owns the overlay, so it decides. */
+  function close(): void {
+    postToHost({ type: "cg-link:close" });
+  }
+
+  /**
    * Send the picked value to every checked target, then re-read.
    *
    * The result lines are published *after* the refresh, so a result line with
@@ -680,7 +839,9 @@
 
     busy = true;
     results = null;
+    syncedDirection = null;
     problem = null;
+    fieldLabels = Object.fromEntries(picks.map((choice) => [choice.path, choice.label]));
 
     try {
       const response = await fetch("/api/sync", {
@@ -704,6 +865,17 @@
       const refreshed = await refresh();
 
       results = (body as SyncResult).results;
+      syncedDirection = direction;
+
+      // After the refresh, so a host that re-reads on this message sees the
+      // post-change values rather than racing Link's own re-read. Sent even
+      // when a target failed: the host's copy may still have changed, and the
+      // per-target results are in the message for it to say so.
+      postToHost({
+        type: "cg-link:synced",
+        targets: chosen,
+        results: (body as SyncResult).results,
+      });
 
       if (!refreshed) {
         // `load` has already said why it could not re-read. Say what that
@@ -718,7 +890,47 @@
     }
   }
 
-  /** What a source allows, in the words the widget uses for it. */
+  /**
+   * What the Sync button is about to do, said in full.
+   *
+   * Named rather than left as "Sync": the one thing someone has to get right
+   * before clicking is which copy is about to be overwritten, and a verb that
+   * hides it is the whole reason this ticket exists.
+   */
+  const action = $derived.by(() => {
+    if (picks.length === 0 || direction === null) return null;
+
+    const origins = new Set(pickedSourceIds);
+    const only = picks.length === 1 ? picks[0] : undefined;
+
+    // One field is named; several are counted. Listing four labels in a
+    // sentence someone reads at a glance buries the verb, which is the one
+    // word this line exists to put in front of them.
+    const what = only ? only.label : `${picks.length} fields`;
+
+    // "from" only when the whole set came from one system. With picks from two
+    // it would have to name both, and a sentence saying a value came from the
+    // system it is about to be sent to is worse than one that stays quiet.
+    const sole = origins.size === 1 ? [...origins][0] : undefined;
+    const from = sole === undefined ? "" : ` from ${labels[sole] ?? sole}`;
+    const into = chosen.map((id) => labels[id] ?? id).join(" and ");
+
+    // Both branches name a target only when there is one. Naming the host on a
+    // pull regardless would describe a change that unchecking it had already
+    // called off — the exact implication this ticket exists to remove.
+    return direction === "push"
+      ? `Push ${what}${from}${into ? ` to ${into}` : ""}`
+      : `Pull ${what}${from}${into ? ` into ${into}` : ""}`;
+  });
+
+  /**
+   * What a source allows, in the words the widget uses for it.
+   *
+   * "pull" and "push" rather than "read" and "write", so a chip names the two
+   * buttons someone is about to be offered: a system that cannot be pushed to
+   * is one the Push button will never list, and saying so in the same verb is
+   * what makes the two screens agree.
+   */
   function capabilityWords(capabilities: { read: boolean; write: boolean }): string {
     const allowed = [
       capabilities.read ? "pull" : undefined,
@@ -729,7 +941,18 @@
   }
 </script>
 
-<main data-testid="widget" data-ready={ready}>
+<main data-testid="widget" data-ready={ready} data-embedded={embedded}>
+  {#if embedded}
+    <div class="host-bar">
+      <p class="host" data-testid="host-system">
+        {data.host ? `Opened from ${data.host.label}` : "Opened from a host page"}
+      </p>
+      <button type="button" class="close" data-testid="close" aria-label="Close" onclick={close}
+        >×</button
+      >
+    </div>
+  {/if}
+
   <p class="role">Widget</p>
   <h1>CommonGrants Link</h1>
   <p class="tagline">
@@ -737,9 +960,17 @@
     push the corrections back out.
   </p>
 
-  <button type="button" class="link-system" data-testid="link-system" onclick={openPicker}>
-    Link Grant Management System
-  </button>
+  <!--
+    Hidden once every system in the catalog is linked. The picker it opens
+    would have nothing choosable in it, which is the same reason the grid drops
+    its invitation column — and embedded, where the overlay cannot grow, a
+    button that can no longer do anything is a row of the comparison.
+  -->
+  {#if canAddSource}
+    <button type="button" class="link-system" data-testid="link-system" onclick={openPicker}>
+      Link Grant Management System
+    </button>
+  {/if}
 
   {#if banner}
     <p class="banner" role="status" data-testid="linked-banner">
@@ -812,13 +1043,20 @@
       compare.
     </p>
   {:else}
-    <ComparisonGrid {comparison} {selections} onpick={pick} />
+    <ComparisonGrid
+      {comparison}
+      {selections}
+      canAdd={canAddSource}
+      onpick={pick}
+      onadd={openPicker}
+      fill={embedded}
+    />
 
     <section class="panel" data-testid="panel">
       {#if picks.length === 0}
         <p class="prompt" data-testid="prompt">
-          Click the value a system holds to choose it as the correct one. Pick as many fields as you
-          like — they travel together.
+          Click a value to choose it, and again to take it back. Pick as many fields as you like —
+          they travel together.
         </p>
       {:else}
         <ul class="picks" data-testid="selection">
@@ -839,13 +1077,21 @@
           {/each}
         </ul>
 
+        <p class="direction" data-testid="direction" data-direction={direction}>{action}</p>
+
         {#if candidates.length === 0}
           <p class="prompt" data-testid="no-targets">
-            No other system holds a record of this organization, so there is nowhere to send these.
+            {direction === "pull"
+              ? `${data.host?.label ?? "This page"} cannot accept ${picks.length === 1 ? "this change" : "these changes"}, so there is nowhere to pull ${picks.length === 1 ? "it" : "them"} into.`
+              : `No other system can accept ${picks.length === 1 ? "this change" : "these changes"}, so there is nowhere to send ${picks.length === 1 ? "it" : "them"}.`}
           </p>
         {:else}
           <fieldset>
-            <legend>Send {picks.length === 1 ? "it" : "them"} to</legend>
+            <legend>
+              {direction === "pull" ? "Pull" : "Push"}
+              {picks.length === 1 ? "it" : "them"}
+              {direction === "pull" ? "into" : "to"}
+            </legend>
             {#each candidates as source (source.id)}
               <label>
                 <input
@@ -860,21 +1106,28 @@
           </fieldset>
         {/if}
 
+        <!--
+          A heads-up, not a barrier. The widget knows this target will drop the
+          field, and says so while there is still time to change your mind —
+          but it no longer refuses to send: the rest of the picks are still
+          worth sending, and what actually happened comes back from the target
+          itself in the results below.
+        -->
         {#each blocked as target (target.id)}
           <p class="blocked" role="status" data-testid="blocked-{target.id}">
-            {target.label} can't store {target.fields
+            {target.label} does not store {target.fields
               .map((field) => selections[field.path]?.label ?? field.path)
-              .join(" or ")}. Unselect it or drop {target.label} as a target.
+              .join(" or ")}. Everything else will be sent.
           </p>
         {/each}
 
         <button type="button" class="sync" data-testid="sync" disabled={!canSync} onclick={sync}>
-          {busy ? "Syncing…" : "Sync"}
+          {busy ? "Sending…" : direction === "pull" ? "Pull" : "Push"}
         </button>
       {/if}
 
-      {#if results}
-        <SyncResults {results} {labels} />
+      {#if results && syncedDirection}
+        <SyncResults {results} {labels} {fieldLabels} direction={syncedDirection} />
       {/if}
     </section>
   {/if}
@@ -897,6 +1150,32 @@
 />
 
 <style>
+  .host-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    margin: -2rem 0 2rem;
+    padding-bottom: 0.9rem;
+    border-bottom: 1px solid #d9e0dd;
+  }
+  .host {
+    margin: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #6b7a77;
+  }
+  .close {
+    font-size: 1.4rem;
+    line-height: 1;
+    padding: 0 0.25rem;
+    color: #6b7a77;
+    background: transparent;
+    border: 0;
+  }
   .link-system {
     font: inherit;
     font-size: 0.95rem;
@@ -963,6 +1242,85 @@
     max-width: 56rem;
     margin: 0 auto;
     padding: 4rem 1.5rem;
+  }
+
+  /*
+     Embedded, the widget is a column in a fixed box rather than a page that
+     runs as long as it likes. `embed.js` sizes the overlay at
+     `min(46rem, 92vh)` and cannot grow, so a document taller than that used to
+     scroll the iframe — and once the grid gained a scroller of its own, that
+     became scrolling the frame and *then* scrolling the grid to reach a row.
+
+     So: the chrome keeps its natural height, the grid takes what is left, and
+     the panel stays on screen. The Sync button is the last thing anyone does
+     here, and having to scroll to find it is the thing this layout removes.
+  */
+  main[data-embedded="true"] {
+    display: flex;
+    flex-direction: column;
+
+    /* `border-box`, or the padding is added to `100dvh` and the column ends up
+       taller than the frame it is meant to fit — which puts the panel, and the
+       Sync button in it, just below the fold. */
+    box-sizing: border-box;
+    height: 100dvh;
+    max-width: none;
+    padding: 2.5rem 1.5rem 1.5rem;
+
+    /* `auto`, not `hidden`. This layout is built so everything fits, but a
+       person with a long list of picks and a set of results under them can
+       still outgrow the frame — and scrolling the widget is what this used to
+       do anyway, where clipping would lose the controls outright. */
+    overflow: auto;
+  }
+  main[data-embedded="true"] > :not(.panel) {
+    flex: none;
+  }
+
+  /*
+     The panel keeps its natural height and the grid takes what is left, rather
+     than the other way round: a grid one row shorter costs a scroll in a thing
+     that already scrolls, where a panel that shrinks hides controls.
+  */
+  main[data-embedded="true"] > .panel {
+    flex: 0 0 auto;
+    margin-top: 1.25rem;
+  }
+
+  /*
+     Condensed chrome, so there is something left for the grid to absorb.
+     Making the column flex is only half the fix: the title block, the tagline
+     and the spacing between the chips came to roughly 650px of a 736px frame,
+     which left the grid a row and a half however the height was divided.
+
+     What goes is what the overlay already says another way. The host bar names
+     the system whose page this is, and someone who clicked **Open Link** on
+     their own profile does not need the standalone page's onboarding copy.
+     Nothing here is hidden that cannot be read on the widget's own page.
+  */
+  main[data-embedded="true"] .role,
+  main[data-embedded="true"] .tagline {
+    display: none;
+  }
+  main[data-embedded="true"] h1 {
+    margin: 0 0 0.9rem;
+    font-size: 1.3rem;
+  }
+  /* A flex column stretches its children across the cross axis, which turned
+     this button into a full-width bar. The grid and the panel do want the whole
+     width; a button wants to be the size of its label. */
+  main[data-embedded="true"] .link-system {
+    align-self: flex-start;
+  }
+  main[data-embedded="true"] .banner {
+    margin-top: 0.9rem;
+  }
+  main[data-embedded="true"] .linked-org {
+    margin-top: 1rem;
+  }
+  main[data-embedded="true"] .chips {
+    margin: 1rem 0 1.25rem;
+    gap: 0.3rem;
   }
   .role {
     margin: 0 0 0.5rem;
@@ -1056,6 +1414,11 @@
     gap: 0.3rem 0.75rem;
     font-size: 0.9rem;
   }
+  .direction {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
   .chosen-field {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.72rem;
@@ -1131,7 +1494,14 @@
   }
 
   @media (prefers-color-scheme: dark) {
-    .chip-caps {
+    .chip-caps,
+    .host {
+      color: #8a9895;
+    }
+    .host-bar {
+      border-color: #2a3736;
+    }
+    .close {
       color: #8a9895;
     }
     .chip-ok {

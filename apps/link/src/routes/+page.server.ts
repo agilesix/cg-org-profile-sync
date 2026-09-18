@@ -1,5 +1,6 @@
-import { capabilitiesOf, isConnectable } from "@cg-link/org-sync/utils";
+import { capabilitiesOf, isConnectable, originIfAllowed } from "@cg-link/org-sync/utils";
 import { DEFAULT_EIN, EIN_REGISTRY } from "$lib/demo.js";
+import { embedOrigins } from "$lib/server/embed.js";
 import { catalogSources } from "$lib/server/sources.js";
 import type { PageServerLoad } from "./$types.js";
 
@@ -18,6 +19,12 @@ import type { PageServerLoad } from "./$types.js";
  * `?registry=` and `?id=` are still honoured so a demo can be deep-linked at a
  * particular org, and they survive the sign-in round trip because the connect
  * flow carries them back.
+ *
+ * `?host=` and `?parent=` are how the embed loader introduces the page around
+ * it. Both are judged here rather than trusted: `host` has to name a system
+ * this Link is configured for, and `parent` has to be an origin this Link
+ * allows to frame it. Either one unrecognised comes back as `null`, which the
+ * page reads as "standalone" — the safe end of the guess.
  */
 export const load: PageServerLoad = ({ url }) => {
   // Only when `?id=` was actually given. The page needs to tell a deep link
@@ -44,5 +51,23 @@ export const load: PageServerLoad = ({ url }) => {
     connectable: isConnectable(source),
   }));
 
-  return { deepLink, sources };
+  const requestedHost = url.searchParams.get("host");
+  const host = sources.find((source) => source.id === requestedHost) ?? null;
+
+  return {
+    deepLink,
+    sources,
+
+    /** The system whose page is framing us, when it is one we know. */
+    host: host && { id: host.id, label: host.label },
+
+    /**
+     * Where a message to the host may be posted, or `null`.
+     *
+     * Resolved on the server so the page has nothing to decide: a `parent` the
+     * deployment did not allow never reaches the browser, so there is no way
+     * for a later edit to the component to start trusting it by accident.
+     */
+    parentOrigin: originIfAllowed(url.searchParams.get("parent"), embedOrigins()) ?? null,
+  };
 };

@@ -12,6 +12,10 @@ import type { RequestHandler } from "./$types.js";
  * in a system shared with other people, so this refuses rather than answering
  * 204 to something it did not do. A spec that believed it had isolation it did
  * not have would fail later, somewhere else, for a reason nobody could see.
+ *
+ * This is the only way the suite can meet a sandbox adapter: it pins
+ * `TEMELIO_MODE=fixture` on one it starts, so the case left is a server it
+ * joined — a `pnpm dev` running the demo. Hence the remedy in the sentence.
  */
 export const POST: RequestHandler = () => {
   if (env.ENABLE_TEST_ROUTES !== "true") {
@@ -23,6 +27,7 @@ export const POST: RequestHandler = () => {
     : failure(
         409,
         "This adapter is in sandbox mode, and Temelio's own records cannot be reset. " +
-          "Set TEMELIO_MODE=fixture to run against the in-memory stand-in.",
+          "The e2e suite pins TEMELIO_MODE=fixture on an adapter it starts itself, so " +
+          "stop this dev server and re-run it — or set TEMELIO_MODE=fixture here.",
       );
 };

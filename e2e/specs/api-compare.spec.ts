@@ -3,13 +3,13 @@
  *
  * The assertions are about the seed's deliberate disagreements, which are the
  * whole point of the demo: three copies of Agile Six's profile agree on who
- * the org is and disagree on where it is and what its website says. The third
- * is a vendor behind an adapter rather than a CommonGrants-native system, and
- * nothing here can tell — which is the claim.
+ * the org is and disagree on where it is, what its website says and which
+ * mailbox reaches it. The third is a vendor behind an adapter rather than a
+ * CommonGrants-native system, and nothing here can tell — which is the claim.
  */
 
 import { DEMO_FIELDS } from "@cg-link/org-sync/utils";
-import { AGILE_SIX_EIN, PORTAL_SEED, TEMELIO_SEED } from "@cg-link/seed";
+import { AGILE_SIX_EIN, FUNDERHUB_SEED, PORTAL_SEED, TEMELIO_SEED } from "@cg-link/seed";
 import { expect, rowFor, test } from "../fixtures.js";
 
 test("every configured source answers with its own id for the org", async ({ api }) => {
@@ -81,6 +81,46 @@ test("the website disagrees between the systems that publish one, and funderhub 
   expect(row.distinctCount).toBe(2);
 });
 
+test("the email disagrees, and funderhub is the one system out of step", async ({ api }) => {
+  const row = rowFor(await api.compare(), "emails.primary");
+
+  expect(row.status).toBe("differs");
+
+  // The second disagreement in the seed, and the only one nobody invented for
+  // the demo: FunderHub was given a mailbox that no longer routes anywhere,
+  // and the two systems that hold the working address outnumber it.
+  expect(row.distinctCount).toBe(2);
+  expect(row.values.portal).toBe(PORTAL_SEED.emails?.primary);
+  expect(row.values.temelio).toBe(PORTAL_SEED.emails?.primary);
+  expect(row.values.funderhub).toBe(FUNDERHUB_SEED.emails?.primary);
+});
+
+test("the mission is a gap at funderhub rather than a disagreement", async ({ api }) => {
+  const row = rowFor(await api.compare(), "mission");
+
+  // The same beat as the website, without the write refusal on top of it:
+  // FunderHub *can* store a mission and simply never had one filled in. Two
+  // systems holding one value and a third holding none is agreement.
+  expect(row.status).toBe("agree");
+  expect(row.distinctCount).toBe(1);
+  expect(row.values.portal).toBe(PORTAL_SEED.mission);
+  expect(row.values.temelio).toBe(TEMELIO_SEED.mission);
+  expect(row.values).not.toHaveProperty("funderhub");
+});
+
+test("the phone number agrees across all three systems", async ({ api }) => {
+  const row = rowFor(await api.compare(), "phones.primary.number");
+
+  // The leaf, not the object: the two portals seed `isMobile: false` and the
+  // adapter's mapping never produces it, so comparing `phones.primary` would
+  // report a disagreement about a key nobody typed.
+  expect(row.status).toBe("agree");
+  expect(row.distinctCount).toBe(1);
+  expect(row.values.portal).toBe(PORTAL_SEED.phones?.primary.number);
+  expect(row.values.funderhub).toBe(PORTAL_SEED.phones?.primary.number);
+  expect(row.values.temelio).toBe(PORTAL_SEED.phones?.primary.number);
+});
+
 test("an org no system holds comes back as sources with no record, not an error", async ({
   api,
 }) => {
@@ -92,7 +132,7 @@ test("an org no system holds comes back as sources with no record, not an error"
   }
 
   // Every field is still a row, so the grid has a shape to render. Counted
-  // from `DEMO_FIELDS` rather than written as 4: the library's promise is that
+  // from `DEMO_FIELDS` rather than written out: the library's promise is that
   // adding a field to the demo is one entry there and nothing else, and a
   // literal here would be the "nothing else" that breaks.
   expect(result.fields.map((field) => field.path)).toEqual(DEMO_FIELDS.map((field) => field.path));
