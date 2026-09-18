@@ -1469,12 +1469,24 @@ grid cell as `{"countryCode":"+1","number":"619-555-0142"}`; and the two portals
 `isMobile: false` while the adapter's mapping never produces `isMobile`, so comparing the object
 would report a disagreement about a key nobody typed.
 
+Written before #1191 landed and revised after. Three things changed underneath it, all in this
+work's favour. A push now carries several fields at once, so the three new rows can go in one
+patch rather than three — which is what makes seven rows a richer demo rather than a longer one.
+`buildMergePatch` takes a list and merges siblings itself, so the note this ticket used to carry
+about the portals' shallow spread is gone: the form actions already pass a list, and overlapping
+paths throw rather than resolving by order. And `blockedChanges` greys out Sync when a target
+cannot store a picked field, which is worth checking against the new rows — none of the three is in
+any system's `unwritableFields`, so none of them blocks, and that is now visible on the screen
+rather than only in the seed.
+
 - **Acceptance criteria**:
   - When the widget opens on Agile Six, then it shows seven rows: the email row differs with
     FunderHub the outlier, the phone row agrees, and the mission row agrees with FunderHub's cell
     empty.
   - When a value from any of the three rows is pushed, then `POST /api/sync` accepts the path and
     the target's own page holds the new value; a path outside `DEMO_FIELDS` is still a 400.
+  - When all three new rows are picked at once, then they travel as one patch per target, and Sync
+    is never blocked on their account.
   - When the seed comparison runs, then two rows differ — the address and the email — and each
     names which system is the outlier.
 - **Implementation plan**: three entries in `DEMO_FIELDS`
@@ -1489,8 +1501,8 @@ would report a disagreement about a key nobody typed.
   the natural replacement, a real path the demo deliberately does not compare. Row assertions for
   the three new fields go beside the address and website cases in `e2e/specs/api-compare.spec.ts`.
   Nothing else in the library changes: `compareProfiles`, `getAtPath`, `buildMergePatch`,
-  `syncToTargets`, Link's `isDemoFieldPath` validator and the adapter's own landing page all derive
-  from the list.
+  `syncToTargets`, `blockedChanges`, Link's `isDemoFieldPath` validator and the adapter's own
+  landing page all derive from the list.
 - **Edge cases**: a patch on `phones.primary.number` against a record holding no `phones` merges to
   `{phones:{primary:{number}}}`, which fails `OrganizationBaseSchema` because `countryCode` is
   required — a 400 rather than a silent miss. Not reachable in the demo, where all three systems
@@ -1498,10 +1510,13 @@ would report a disagreement about a key nobody typed.
   `z.email()`-validated, so a malformed address is refused by every system rather than only the
   sender. The adapter's `toPhone` drops a number with no leading `+NN`; writes always send
   `` `${countryCode} ${number}` ``, so a round trip is safe, but a vendor value typed without a
-  country code reads as absent.
+  country code reads as absent. `buildMergePatch` refuses a body whose paths overlap, and
+  `/api/sync` turns that into a 400: none of the three new paths is a prefix of an existing one, but
+  a later `phones.primary` or `emails` alongside these leaves would be, so the next field added here
+  has a rule to check that it did not before.
 - **Unit tests**: the seed comparison reports the address and the email as the two disagreements,
   and names the outlier on each; a field held by two systems and missing at the third is `agree`,
-  not `differs`; `buildMergePatch("phones.primary.number", …)` produces the three-level nested body.
+  not `differs`; `buildMergePatch` over the three new paths produces one body with three roots.
 - **Trade-offs**: seven rows makes the grid taller and the presenter's "read the grid" beat longer.
   Accepted because the three new rows are each a different shape — a disagreement, an agreement and
   a gap — which is the distinction the demo exists to teach.
@@ -1522,10 +1537,10 @@ of the read-only list and into the form, saving through `applyOrgPatch` like the
     already does for the existing fields.
 - **Implementation plan**: in each app's `src/routes/orgs/[orgId]/+page.svelte`, three inputs added
   to the form and the three paths removed from the read-only list; in each `+page.server.ts`, three
-  more `buildMergePatch` calls in the spread. The phone input posts the number only, so the country
-  code survives the merge. The spread stays correct because the three new roots — `mission`,
-  `emails`, `phones` — are distinct from the existing four; the comment above it says what breaks if
-  a later field shares a root. The taglines and the action's docstring both say "the four fields the
+  more entries in the list `buildMergePatch` is already given. The phone input posts the number
+  only, so the country code survives the merge. Since #1191 that list is merged by the library
+  rather than spread by the caller, so two paths sharing a root are combined instead of overwriting
+  each other and overlapping ones throw — the caveat this ticket carried before that merge is gone. The taglines and the action's docstring both say "the four fields the
   demo compares", in both trees. `e2e/specs/portal-profile.spec.ts` gains a FunderHub email edit
   read back through Link's comparison, mirroring the existing suite-number case.
 - **Edge cases**: the two app trees are identical here but for one link label, so the change lands
@@ -1552,13 +1567,15 @@ Depends on: #1190-T6, #1190-T7.
   - When the docs are read, then nothing says the demo compares four fields, and the screenshots
     show what the apps currently look like.
 - **Implementation plan**: extend `e2e/specs/widget.spec.ts` with a push of the email and one of
-  mission or phone, following the existing address case. Run the sandbox pass by hand — flip the
+  mission or phone, and — since #1191 — one case picking all three at once, which is the shape a
+  presenter will actually use and the one that proves three fields reach a vendor in a single patch. Run the sandbox pass by hand — flip the
   adapter's `.env`, push each field through the widget, confirm on Temelio's record, push the seed
   values back. Then the prose that hardcodes the count: `README.md`, `CLAUDE.md`,
   `docs/demo-script.md` and the row-by-row reads in `docs/demo-talk-track.md`. Regenerate
   `docs/screenshots/*` with `e2e/capture/screenshots.spec.ts`; they are already stale on a second
   count, since the portals were re-themed after they were taken and every one still shows the old
-  palette.
+  palette — including `4-synced.png` and `5-blocked.png`, which the #1191 merge took from the other
+  branch and which predate the re-theme too.
 - **Edge cases**: the sandbox pass writes to a live system shared with other foundations. It is
   confined by `TEMELIO_ORG_ALLOWLIST` to the grantee we created, and every write must restate `ein`
   — `toMetadataPatch` already does, but that is the failure that makes a record invisible, so check

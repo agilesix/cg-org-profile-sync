@@ -60,8 +60,14 @@ drives the whole of it, popup sign-in included. Direction is explicit: the widge
 action — **Push** a value out of the page you are on, **Pull** another system's value into it —
 carries `push`/`pull` on a `data-testid="direction"` element, and confines a pull to the host, so a
 value can never land somewhere nobody asked for. A source declaring `write: false` is never offered
-as a target and is refused by `syncToTargets` without a request. Not started: selecting several
-fields at once (#1191-T1) — a push sends one field per patch. `README.md` is the short overview for someone new —
+as a target and is refused by `syncToTargets` without a request. Several fields go at once: a person
+picks one value per row across as many rows as they like, they travel as one patch per target, and
+the direction is the set's — every pick from the host is a push, every pick from one other system is
+a pull, and picks from two systems have no single direction and read as a push, so a pull's
+"only the host" rule is never applied to a set it cannot describe. A field a chosen target cannot
+store greys out Sync and says which system and which field before anything is sent
+(`utils/writability.ts`'s `blockedChanges`, the sending side's copy of a rule the receiver still
+enforces — so it can over-block and never under-block). `README.md` is the short overview for someone new —
 why the project exists, what the widget does with screenshots, and setup. `docs/demo-script.md`
 is the presenter's runbook: the click path, the `curl` block per system, and what to check when
 something is off. Keep both in step with the code.
@@ -277,10 +283,13 @@ absent from the row rather than counted as a disagreement, so a missing field ne
 conflict. Values compare by canonical JSON with keys sorted, so two systems that serialize the same
 address in a different key order still agree. Adding a field to the demo is one entry in
 `DEMO_FIELDS`. `utils/direction.ts` holds the other half of what the widget does with a comparison:
-`directionOf(pickedSourceId, hostId)` is `push` when the value came from the host or there is no
-host and `pull` otherwise, and `syncTargets(sources, pickedSourceId, hostId)` is the four rules
-deciding where a change may go — never the source it came from, never one with an error or no
-record, never one declaring `write: false`, and on a pull only the host. Both live here rather than
+`directionOf(pickedSourceIds, hostId)` is `push` when there is no host, when every pick came from
+the host, or when the picks came from more than one system — mixed origins have no single direction
+and must not be narrowed by a pull's rule — and `pull` when every pick came from one other system.
+`syncTargets(sources, pickedSourceIds, hostId)` is the four rules deciding where a change may go —
+never a source _every_ pick came from (it already holds them all; one that holds some of them is
+still a target for the rest), never one with an error or no record, never one declaring
+`write: false`, and on a pull only the host. Both live here rather than
 in the widget because they decide _where a change is sent_; an unknown `hostId` reads as standalone
 in both, so an unrecognised `?host=` cannot redirect a write. `EIN_REGISTRY` names the registry the demo matches an org by, and
 `utils/format.ts`'s `formatFieldValue` turns one held value into the line the grid shows — an
