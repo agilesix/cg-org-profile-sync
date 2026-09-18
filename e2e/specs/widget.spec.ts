@@ -177,38 +177,109 @@ test("a vendor behind an adapter is offered as a target, and takes the push", as
   await expect(page.getByTestId("cell-addresses.primary-temelio")).toContainText(PORTAL_STREET2);
 });
 
-test("pushing portal's website reports what funderhub declined, and the row is unchanged", async ({
-  page,
-}) => {
+test("pushing portal's website to funderhub is blocked before send", async ({ page }) => {
   await openConnected(page);
 
   await page.getByTestId("pick-socials.website-portal").click();
-  await page.getByTestId("sync").click();
 
-  // The request succeeded and the change went nowhere, which are different
-  // things and have to read differently. FunderHub answered 200 — this is the
-  // protocol working as designed, not a failure — but it stored none of what
-  // was sent, so the line says NOT ACCEPTED rather than showing a tick for a
-  // change that never happened.
-  const result = page.getByTestId("sync-result-funderhub");
-  await expect(result).toHaveAttribute("data-ok", "true");
-  await expect(result).toHaveAttribute("data-applied", "false");
-  await expect(result).toContainText("not accepted");
-  await expect(result).toContainText("Change not applied because this system does not store");
-  await expect(result).toContainText("socials");
+  // Said up front, not after the fact. Before #1191-T2 this was a click, a
+  // request, and a line explaining that the field had gone nowhere — the
+  // system got the last word about a change the person had already committed
+  // to. Now the widget knows FunderHub will not keep `socials` and says so
+  // while the button is still grey.
+  const blocked = page.getByTestId("blocked-funderhub");
+  await expect(blocked).toBeVisible();
+  await expect(blocked).toContainText("FunderHub");
+  await expect(blocked).toContainText("Website");
+  await expect(page.getByTestId("sync")).toBeDisabled();
 
-  // "The row is unchanged" is exactly what a failed re-read would also show,
-  // so rule that out before claiming it.
-  await expect(page.getByTestId("problem")).toHaveCount(0);
-
-  // And the grid says the same thing: portal still holds the website, and
-  // funderhub still holds nothing.
+  // Nothing was sent, so there is no result line and nothing moved.
+  await expect(page.getByTestId("sync-result-funderhub")).toHaveCount(0);
   await expect(page.getByTestId("cell-socials.website-portal")).toContainText(PORTAL_WEBSITE);
   await expect(page.getByTestId("cell-socials.website-funderhub")).toHaveAttribute(
     "data-held",
     "false",
   );
-  await expect(page.getByTestId("row-socials.website")).toHaveAttribute("data-status", "agree");
+
+  // Either way out of it re-enables the button: drop the pick, or drop the
+  // system that cannot take it.
+  await page.getByTestId("unpick-socials.website").click();
+  await expect(page.getByTestId("blocked-funderhub")).toHaveCount(0);
+
+  await page.getByTestId("pick-socials.website-portal").click();
+  await expect(page.getByTestId("sync")).toBeDisabled();
+
+  await page.getByTestId("target-funderhub").uncheck();
+  await expect(page.getByTestId("blocked-funderhub")).toHaveCount(0);
+});
+
+test("picking two rows sends them together, and each pick can be taken back", async ({ page }) => {
+  await openWidget(page);
+  await connect(page, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
+  await connect(page, "funderhub", ADMIN_EMAIL, FUNDERHUB_ORG_ID);
+  await connect(page, "temelio", ADMIN_EMAIL, TEMELIO_ORG_ID);
+
+  const addressRow = page.getByTestId("row-addresses.primary");
+  await expect(addressRow).toHaveAttribute("data-status", "differs");
+
+  await page.getByTestId("pick-addresses.primary-portal").click();
+  await page.getByTestId("pick-socials.website-portal").click();
+
+  // Both picks stand at once, each on its own line.
+  await expect(page.getByTestId("selected-addresses.primary")).toContainText(PORTAL_STREET2);
+  await expect(page.getByTestId("selected-socials.website")).toContainText(PORTAL_WEBSITE);
+
+  // Picking again in a row replaces that row's choice rather than adding to
+  // it — otherwise the patch would carry two values for one field.
+  await page.getByTestId("pick-addresses.primary-funderhub").click();
+  await expect(page.getByTestId("selected-addresses.primary")).toContainText(FUNDERHUB_STREET2);
+  await expect(page.getByTestId("cell-addresses.primary-portal")).toHaveAttribute(
+    "data-selected",
+    "false",
+  );
+
+  // Put it back, then prove a pick is removable.
+  await page.getByTestId("pick-addresses.primary-portal").click();
+  await page.getByTestId("unpick-socials.website").click();
+  await expect(page.getByTestId("selected-socials.website")).toHaveCount(0);
+  await expect(page.getByTestId("selected-addresses.primary")).toBeVisible();
+
+  await page.getByTestId("pick-socials.website-portal").click();
+
+  // FunderHub cannot take the website, so it has to come off the targets
+  // before this can be sent at all — which is #1191-T2 doing its job inside a
+  // spec that is about something else.
+  await page.getByTestId("target-funderhub").uncheck();
+  await expect(page.getByTestId("blocked-funderhub")).toHaveCount(0);
+
+  await page.getByTestId("sync").click();
+
+  // One result line, because both changes went to that target in one request.
+  await expect(page.getByTestId("sync-result-temelio")).toHaveAttribute("data-ok", "true");
+  await expect(page.getByTestId("sync-result-temelio")).toHaveAttribute("data-applied", "true");
+  await expect(page.getByTestId("sync-result-funderhub")).toHaveCount(0);
+  await expect(page.getByTestId("problem")).toHaveCount(0);
+
+  // Both picks landed on Temelio, from the one click.
+  await expect(page.getByTestId("cell-addresses.primary-temelio")).toContainText(PORTAL_STREET2);
+  await expect(page.getByTestId("cell-socials.website-temelio")).toContainText(PORTAL_WEBSITE);
+});
+
+test("unchecking a target survives a later pick in another row", async ({ page }) => {
+  await openConnected(page);
+
+  await page.getByTestId("pick-addresses.primary-portal").click();
+  await expect(page.getByTestId("target-funderhub")).toBeChecked();
+
+  // Deliberately taken off the list.
+  await page.getByTestId("target-funderhub").uncheck();
+  await expect(page.getByTestId("sync")).toBeDisabled();
+
+  // A pick in an unrelated row must not put it back. Re-checking here would
+  // undo a decision on a click that had nothing to do with that system.
+  await page.getByTestId("pick-socials.website-portal").click();
+  await expect(page.getByTestId("target-funderhub")).not.toBeChecked();
+  await expect(page.getByTestId("sync")).toBeDisabled();
 });
 
 test("the linked organization and both systems survive a reload", async ({ page }) => {

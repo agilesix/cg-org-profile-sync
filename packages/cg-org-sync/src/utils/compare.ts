@@ -1,5 +1,5 @@
 import type { Organization } from "../schemas/index.js";
-import type { FieldComparison, JsonObject, JsonValue } from "../types.js";
+import type { FieldChange, FieldComparison, JsonObject, JsonValue } from "../types.js";
 import { isJsonObject } from "./json.js";
 
 /** One field the widget compares across sources. */
@@ -156,19 +156,101 @@ function withSortedKeys(value: JsonValue): JsonValue {
 }
 
 /**
- * Wrap a value into the RFC 7396 body that sets that one field.
+ * Fold a set of chosen values into the one RFC 7396 body that sets them all.
  *
- * `buildMergePatch("addresses.primary", value)` gives
+ * `buildMergePatch([{ path: "addresses.primary", value }])` gives
  * `{ addresses: { primary: value } }`, so the wrapper objects merge and the
- * sibling fields a system already holds are left alone. Splits on `.` only, so
- * a registry code keeps its colons. `null` stays `null` at the leaf, which is
- * how the protocol spells a deletion.
+ * sibling fields a system already holds are left alone. Several changes under
+ * one parent share that parent — `socials.website` and `socials.linkedin`
+ * produce a single `socials` object — because a target gets one PATCH, and two
+ * bodies would be two revisions for what the person did once. Splits on `.`
+ * only, so a registry code keeps its colons. `null` stays `null` at the leaf,
+ * which is how the protocol spells a deletion.
+ *
+ * Overlapping paths throw rather than resolving to a last-one-wins order.
+ * `socials` and `socials.website` in the same body describe two different
+ * outcomes depending on which is applied second, and a request that means two
+ * things is one a caller should be told about — `/api/sync` turns this into a
+ * 400 rather than guessing.
  *
  * @see https://datatracker.ietf.org/doc/html/rfc7396
  */
-export function buildMergePatch(path: string, value: JsonValue): JsonObject {
-  // `split` always yields at least one segment, so the fold always ends on an object.
-  return path
+export function buildMergePatch(changes: readonly FieldChange[]): JsonObject {
+  assertDisjointPaths(changes);
+
+  return changes.reduce<JsonObject>((body, change) => mergeInto(body, shellFor(change)), {});
+}
+
+/**
+ * One change as its own nested body, before it is merged with its siblings.
+ *
+ * `split` always yields at least one segment, so the fold always ends on an
+ * object.
+ */
+function shellFor(change: FieldChange): JsonObject {
+  return change.path
     .split(".")
-    .reduceRight<JsonValue>((inner, segment) => ({ [segment]: inner }), value) as JsonObject;
+    .reduceRight<JsonValue>((inner, segment) => ({ [segment]: inner }), change.value) as JsonObject;
+}
+
+/**
+ * Merge one change's shell into the body being built.
+ *
+ * Only ever merges wrapper objects, never values: `assertDisjointPaths` has
+ * already ruled out the case where two changes meet at a leaf, so a key
+ * present on both sides is a parent both paths pass through. That is what lets
+ * this stay a plain recursive merge rather than an implementation of RFC 7396
+ * itself — `null` reaches a leaf whose key no other change touches.
+ */
+function mergeInto(body: JsonObject, shell: JsonObject): JsonObject {
+  for (const [key, value] of Object.entries(shell)) {
+    const existing = body[key];
+
+    body[key] = isJsonObject(existing) && isJsonObject(value) ? mergeInto(existing, value) : value;
+  }
+
+  return body;
+}
+
+/**
+ * Reject a set of changes that does not describe one unambiguous body.
+ *
+ * Two kinds of collision: the same path twice, and one path that is an
+ * ancestor of another. Both are caught before anything is built, so a caller
+ * that turns the throw into a 400 reports the whole request as bad rather than
+ * a half-built patch.
+ */
+function assertDisjointPaths(changes: readonly FieldChange[]): void {
+  const seen: string[] = [];
+
+  for (const { path } of changes) {
+    for (const earlier of seen) {
+      if (earlier === path) {
+        throw new Error(
+          `A merge patch cannot carry a duplicate path: ${path} is set more than once.`,
+        );
+      }
+
+      if (isAncestorPath(earlier, path)) throw new Error(overlapMessage(earlier, path));
+      if (isAncestorPath(path, earlier)) throw new Error(overlapMessage(path, earlier));
+    }
+
+    seen.push(path);
+  }
+}
+
+/** The sentence both overlap cases report, naming which path contains which. */
+function overlapMessage(parent: string, child: string): string {
+  return `A merge patch cannot set overlapping fields: ${parent} is a prefix of ${child}, so one change would overwrite the other.`;
+}
+
+/**
+ * Whether one path contains another.
+ *
+ * The trailing `.` is what keeps the check on a segment boundary: `soc` and
+ * `socials` are unrelated fields, and a bare `startsWith` would call them a
+ * collision.
+ */
+function isAncestorPath(parent: string, child: string): boolean {
+  return child.startsWith(`${parent}.`);
 }

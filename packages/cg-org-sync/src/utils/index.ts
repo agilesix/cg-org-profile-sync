@@ -13,4 +13,5 @@ export { DIFFERENT_ORG_REASON, selectableOrgs, summarizeOrg } from "./orgs.js";
 export type { OrgLock } from "./orgs.js";
 export type { FieldSpec } from "./compare.js";
 export { capabilitiesOf, isConnectable } from "./sources.js";
+export { blockedChanges, topLevelKey } from "./writability.js";
 export { sameOriginPath } from "./urls.js";

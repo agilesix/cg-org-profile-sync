@@ -13,6 +13,21 @@ export type JsonValue =
 export type JsonObject = { [key: string]: JsonValue };
 
 /**
+ * One field a caller wants to set, as `buildMergePatch` and `syncToTargets` take it.
+ *
+ * A dot path plus the value to set there, `null` meaning clear. Several of these
+ * combine into one RFC 7396 body, which is what lets a person pick values from
+ * several rows and push them to a target in a single request.
+ */
+export interface FieldChange {
+  /** Dot path into the org profile, such as `addresses.primary`. Splits on `.` only. */
+  path: string;
+
+  /** The value to set at that path. `null` clears the field. */
+  value: JsonValue;
+}
+
+/**
  * A system the widget can read from and write to.
  *
  * Every source speaks the same CommonGrants org routes, so adding one is a new
@@ -63,11 +78,22 @@ export interface SourceConfig {
   capabilities?: SourceCapabilities;
 
   /**
-   * Field paths this source can store. Fields outside the list are dropped from
-   * an outgoing patch and reported as skipped, rather than sent and silently lost.
-   * Omit to allow every field.
+   * Top-level field keys this source will decline to store, mirroring
+   * `OrgRoutesConfig.unwritableFields` on the receiving side. Omit to allow
+   * every field.
+   *
+   * A denylist rather than the allowlist this used to be: an allowlist can
+   * only be written by hand-inverting the schema's whole field set, and it
+   * would go stale the moment the protocol added a field — silently blocking
+   * something every system would have accepted. A denylist fails the safe way
+   * round, since the receiver's own rule stays authoritative: a field named
+   * here is never sent, and a field missed here is still dropped and reported
+   * by the system itself.
+   *
+   * Top-level keys only, which is all the protocol's rule works in: `socials`,
+   * never `socials.website`.
    */
-  writableFields?: readonly string[];
+  unwritableFields?: readonly string[];
 
   /** Set false to keep a source in the registry but out of the current demo. */
   enabled?: boolean;
@@ -148,6 +174,13 @@ export interface SourceResolution {
 
   /** Whether this source's token got us in, and so which control to offer. */
   connection: SourceConnection;
+
+  /**
+   * This source's own `SourceConfig.unwritableFields`, copied verbatim so the
+   * page can grey out a row without a second request. `[]` when the source
+   * declares none, never `undefined` — every resolution carries the field.
+   */
+  unwritableFields: readonly string[];
 }
 
 /**
@@ -216,13 +249,17 @@ export interface SyncTargetResult {
   ok: boolean;
 
   /**
-   * Whether the chosen value is actually there now.
+   * Whether every chosen value is actually there now.
    *
    * Distinct from `ok`, and the distinction is the point. A system that cannot
    * store a field does not fail — it applies what it can, drops the rest, and
    * answers 200. So `ok: true, applied: false` is the ordinary way a change
    * goes nowhere, and a caller that showed a tick for `ok` alone would report
    * success for something that never happened.
+   *
+   * All-or-nothing across the changes in one sync, because they travelled as
+   * one patch: a target that kept the address and dropped the website has not
+   * applied what it was sent.
    *
    * Established by reading the value back out of the post-change snapshot the
    * target returned, not by parsing its message — a receiver is free to word
