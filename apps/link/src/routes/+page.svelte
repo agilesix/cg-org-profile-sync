@@ -937,9 +937,17 @@
     push the corrections back out.
   </p>
 
-  <button type="button" class="link-system" data-testid="link-system" onclick={openPicker}>
-    Link Grant Management System
-  </button>
+  <!--
+    Hidden once every system in the catalog is linked. The picker it opens
+    would have nothing choosable in it, which is the same reason the grid drops
+    its invitation column — and embedded, where the overlay cannot grow, a
+    button that can no longer do anything is a row of the comparison.
+  -->
+  {#if canAddSource}
+    <button type="button" class="link-system" data-testid="link-system" onclick={openPicker}>
+      Link Grant Management System
+    </button>
+  {/if}
 
   {#if banner}
     <p class="banner" role="status" data-testid="linked-banner">

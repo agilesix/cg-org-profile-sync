@@ -201,12 +201,17 @@
     /* A floor rather than `0`: the grid should yield space to the panel, but a
        comparison squeezed to two rows is not one anybody can read.
 
-       Deliberately low. It is a minimum, not the height — with a short panel
-       the grid gets whatever the column has left over, which is more than this.
-       Raising it does not make the usual case taller; it only makes the column
-       outgrow the frame sooner, and the frame scrolling as well as the grid is
-       the thing this layout exists to avoid. */
-    min-height: 12rem;
+       It is a minimum, not the height: with a short panel the grid already gets
+       whatever the column has left over, which is more than this. What it
+       governs is the case where the panel has grown — several picks and a set
+       of results — and the grid is being squeezed to make room.
+
+       Sized against the frame rather than picked: at three systems linked the
+       column has a shade under 14rem to give, so a floor above this makes the
+       widget scroll as well as the grid in the state the demo actually runs
+       in. Measured, not guessed — `embedded.spec.ts` connects all three and
+       fails if it stops being true. */
+    min-height: 13rem;
     display: flex;
     flex-direction: column;
   }

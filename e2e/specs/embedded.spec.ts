@@ -14,7 +14,13 @@
  */
 
 import type { APIRequestContext, FrameLocator, Page } from "@playwright/test";
-import { FUNDERHUB_ORG_ID, FUNDERHUB_SEED, PORTAL_ORG_ID, PORTAL_SEED } from "@cg-link/seed";
+import {
+  FUNDERHUB_ORG_ID,
+  FUNDERHUB_SEED,
+  PORTAL_ORG_ID,
+  PORTAL_SEED,
+  TEMELIO_ORG_ID,
+} from "@cg-link/seed";
 import { ADMIN_EMAIL, FUNDERHUB_ORIGIN, LINK_ORIGIN, PORTAL_ORIGIN } from "../env.js";
 import { connectInFrame, expect, openWidget, test } from "../fixtures.js";
 
@@ -220,8 +226,12 @@ test("embedded, the grid is the only thing that scrolls", async ({ page }) => {
 
   const widget = await openLinkOver(page);
 
-  await connectInFrame(page, widget, "portal", ADMIN_EMAIL, PORTAL_ORG_ID);
+  // All three, because that is the state the demo runs in and it is the worst
+  // case for height: every system linked is another chip above the grid. With
+  // two it fits easily; three is where the column and the grid were both
+  // scrolling before the chrome was trimmed.
   await connectInFrame(page, widget, "funderhub", ADMIN_EMAIL, FUNDERHUB_ORG_ID);
+  await connectInFrame(page, widget, "temelio", ADMIN_EMAIL, TEMELIO_ORG_ID);
   await expect(widget.getByTestId("grid")).toBeVisible();
 
   const layout = await widget.locator("body").evaluate(() => {
