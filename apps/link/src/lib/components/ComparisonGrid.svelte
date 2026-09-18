@@ -91,74 +91,134 @@
   }
 </script>
 
-<table data-testid="grid">
-  <thead>
-    <tr>
-      <th class="field-heading" scope="col">Field</th>
-      {#each columns as source (source.id)}
-        <th
-          scope="col"
-          data-testid="source-{source.id}"
-          data-state={source.error !== undefined ? "error" : source.orgId === null ? "empty" : "ok"}
-        >
-          <span class="source-label">{source.label}</span>
-          {#if note(source)}
-            <span class="source-note" data-testid="source-note-{source.id}">{note(source)}</span>
+<div class="grid-frame">
+  <div class="scroller" data-testid="grid-scroller">
+    <table data-testid="grid">
+      <thead>
+        <tr>
+          <th class="field-heading" scope="col">Field</th>
+          {#each columns as source (source.id)}
+            <th
+              scope="col"
+              data-testid="source-{source.id}"
+              data-state={source.error !== undefined
+                ? "error"
+                : source.orgId === null
+                  ? "empty"
+                  : "ok"}
+            >
+              <span class="source-label">{source.label}</span>
+              {#if note(source)}
+                <span class="source-note" data-testid="source-note-{source.id}">{note(source)}</span
+                >
+              {/if}
+            </th>
+          {/each}
+          {#if inviting}
+            <th class="invite" scope="col" data-testid="add-source">
+              <button type="button" data-testid="add-source-button" onclick={onadd}>
+                Connect another grant management system to compare
+              </button>
+            </th>
           {/if}
-        </th>
-      {/each}
-      {#if inviting}
-        <th class="invite" scope="col" data-testid="add-source">
-          <button type="button" data-testid="add-source-button" onclick={onadd}>
-            Connect another grant management system to compare
-          </button>
-        </th>
-      {/if}
-      <th class="status-heading" scope="col">Status</th>
-    </tr>
-  </thead>
-  <tbody>
-    {#each comparison.fields as field (field.path)}
-      <tr data-testid="row-{field.path}" data-status={field.status} class={field.status}>
-        <th class="field-heading" scope="row">{field.label}</th>
-        {#each columns as source (source.id)}
-          {@const value = field.values[source.id]}
-          <td
-            data-testid="cell-{field.path}-{source.id}"
-            data-held={value !== undefined}
-            data-selected={isPicked(field.path, source.id)}
-          >
-            {#if value === undefined}
-              <span class="absent" aria-hidden="true">—</span>
-              <span class="visually-hidden">Not held</span>
-            {:else}
-              <button
-                type="button"
-                data-testid="pick-{field.path}-{source.id}"
-                aria-pressed={isPicked(field.path, source.id)}
-                onclick={() => onpick(field.path, field.label, source.id, value)}
+          <th class="status-heading" scope="col">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each comparison.fields as field (field.path)}
+          <tr data-testid="row-{field.path}" data-status={field.status} class={field.status}>
+            <th class="field-heading" scope="row">{field.label}</th>
+            {#each columns as source (source.id)}
+              {@const value = field.values[source.id]}
+              <td
+                data-testid="cell-{field.path}-{source.id}"
+                data-held={value !== undefined}
+                data-selected={isPicked(field.path, source.id)}
               >
-                <!-- A held value can still render as nothing: an address whose
+                {#if value === undefined}
+                  <span class="absent" aria-hidden="true">—</span>
+                  <span class="visually-hidden">Not held</span>
+                {:else}
+                  <button
+                    type="button"
+                    data-testid="pick-{field.path}-{source.id}"
+                    aria-pressed={isPicked(field.path, source.id)}
+                    onclick={() => onpick(field.path, field.label, source.id, value)}
+                  >
+                    <!-- A held value can still render as nothing: an address whose
                      every printable part is blank. Naming it keeps the button
                      from being an unlabelled target. -->
-                {formatFieldValue(value) || "(empty)"}
-              </button>
+                    {formatFieldValue(value) || "(empty)"}
+                  </button>
+                {/if}
+              </td>
+            {/each}
+            {#if inviting}
+              <td class="invite"></td>
             {/if}
-          </td>
+            <td class="status" data-testid="status-{field.path}">{field.status}</td>
+          </tr>
         {/each}
-        {#if inviting}
-          <td class="invite"></td>
-        {/if}
-        <td class="status" data-testid="status-{field.path}">{field.status}</td>
-      </tr>
-    {/each}
-  </tbody>
-</table>
+      </tbody>
+    </table>
+  </div>
+</div>
 
 <style>
+  /*
+     The grid scrolls inside a fixed height rather than growing without limit.
+     Seven compared fields already push the last rows past the fold on a laptop,
+     and the widget is often in an overlay iframe shorter than the page behind
+     it — so the alternative to scrolling here is scrolling the whole widget and
+     losing the column headings on the way down.
+  */
+  .grid-frame {
+    position: relative;
+    border-bottom: 1px solid #d9e0dd;
+  }
+  .scroller {
+    max-height: 26rem;
+    overflow-y: auto;
+  }
+
+  /*
+     A fade over the last visible row, so a row the fold happens to cut through
+     reads as "there is more below" rather than as a rendering fault. Sized in
+     `lh` so it covers about a line of text whatever the row height. Hidden
+     unless the grid actually scrolls — `animation-timeline: scroll()` runs an
+     animation against scroll position, and a container with nothing to scroll
+     has no such timeline, so the fade never appears on a short grid.
+  */
+  .grid-frame::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: 2lh;
+    background: linear-gradient(to bottom, rgb(245 247 246 / 0%), rgb(245 247 246 / 95%));
+    pointer-events: none;
+  }
+  @supports (animation-timeline: scroll()) {
+    .grid-frame::after {
+      /* Fades itself out as the grid reaches the bottom: once the last row is
+         on screen there is nothing more to hint at. */
+      animation: fade-out-at-end linear both;
+      animation-timeline: scroll(nearest block);
+      animation-range: contain 100% contain 100%;
+    }
+  }
+  @keyframes fade-out-at-end {
+    to {
+      opacity: 0;
+    }
+  }
   table {
     width: 100%;
-    border-collapse: collapse;
+
+    /* `separate` rather than `collapse` because a collapsed table's borders
+       belong to the table, not the cells, and scroll away from under a sticky
+       header with them. Every border below is on a cell for that reason. */
+    border-collapse: separate;
+    border-spacing: 0;
     font-size: 0.9rem;
   }
   th,
@@ -169,6 +229,12 @@
     border-bottom: 1px solid #d9e0dd;
   }
   thead th {
+    /* Stays put while the rows move, so a value halfway down the grid still
+       has a column name above it. */
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f4f7f6;
     font-size: 0.72rem;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     letter-spacing: 0.08em;
@@ -269,6 +335,17 @@
     th,
     td {
       border-color: #2a3736;
+    }
+    .grid-frame {
+      border-bottom-color: #2a3736;
+    }
+    .grid-frame::after {
+      background: linear-gradient(to bottom, rgb(15 22 21 / 0%), rgb(15 22 21 / 95%));
+    }
+    thead th {
+      /* The sticky header needs an opaque background in both schemes, or the
+         rows scroll through it. */
+      background: #0f1615;
     }
     thead th,
     .status {

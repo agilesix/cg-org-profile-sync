@@ -431,11 +431,54 @@
   dialog::backdrop {
     background: rgb(15 22 21 / 0.45);
   }
+  /*
+     Sticky so the dismiss button is always reachable. A `<dialog>` scrolls
+     itself once its content passes the UA's `max-height`, and the organization
+     step has no cap of its own — so on a short viewport, or for someone who may
+     act for a long list of organizations, the only way out of the modal
+     scrolled off the top. Escape still closed it, but a control you cannot see
+     is not one a presenter can rely on mid-demo.
+
+     The background is the dialog's own, not transparent: sticky only stops the
+     header moving, it does not stop the rows travelling underneath it.
+  */
   header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
     display: flex;
     align-items: flex-start;
     gap: 1rem;
     padding: 1.25rem 1.5rem 0.9rem;
+    background: #ffffff;
+  }
+
+  /*
+     A separator, but only once there is something underneath to separate from.
+     Same trick as the comparison grid's scroll fade: `animation-timeline:
+     scroll()` runs the animation against the scroll position of the nearest
+     scrolling ancestor, and a dialog with nothing to scroll has no such
+     timeline — so a modal that fits keeps exactly the borderless header it has
+     today.
+  */
+  @supports (animation-timeline: scroll()) {
+    header {
+      animation: header-separator steps(1) both;
+      animation-timeline: scroll(nearest block);
+      animation-range: 0 1px;
+    }
+  }
+  @keyframes header-separator {
+    to {
+      box-shadow: 0 1px 0 #d9e0dd;
+    }
+  }
+  @media (prefers-color-scheme: dark) {
+    @keyframes header-separator {
+      to {
+        box-shadow: 0 1px 0 #2a3736;
+      }
+    }
   }
   h2 {
     margin: 0;
@@ -582,6 +625,9 @@
       color: #e7edeb;
       background: #131d1c;
       border-color: #2a3736;
+    }
+    header {
+      background: #131d1c;
     }
     .dismiss {
       color: #8a9895;

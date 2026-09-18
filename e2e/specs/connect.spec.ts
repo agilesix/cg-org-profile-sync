@@ -331,6 +331,49 @@ test("the adapter refuses someone it grants nothing, exactly as a native system 
   await connectExpectingDenial(page, "temelio", PORTAL_ONLY_EMAIL);
 });
 
+test("the modal's dismiss button stays reachable when the organization list scrolls", async ({
+  page,
+}) => {
+  // A short viewport, because that is the condition — a `<dialog>` scrolls
+  // itself past the UA's `max-height`, and the organization step has no cap of
+  // its own. Before the header was sticky the only visible way out scrolled
+  // off the top, which on a projector is a modal a presenter cannot leave.
+  await page.setViewportSize({ width: 1280, height: 400 });
+
+  await openWidget(page);
+  await signInVia(page, "portal", ADMIN_EMAIL);
+  await expect(page.getByTestId("confirm-org")).toBeVisible();
+
+  const modal = page.getByTestId("link-modal");
+
+  // Guard the premise: if the modal ever stopped overflowing at this size the
+  // assertions below would pass without testing anything.
+  const scrollable = await modal.evaluate((el) => el.scrollHeight > el.clientHeight);
+  expect(scrollable, "the modal does not scroll at this viewport").toBe(true);
+
+  await modal.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+
+  // Still pinned to the top of the dialog rather than carried away with the
+  // rows. Geometry, not visibility: an element scrolled out of a container is
+  // still "visible" to Playwright.
+  const offset = await modal.evaluate((el) => {
+    const dismiss = el.querySelector('[data-testid="close-modal"]');
+
+    return dismiss ? dismiss.getBoundingClientRect().top - el.getBoundingClientRect().top : null;
+  });
+
+  // Both bounds matter. Without `position: sticky` the header scrolls up and
+  // out, which puts its offset far *below* zero — so an upper bound alone
+  // passes on exactly the broken case this test exists for.
+  expect(offset, "no dismiss button in the modal").not.toBeNull();
+  expect(offset!).toBeGreaterThanOrEqual(-1);
+  expect(offset!).toBeLessThan(40);
+
+  // And it still does what it is for.
+  await page.getByTestId("close-modal").click();
+  await expect(page.getByTestId("link-modal")).toBeHidden();
+});
+
 test("closing the modal before choosing leaves the system signed in, not linked", async ({
   page,
 }) => {
