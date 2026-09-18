@@ -15,6 +15,7 @@
  *     registry: "org:us:ein",
  *     id: "123456789",
  *     host: "portal",
+ *     token: "<an access token for that host>",
  *     onSynced: function (message) { ... },
  *     onClose: function () { ... },
  *   });
@@ -83,7 +84,21 @@
         return;
       }
 
-      if (message.type === "cg-link:synced") {
+      if (message.type === "cg-link:ready") {
+        // The frame says it is listening. Only now is there anything to post
+        // to: a message sent on the iframe's `load` can arrive before the
+        // widget has attached its handler, and would simply be dropped.
+        //
+        // Targeted at `frameOrigin`, never `"*"`. This is an access token; a
+        // wildcard target would hand it to whatever document happened to
+        // occupy the frame.
+        if (settings.token) {
+          frame.contentWindow.postMessage(
+            { type: "cg-link:host-token", token: settings.token },
+            frameOrigin,
+          );
+        }
+      } else if (message.type === "cg-link:synced") {
         if (typeof settings.onSynced === "function") {
           settings.onSynced(message);
         }

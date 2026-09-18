@@ -26,17 +26,24 @@ the last step.
    is the disagreement the rest of the demo is about.
 3. **Open Link, from that page.** Click **Open Link**. The widget appears in an overlay over
    GrantPortal — the same page, not a tab of its own — saying at the top that it was opened from
-   GrantPortal, and already carrying this organization. Inside it: a title and one button, **Link
-   Grant Management System**. No data, no systems, no fields. Link holds no credentials of its own,
-   so there is nothing for it to read until you have linked something — which is the honest version
-   of the Plaid screen everyone already recognises.
+   GrantPortal, and already carrying this organization. **GrantPortal is already linked**: you are
+   on its page, so it hands the widget a token it minted itself rather than asking you to sign in
+   to the system you are already looking at. One column, no sign-in, and the organization decided
+   by the page you came from. The other systems are still strangers, which is the next two steps.
+
+   Worth saying if anyone asks: that shortcut is the host vouching for the reader, and it is fenced
+   to the demo's stand-in sign-in — a deployment pointed at Google has a real sign-in and does not
+   skip it. Opened directly at `http://localhost:5176` instead, the widget starts with nothing
+   linked, because then there is no host to vouch for anybody.
+
 4. **Open the picker.** Click the button. The modal lists seven grant management systems, each with
    its name and site: GrantPortal, FunderHub and Temelio, then SimplerGrants, Fluxx, Submittable
    and Foundant GLM marked **Coming soon**. Worth saying out loud that the list is configuration —
    the four stubs are entries in a registry, not code — and that clicking one does nothing on
    purpose. There is a search box if you want to show it.
-5. **Link GrantPortal** as `admin@example.org`. Picking it opens a sign-in step; **Continue with
-   Google** opens GrantPortal's own window — the sign-in has to leave the frame, since no identity
+5. **Link FunderHub** as `admin@example.org` — GrantPortal is already linked, so this is the first
+   sign-in of the demo. Picking it opens a sign-in step; **Continue with
+   Google** opens that system's own window — the sign-in has to leave the frame, since no identity
    provider will render inside one. Sign in, and the modal comes back with **Select your
    organization** — three of them, because that is what GrantPortal says this person may act for.
    Pick **Agile Six Applications, Inc.** and click **Continue**. The modal closes, a banner says

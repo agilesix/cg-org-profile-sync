@@ -1,10 +1,12 @@
 import { error, fail } from "@sveltejs/kit";
 import { env } from "$env/dynamic/private";
-import { applyOrgPatch } from "@cg-link/org-sync/server";
+import { applyOrgPatch, mintAccessToken } from "@cg-link/org-sync/server";
 import { OrgPatchDataSchema } from "@cg-link/org-sync/schemas";
 import { EIN_REGISTRY, buildMergePatch, parseOrigin, topLevelKey } from "@cg-link/org-sync/utils";
 import type { JsonObject, JsonValue } from "@cg-link/org-sync/types";
 import { SYSTEM_ID, store, unscopedRoutes } from "$lib/server/store.js";
+import { signingKey } from "$lib/server/keys.js";
+import { usingFakeIdentity } from "$lib/server/oauth.js";
 import type { Actions, PageServerLoad } from "./$types.js";
 
 /** The parts of the primary address the form offers, in display order. */
@@ -60,7 +62,7 @@ const edits = Object.fromEntries(
  * Deliberately outside the bearer guard, which covers `/common-grants/*` only:
  * this is the system's own screen, and auth on it is out of scope for the demo.
  */
-export const load: PageServerLoad = async ({ params }) => {
+export const load: PageServerLoad = async ({ params, url }) => {
   const org = await store.read(params.orgId);
 
   if (!org) {
@@ -91,8 +93,62 @@ export const load: PageServerLoad = async ({ params }) => {
      * value it throws on.
      */
     linkOrigin: parseOrigin(env.LINK_ORIGIN) ?? null,
+
+    /**
+     * A token for this system, for the widget this page opens over itself.
+     *
+     * The widget is embedded on the system it is asking about, so making
+     * someone sign in to the system whose page they are already on is a step
+     * that proves nothing. This hands it a token instead, and the host column
+     * is connected before the overlay paints.
+     *
+     * Scoped to this one organization rather than to everything the bearer
+     * could reach: it is the record on screen, and nothing else is what this
+     * page is for.
+     */
+    hostToken: await hostToken(params.orgId, url),
   };
 };
+
+/**
+ * Mint this system's own access token for whoever is looking at this page.
+ *
+ * **Demo-only, and deliberately fenced.** This page sits outside the bearer
+ * guard — it is the system's own screen and auth on it is out of scope — so
+ * there is no session here and nobody to mint a token *for*. What this really
+ * says is "whoever can open this page may also write to this record", which is
+ * a larger claim than the page itself makes: reading a profile is not the same
+ * as being able to push changes to it.
+ *
+ * That is why it is gated on the stand-in identity provider rather than on a
+ * flag of its own. A deployment pointed at Google has a real sign-in and no
+ * business skipping it, and `IDENTITY_PROVIDER` is already the switch that
+ * says which of those a system is — so the shortcut cannot outlive the demo by
+ * someone forgetting a second variable.
+ *
+ * `sub` says where the token came from rather than naming a person, because
+ * no person was identified. It is informational — `orgs` is what scopes the
+ * store — but it is what a log will show, and it should not imply a sign-in
+ * that never happened.
+ */
+async function hostToken(orgId: string, url: URL): Promise<string | null> {
+  if (!usingFakeIdentity()) {
+    return null;
+  }
+
+  const key = await signingKey();
+
+  if (!key) {
+    return null;
+  }
+
+  return await mintAccessToken(key, {
+    iss: env.SYSTEM_ORIGIN || url.origin,
+    aud: SYSTEM_ID,
+    sub: "host-page",
+    orgs: [orgId],
+  });
+}
 
 export const actions: Actions = {
   /**

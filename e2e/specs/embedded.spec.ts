@@ -167,6 +167,47 @@ test("a sync inside the frame updates the host page without reloading it", async
   );
 });
 
+test("the host system is already connected when the widget opens over its page", async ({
+  page,
+}) => {
+  // The widget is embedded on the system it is asking about, so signing in to
+  // the page you are already on proves nothing. The host hands the frame a
+  // token it minted itself, and the column is there before anyone clicks.
+  await page.goto(PROFILE.portal);
+  await expect(page.getByTestId("profile")).toHaveAttribute("data-ready", "true");
+
+  const widget = await openLinkOver(page);
+
+  // No sign-in, no organization step: the frame was opened at one organization
+  // and the host vouched for the reader, so there is nothing left to choose.
+  await expect(widget.getByTestId("connected-portal")).toBeVisible();
+  await expect(widget.getByTestId("linked-org")).toContainText(
+    String(PORTAL_SEED.identifiers?.["org:us:ein"]?.id),
+  );
+
+  // And it is a working token, not just a chip: the grid is GrantPortal's own
+  // answer to a read Link made with it.
+  await expect(widget.getByTestId("grid")).toBeVisible();
+  await expect(widget.getByTestId("cell-addresses.primary-portal")).toContainText(
+    String(PORTAL_SEED.addresses?.primary?.street2),
+  );
+
+  // The other systems are untouched by this. That a person can be known to one
+  // system and a stranger to the next is the beat the demo turns on, and
+  // vouching for the host must not quietly vouch for anybody else.
+  await expect(widget.getByTestId("connected-funderhub")).toHaveCount(0);
+  await expect(widget.getByTestId("cell-addresses.primary-funderhub")).toHaveCount(0);
+});
+
+test("standalone, nothing is connected — the token is the host's to give", async ({ page }) => {
+  // Opened directly rather than framed, so there is no host and no offer. The
+  // widget holds no credentials of its own, and this is what says so.
+  await openWidget(page);
+
+  await expect(page.getByTestId("nothing-linked")).toBeVisible();
+  await expect(page.getByTestId("connected-portal")).toHaveCount(0);
+});
+
 test("embedded, the grid is the only thing that scrolls", async ({ page }) => {
   // The overlay cannot grow — `embed.js` sizes it at `min(46rem, 92vh)` — so
   // something has to give when seven compared fields will not fit. The answer

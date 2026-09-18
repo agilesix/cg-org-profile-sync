@@ -206,13 +206,78 @@
       void reload();
     });
 
+    // Only now, with the listener below attached: the host answers this with
+    // a token, and a reply that arrived earlier would land on nothing.
+    const stopHost = listenForHostToken();
+
+    postToHost({ type: "cg-link:ready" });
+
     void reload();
 
     return () => {
       stopWatching();
       stop();
+      stopHost();
     };
   });
+
+  /**
+   * Take the access token the host page offers for its own system.
+   *
+   * The widget is embedded on the system it is about, so the host is in a
+   * position to vouch for the person in front of it, and making them sign in
+   * to the page they are already on proves nothing. Every other system still
+   * signs in for itself — which is the beat the demo turns on, and this does
+   * not touch it.
+   *
+   * Three checks before the token is kept, and none is redundant: `message`
+   * fires for anything any window posts, so the origin check is what stops a
+   * page other than our host speaking; `window.parent` is what stops a sibling
+   * frame on that origin speaking for it; and `data.host` is what stops a
+   * host handing us a token for a system it is not — otherwise the page we are
+   * framed by could put a credential of its choosing in the column of any
+   * system in the registry.
+   */
+  function listenForHostToken(): () => void {
+    const handler = (event: MessageEvent) => {
+      if (data.parentOrigin === null || event.origin !== data.parentOrigin) return;
+      if (event.source !== window.parent) return;
+
+      const message = event.data as { type?: string; token?: unknown } | null;
+
+      if (message?.type !== "cg-link:host-token") return;
+      if (typeof message.token !== "string" || message.token === "") return;
+      if (data.host === null) return;
+
+      adoptHostToken(data.host.id, message.token);
+    };
+
+    window.addEventListener("message", handler);
+
+    return () => window.removeEventListener("message", handler);
+  }
+
+  /**
+   * Connect the host system with a token it issued itself.
+   *
+   * Recorded as a linked source as well as a token holder. The organization
+   * step is what normally moves a system from "signed in" to "linked", and
+   * there is nothing to choose here: the frame was opened at one organization
+   * and `adoptLinkedOrg` has already taken it from the URL. Without this the
+   * host would sit on a "Choose an organization" button for a choice of one.
+   */
+  function adoptHostToken(sourceId: string, token: string): void {
+    if (tokens[sourceId] === token) return;
+
+    rememberToken(sourceId, token);
+    rememberLinkedSource(sourceId);
+
+    tokens = { ...tokens, [sourceId]: token };
+    linkedSources = [...new Set([...linkedSources, sourceId])];
+    denied = denied.filter((candidate) => candidate !== sourceId);
+
+    void reload();
+  }
 
   /** Systems Link can talk to, each with what it allows and where it stands. */
   const sourceStates = $derived(

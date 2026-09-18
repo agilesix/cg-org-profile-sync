@@ -46,6 +46,14 @@ declare global {
     /** Which system's page this is, so the widget can name its host. */
     host?: string;
 
+    /**
+     * An access token for `host`, so the widget starts connected to it.
+     *
+     * Delivered to the frame by `postMessage` rather than in its URL: a token
+     * in a query string lands in history and in referrers.
+     */
+    token?: string | null;
+
     /** A sync finished inside the frame. `results` is one entry per target. */
     onSynced?: (message: { targets?: string[]; results?: unknown }) => void;
 

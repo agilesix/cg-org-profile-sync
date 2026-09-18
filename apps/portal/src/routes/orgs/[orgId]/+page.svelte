@@ -124,6 +124,7 @@
         registry: data.registry,
         id: data.ein,
         host: data.system,
+        token: data.hostToken,
         onSynced: () => void invalidateAll(),
         onClose: () => void invalidateAll(),
       });

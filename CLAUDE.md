@@ -56,7 +56,16 @@ that fetches `embed.js` from Link's own origin and mounts the widget in an overl
 profile page, pointed at that org; a sync inside the frame posts `synced` to the host, which
 re-reads without a reload, and Close posts `close`. Link names the origins allowed to frame it in
 `EMBED_ALLOWED_ORIGINS` and enforces it both ways — a `frame-ancestors` policy the browser applies,
-and the same list deciding which `?parent=` origin it will post to. `e2e/specs/embedded.spec.ts`
+and the same list deciding which `?parent=` origin it will post to. Embedded, the **host system is
+already connected**: its profile page mints an access token for itself, scoped to the org on screen,
+and `embed.js` posts it into the frame once the widget announces `cg-link:ready` — never in the URL,
+where a token would land in history and referrers. The widget keeps it only if the message came from
+`parentOrigin`, from `window.parent`, and names the declared `?host=`, so a framing page cannot put
+a credential in another system's column. Gated on `IDENTITY_PROVIDER=fake` rather than a flag of its
+own: the profile page sits outside the bearer guard, so there is no session and nobody to mint a
+token _for_ — what it really says is "whoever can open this page may also write to this record",
+which is a demo-sized claim and must not outlive the demo. Every other system still signs in for
+itself. `e2e/specs/embedded.spec.ts`
 drives the whole of it, popup sign-in included. Direction is explicit: the widget names every
 action — **Push** a value out of the page you are on, **Pull** another system's value into it —
 carries `push`/`pull` on a `data-testid="direction"` element, and confines a pull to the host, so a
